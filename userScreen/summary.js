@@ -3,7 +3,7 @@ import {
   SafeAreaView, View, Text, TouchableOpacity, StyleSheet,
   Image, Dimensions, ScrollView
 } from "react-native";
-import { VictoryPie } from 'victory-native';
+import { PieChart } from 'react-native-gifted-charts';
 import { Text as SvgText } from "react-native-svg";
 import { useBills } from "../global_function/billsContent";
 import { getUser } from "../global_function/localStorage";
@@ -143,50 +143,29 @@ function groupByCategory(records){
 const formatAmount = (n, currency) => `${currency} ${Number(n || 0).toFixed(2)}`;
 
 // Pie component
-function Pie({ data, radius = width * 0.32, innerRadius = width * 0.12 }) {
-  // total for percentage labels
-  const total = Math.max(1, data.reduce((s, d) => s + d.value, 0));
+function Pie({ data }) {
+  // guard + % labels
+  const safe = Array.isArray(data) && data.length ? data : [{ category: 'No data', value: 1 }];
+  const total = Math.max(1, safe.reduce((s, d) => s + d.value, 0));
 
-  // map {category, value} items to the chart’s expected format
-  const pieData = data.map((item, index) => ({
-    key: `${item.category}-${index}`,
+  // react-native-gifted-charts expects {value, color, text}
+  const chartData = safe.map((item, i) => ({
     value: item.value,
-    svg: { fill: PALETTE[index % PALETTE.length] },
-    arc: { cornerRadius: 6 }, // rounded edges (optional)
+    color: PALETTE[i % PALETTE.length],
+    text: `${Math.round((item.value / total) * 100)}%`, // show % on slice
   }));
 
-  // percentage labels rendered as a child of PieChart
-  const Labels = ({ slices }) =>
-    slices.map((slice, index) => {
-      const { pieCentroid, data } = slice;
-      const pct = Math.round((data.value / total) * 100);
-      if (pct < 8) return null; // hide tiny slices
-      return (
-        <SvgText
-          key={`label-${index}`}
-          x={pieCentroid[0]}
-          y={pieCentroid[1]}
-          fill="#111"
-          fontSize="12"
-          fontWeight="bold"
-          textAnchor="middle"
-          alignmentBaseline="middle"
-        >
-          {`${pct}%`}
-        </SvgText>
-      );
-    });
-
-  // size the SVG to your chosen radius
-  const size = Math.round(radius * 2 + 16);
-
   return (
-    <VictoryPie
-      data={data.map(d => ({ x: d.category, y: d.value }))}
-      innerRadius={40}
-      padAngle={2}
-      height={220}
-    />
+    <View style={{ alignItems: 'center', marginTop: 8 }}>
+      <PieChart
+        data={chartData}
+        radius={95}
+        donut={false}              // 2) no donut => no white center
+        showText                   // 3) show % labels
+        textColor="#111"
+        textSize={12}
+      />
+    </View>
   );
 }
 
