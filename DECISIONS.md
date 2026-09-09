@@ -73,3 +73,31 @@
 
 - 没有用 `prisma@latest`（npm dist-tag 实际指向 `8.0.0-rc.13`，是个还没转正的 release candidate）——特意锁定 `prisma`、`@prisma/client`、`@prisma/adapter-pg` 都用 `7.10.0` 精确版本，避免 CLI 和 Client 版本不一致，也避免用还在候选阶段、可能有更多坑的大版本。
 - 没有为了用新 `prisma-client` generator 而给项目加一层 TypeScript 构建流程（tsx/ts-node）：项目本来就是纯 JS 技术栈，为了赶新 generator 的时髦去引入编译步骤，成本和收益不成比例，等这个 generator 在未来版本稳定输出纯 JS 后再考虑切换。
+
+---
+
+## 2026-09-09 补完后端剩余模块：交易同步、转账、周期交易、预算、统计
+
+**做了什么**
+
+- `transactions`：`GET /transactions`（支持 from/to/categoryId/accountId/type 筛选）、`POST /transactions/batch`（离线同步批量推送）、`PUT/DELETE /transactions/:id`
+- `transfers`：`GET /transfers`、`POST /transfers/batch`
+- `recurring-transactions`：`GET/POST /recurring-transactions`、`PUT/DELETE /recurring-transactions/:id`（PUT 也用于暂停规则）
+- `budgets`：`GET/POST /budgets`（POST 是 upsert）、`GET /budgets/status?month=`
+- `stats`：`GET /stats/summary?month=`、`GET /stats/by-category?month=&type=`
+- 新增 `src/utils/date.js` 的 `monthRange()`，被 `budget.service.js` 和 `stats.service.js` 共用（"YYYY-MM" 转成 UTC 起止区间）
+- 删掉了 `src/utils/notImplemented.js`——5 个模块全部实现完，这个占位工具不再被任何路由引用
+- 用真实 Neon 数据库跑了一整套端到端测试：batch 幂等重试、跨用户 id 校验拦截、账户余额随交易增删改实时变化、预算 upsert 不重复建行、budgets/status 和 stats 两个聚合接口数字对得上、删除交易级联删掉图片记录
+
+**为什么这样设计**
+
+- **`/transactions/batch` 的幂等去重不是直接依赖 `createMany({skipDuplicates:true})` 的返回值**，而是插入前先查一遍"这批 id 里哪些已经存在于数据库"，因为要精确知道"这次插入了哪些新记录"才能只给新交易插入图片——如果单纯信任 `skipDuplicates`，同步重试时会把已存在交易的图片再插一遍，导致图片记录重复。这是本项目"客户端生成 id + 幂等去重"这条核心原则（CLAUDE.md 原则#2）延伸到关联表（`TransactionImage`）时必须多想一步的地方。
+- **`recurring-transactions` 的 `POST` 遇到重复 id 直接返回已存在的记录，而不是报错**：这条规则本身也是手机端离线生成、带客户端 UUID 的（schema 里 `id` 没有 `@default`），同步重试应该是"无痛"的，不应该让用户看到一个因为网络重试导致的失败提示。
+- **`budgets` 的 `POST` 设计成 upsert（有就改、没有就建）**，没有另开一个 `PUT /budgets/:id`：因为 `docs/PROJECT-PLAN.md` 接口清单里 `budgets` 本来就只列了 GET/POST，且 schema 里 `Budget` 对 `(userId, categoryId)` 有唯一约束，前端"给某个分类设置预算"这个操作天然就是幂等的 upsert 语义，不需要额外的 id 概念。
+- **`transactions/list` 和 `transfers/batch` 里都做了跨用户归属校验**（`categoryId`/`accountId`/`recurringId` 必须属于当前登录用户）：虽然多了几次查询，但这是防止恶意或写错的请求把别的用户的分类/账户 id 塞进自己的交易记录里，属于安全边界该做的最低限度校验。
+- **`stats`/`budgets/status` 都不做任何写操作，纯读聚合**，符合 CLAUDE.md 原则#5"后端职责单一"——手机端自己算超支提醒，电脑端这两个接口只是把同样的聚合逻辑在服务器上跑一遍供图表展示，两边算法逻辑上是一致的（都是按分类、按月份对 `amountInBase` 求和），只是运行的地方不同。
+
+**放弃的替代方案**
+
+- 没有给 `budgets/status` 和 `stats/by-category` 做"父分类汇总子分类"的逻辑（比如父分类"餐饮"的预算自动包含子分类"外卖"的花费）：`docs/PROJECT-PLAN.md` 没有明确要求这个行为，贸然实现容易猜错产品需求；现在的实现是"预算/统计只认交易记录上那个精确的 `categoryId`"，后续如果确认要父子汇总，再在这两个 service 函数里加逻辑。
+- 没有给 `PUT /transactions/:id` 开放修改 `images` 字段：图片的增删更适合走"新增一张图"、"删一张图"这种更细粒度的操作，塞进一个大的 PUT 里容易在"要不要先清空旧图片"这类语义上出歧义，等真的要做编辑图片这个功能时再单独设计。
