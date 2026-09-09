@@ -11,7 +11,7 @@
 | 数据库 | PostgreSQL（Neon 免费 Serverless） |
 | 后端 | Node.js + Express + Prisma ORM |
 | 认证 | JWT（access token 15分钟过期 + refresh token） |
-| 手机端 | React Native + Expo，Expo Router 导航，React Query 数据请求，Zustand 全局状态，expo-sqlite 本地数据库，expo-secure-store 存 token |
+| 手机端 | React Native + Expo（TypeScript），Expo Router 导航，React Query 数据请求，Zustand 全局状态，expo-sqlite 本地数据库，expo-secure-store 存 token |
 | 电脑端 | Next.js（App Router）+ Recharts / ECharts |
 | 图片存储 | Cloudinary（客户端直传，后端只存 URL，不经过自己的服务器） |
 | 部署 | 后端 → Render 免费 Web Service；数据库 → Neon；网页 → Vercel；App → Expo EAS |
@@ -54,9 +54,9 @@ backend/
 │   ├── config/
 │   └── app.js
 
-mobile/
-├── app/              # Expo Router 路由页面
+mobile/                # TypeScript；Expo SDK 57 默认模板把 app/ 放在 src/ 下面，顺着这个约定走，不搬到根目录
 ├── src/
+│   ├── app/          # Expo Router 路由页面
 │   ├── api/          # axios实例 + 各模块请求函数
 │   ├── db/            # expo-sqlite 本地数据库操作、同步逻辑
 │   ├── hooks/         # React Query hooks

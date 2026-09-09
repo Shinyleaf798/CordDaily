@@ -101,3 +101,32 @@
 
 - 没有给 `budgets/status` 和 `stats/by-category` 做"父分类汇总子分类"的逻辑（比如父分类"餐饮"的预算自动包含子分类"外卖"的花费）：`docs/PROJECT-PLAN.md` 没有明确要求这个行为，贸然实现容易猜错产品需求；现在的实现是"预算/统计只认交易记录上那个精确的 `categoryId`"，后续如果确认要父子汇总，再在这两个 service 函数里加逻辑。
 - 没有给 `PUT /transactions/:id` 开放修改 `images` 字段：图片的增删更适合走"新增一张图"、"删一张图"这种更细粒度的操作，塞进一个大的 PUT 里容易在"要不要先清空旧图片"这类语义上出歧义，等真的要做编辑图片这个功能时再单独设计。
+
+---
+
+## 2026-09-09 手机端项目骨架：导航、本地 SQLite、登录
+
+**做了什么**
+
+- 用 `create-expo-app@latest`（Expo SDK 57）初始化 `mobile/`，用 TypeScript（而不是纯 JS，虽然后端是纯 JS），保留了官方模板自带的主题/深色模式基础组件（`ThemedText`/`ThemedView`/`useTheme`），删掉了模板自带的演示页面和素材
+- 本地 SQLite（`src/db/schema.ts` + `client.ts`）：建了 8 张表，字段基本照抄后端 Prisma schema，但去掉了 `userId`（本地设备只服务当前登录的这一个人），给需要同步的表加了 `synced` 字段
+- 认证：`src/store/auth.store.ts`（zustand，token 存 `expo-secure-store`）+ `src/api/client.ts`（axios，请求拦截器自动带 token，响应拦截器在 401 时自动用 refresh token 换新重试一次）+ 真实登录页面 `src/app/login.tsx`
+- 导航壳：`src/app/_layout.tsx` 用 `Stack.Protected` 做登录态路由守卫（未登录只能看到 `/login`，登录后才能看到 `(tabs)` 和 `/add`）；`(tabs)/_layout.tsx` 用 `Tabs` + 自定义 `tabBar`，做出 PROJECT-PLAN.md 里"5个按钮，中间凸起圆形＋号"的底部导航
+- 完整实现"资产"这一个 tab 作为模板：本地建账户表单 + 账户列表 + 现算余额（`getAccountBalance`，算法跟后端 `account.service.js` 保持一致），用 React Query 包一层本地 SQLite 读写（不是网络请求，纯粹借它管 loading/缓存状态）
+- 首页/日历/我的/添加账单 4 个页面先放占位内容，"我的"顺带做了真实的登出功能
+- 用 Playwright 起了个 headless Chromium，跑通了 TypeScript 严格检查 + Metro 打包 + 真实登录接口调用（连的是本机跑着的真实后端）
+
+**为什么这样设计**
+
+- **手机端选 TypeScript，跟后端纯 JS 不一致**：Expo SDK 57 的默认模板已经自带 TypeScript + Expo Router，硬要拆成纯 JS 反而要跟框架默认较劲；React Native 生态的库现在基本都是 TS-first，配合类型系统学起来也更顺。
+- **`app/` 放在 `src/` 下面（`src/app/`），不是项目根目录**：这是 Expo Router 官方支持的约定，SDK 57 的默认模板就是这么生成的，跟着框架默认走，回头调整了 `CLAUDE.md` 里原本写的目录结构。
+- **底部导航用经典的 `Tabs`（来自 `expo-router`），没有用新的 `NativeTabs`**（`expo-router/unstable-native-tabs`，SDK 57 才有的实验性 API）：`NativeTabs` 渲染的是平台原生 tab bar，没法塞一个自定义样式的凸起圆形按钮进去；`Tabs` 支持完全自定义 `tabBar` 渲染函数，才能做出 PROJECT-PLAN.md 要求的"居中凸起圆形＋号"。中间的＋号按钮不是真正的 tab（没有对应内容要"停留"），点击后 `router.push('/add')` 跳到 tabs 外层的一个 modal 路由。
+- **本地表去掉 `userId` 字段**：跟后端不同，后端一张表服务所有用户，必须用 `userId` 隔离数据；手机本地数据库只服务"当前登录的这一个人"，多存一个到处都要塞的 `userId` 字段纯粹是浪费。
+- **`budgets` 本地表用 `categoryId` 当主键，不单独生成 id**：跟后端一致——`Budget.id` 是服务器自动生成的（Prisma `@default(uuid())`，不是客户端生成的），本地没法提前知道服务器会分配什么 id；而 `(userId, categoryId)` 唯一约束意味着 `categoryId` 本身就是天然的本地去重键，不需要额外造一个假 id。
+- **"资产" tab 是唯一一个接了真实本地数据的页面，其它先占位**：跟后端第一轮"先做 categories/accounts 当模板"是同一个思路——账户 CRUD 逻辑最简单，没有分类两级、图片、周期规则这些复杂性，适合先跑通"页面 → hooks → db 层 → SQLite"这条完整链路，验证技术选型没问题，其它页面等这条链路稳了再复用同样的模式填。
+- **`auth.store.ts` 的 `hydrate()` 加了 try/catch**：起初没加，测试时发现如果 `SecureStore` 读取失败（这次是 web 环境下 `expo-secure-store` 没实现 `getValueWithKeyAsync` 导致的已知问题），根布局的 `if (!isHydrated) return null` 会让 App 永远卡在空白页——因为失败的 promise 没人 catch，`isHydrated` 永远变不成 `true`。这不只是 web 测试环境的巧合，真机上钥匙串没初始化好、权限问题等也可能触发同样的失败模式，所以补上防御性处理：读取失败就退回"未登录"状态，而不是让整个 App 卡死。
+
+**放弃的替代方案 / 已知限制**
+
+- **没有让登录后的完整流程（tabs、资产页本地读写）在 Web 上跑通**：`expo-secure-store` 在 Web 平台缺失部分核心方法（`getValueWithKeyAsync`），这是 Expo 官方仓库里一个长期存在、反复被报告的已知问题，不是这个项目代码写错了。手机端从设计上就不打算支持 Web（CLAUDE.md 里电脑端是完全独立的 Next.js 项目），所以没有为了让 Web 测试通过而专门加一套"Web 环境下退化成 localStorage"的兼容代码——那是为一个根本不会上线的平台增加复杂度。已验证：TypeScript 严格检查通过、Metro 能完整打包整个路由树、登录页正确渲染、登录表单能正确把请求送到真实后端并拿到正确响应（失败点确认卡在 `SecureStore` 持久化这一步，说明网络层和表单逻辑都是对的）。真正端到端验证（登录后的 tabs、本地 SQLite 读写）需要用 Expo Go 在真机/模拟器上跑一遍，这是下一步要做的事。
+- **`app.json` 的 `web.output` 从模板默认的 `"static"` 改成了 `"single"`**：`"static"` 触发的 SSR 打包流程会跟 `expo-sqlite` 的 Web Worker 实现冲突（Metro 报 `Worker chunk not found`），`"single"`（纯 SPA 模式）没有这个问题。因为这个项目根本不需要 Web 的 SEO/服务端预渲染，`"single"` 反而更贴近实际需求，不是"为了绕过 bug 将就出来的配置"。
