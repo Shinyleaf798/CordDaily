@@ -60,7 +60,7 @@ model Category {
   icon     String?
   type     TransactionType
   userId   String
-  user     User     @relation(fields: [userId], references: [id])
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   parentId String?
   parent   Category?  @relation("SubCategory", fields: [parentId], references: [id])
@@ -79,7 +79,7 @@ model Account {
   openingBalance Decimal     @default(0)
   icon           String?
   userId         String
-  user           User        @relation(fields: [userId], references: [id])
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt      DateTime    @default(now())
 
   transactions          Transaction[]
@@ -109,7 +109,7 @@ model Transaction {
   accountId  String
   account    Account  @relation(fields: [accountId], references: [id])
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   recurringId String?
   recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id])
@@ -121,7 +121,7 @@ model TransactionImage {
   id            String      @id @default(uuid())
   url           String              // Cloudinary 图片地址
   transactionId String
-  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   createdAt     DateTime    @default(now())
 }
 
@@ -129,7 +129,7 @@ model Budget {
   id         String   @id @default(uuid())
   amount     Decimal          // 以用户基准货币计算的月度预算上限
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
   createdAt  DateTime @default(now())
@@ -157,7 +157,7 @@ model RecurringTransaction {
   accountId  String
   account    Account  @relation(fields: [accountId], references: [id])
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   generatedTransactions Transaction[]
 }
@@ -172,7 +172,7 @@ model Transfer {
   toAccountId   String
   toAccount     Account  @relation("ToAccount", fields: [toAccountId], references: [id])
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
 }
 ```
@@ -186,6 +186,7 @@ model Transfer {
 - **周期交易和转账都是独立模型**：`RecurringTransaction` 是"规则"，生成的每一笔仍然是真实的 `Transaction`；`Transfer` 独立于 `Transaction`，因为转账不计入收支统计。
 - **图片只存 URL**：图片本身直传 Cloudinary，后端和数据库都不碰二进制数据。
 - **`updatedAt` 字段预留给未来的网页编辑功能**：现在电脑端只读用不上，但先加上，以后要做双向同步时可以直接用"谁更新时间新听谁的"（last-write-wins）策略处理冲突。
+- **删除策略：只在两处加 `onDelete: Cascade`**：`User → 所有子表`（方便以后做"注销账号"，删用户时自动清掉名下所有数据，不用一张张表手动删）、`Transaction → TransactionImage`（图片是交易的附属品，删交易应该连图片记录一起删）。其余关系（`Category → Transaction`、`Account → Transaction` 等）故意不加 Cascade，用 Prisma 默认的 `Restrict`：还有交易记录引用着的分类/账户不允许被删除，逼用户先处理这些交易，避免"删个分类，几十笔账单记录跟着消失"的误删事故。
 
 ## 3. 认证流程
 

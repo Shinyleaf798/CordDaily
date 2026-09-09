@@ -1,0 +1,75 @@
+# 设计决策记录
+
+每完成一个功能模块，在这里追加一条：做了什么 / 为什么这样设计 / 放弃了什么替代方案。
+
+---
+
+## 2026-09-09 后端项目骨架 + 认证模块
+
+**做了什么**
+
+- 初始化 `backend/`：Express + Prisma + PostgreSQL(Neon)，目录结构按 CLAUDE.md 的 `routes/controllers/services/middleware/config` 分层。
+- 按 `docs/PROJECT-PLAN.md` 第2节写好完整 Prisma schema（User/Category/Account/Transaction/TransactionImage/Budget/RecurringTransaction/Transfer）。
+- 实现认证全流程：`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`GET /auth/me`，密码用 bcrypt 哈希，access token 15分钟 + refresh token 30天。
+- 实现分类（`categories`）、账户（`accounts`，含 `/accounts/:id/balance`）两个完整 CRUD 模块，作为其余模块的实现模板。
+- 其余模块（transactions、budgets、recurring-transactions、transfers、stats）先搭好路由骨架，返回 `501 NOT_IMPLEMENTED`，接口清单对齐 `docs/PROJECT-PLAN.md` 第4节，具体逻辑留到实现该模块时再补。
+- 统一响应格式 `{ success, data, error }` 和统一错误中间件已就位，`ApiError` 贯穿所有 controller。
+- 本地跑通：`/health` 返回正常，`/auth/login` 在无真实数据库连接的情况下能正确走到 Prisma 连接失败分支并被错误中间件捕获，证明路由 → 中间件 → service → Prisma → 错误处理这条链路是通的。
+
+**为什么这样设计**
+
+- 分类/账户先做完整实现是因为它们逻辑最简单、没有离线同步/幂等去重这类复杂性，适合作为其它模块抄的模板，同时能尽早验证整条技术栈打通。
+- 账户余额端点直接实现了"衍生值现算"的核心原则（CLAUDE.md 原则#6），用 `Promise.all` 并行聚合收入/支出/转入/转出四个查询，而不是拉全部交易记录到内存里加总，减少后端计算量。
+- 分类的两级限制（`parent.parentId` 不能再有值）在 service 层用一次额外查询强制校验，而不是留给前端保证，避免脏数据。
+- refresh 接口只签发新的 access token，不轮换 refresh token本身——保持简单，refresh token 过期后要求重新登录即可，不需要维护 refresh token 黑名单/白名单这类额外状态。
+
+**放弃的替代方案**
+
+- 没有用 `express-validator`，改用 `zod`：schema 定义更贴近 TypeScript 风格，且以后类型可以直接从 zod schema 推导（虽然当前项目是 JS，先占好这个坑）。
+- 没有在 Prisma schema 里给 `Transaction`/`RecurringTransaction`/`Transfer` 用 `@default(uuid())`，严格遵守 CLAUDE.md 核心原则#2——id 必须由手机端本地生成，服务器只接受、不生成。
+- 没有一次性把 transactions/budgets 等模块也写完整：这些模块涉及离线同步的幂等去重、预算超支计算等更复杂的业务逻辑，先把骨架和契约（路由路径、响应格式）定下来，避免在没有手机端配合调试的情况下臆造实现细节。
+
+---
+
+## 2026-09-09 数据库外键加 Cascade Delete
+
+**做了什么**
+
+- 给 `User → Category/Account/Transaction/Budget/RecurringTransaction/Transfer` 这 6 个关系，以及 `Transaction → TransactionImage` 这 1 个关系加上 `onDelete: Cascade`
+- 其余外键关系（`Category → Transaction`、`Account → Transaction/RecurringTransaction`、`RecurringTransaction → Transaction`、`Account → Transfer` 等）保持不变，维持 Prisma 默认行为
+- 生成新 migration `20260909080630_add_cascade_delete` 并应用到 Neon 数据库
+
+**为什么这样设计**
+
+- Prisma 对外键关系不写 `onDelete` 时会用隐含默认值：必填外键默认 `Restrict`（有子记录引用就禁止删除父记录），可选外键默认 `SetNull`。这份 schema 之前一处都没配置，等于全部依赖这个隐含默认值，容易忘记、也不直观，所以明确把两类场景显式写出来。
+- `User` 删除要 Cascade：以后做"注销账号"功能时，删一个 `User` 应该自动清掉这个用户名下的所有数据，不需要在 service 层手动一张张表 `deleteMany`。（之前测试时写的 `cleanup-tmp.js` 清理脚本就是因为没有 Cascade，被迫手动先删 `category`/`account` 再删 `user`，直接暴露了这个问题。）
+- `Transaction → TransactionImage` 删除要 Cascade：图片是交易的附属数据，没有独立存在的意义，删除一笔交易时图片记录理应一起清掉，不应该因为还有图片记录而拦住交易删除操作。
+
+**放弃的替代方案**
+
+- 没有给 `Category → Transaction`、`Account → Transaction` 也加 Cascade：如果分类/账户一删就把底下的交易记录全部级联删掉，用户体验上是灾难——很容易误删几十笔账单记录且无法恢复。保留 Prisma 默认的 `Restrict`，逼前端在删除分类/账户前先引导用户处理关联的交易记录（改分类、转移账户或先删交易），这是更安全的默认行为。
+- 没有给 `RecurringTransaction → Transaction` 加 Cascade：这两者本来就是可选关系（`recurringId` 可空），默认走 `SetNull`——删除一条周期规则时，已经生成的交易记录应该保留，只是不再关联那条规则，这本来就是正确行为，不需要改。
+
+---
+
+## 2026-09-09 升级到 Prisma 7 + 后端整体改用 ESM
+
+**做了什么**
+
+- `prisma`、`@prisma/client` 从 5.22.0 升级到 7.10.0（跳过 6.x），新增 `@prisma/adapter-pg` + `pg` 作为运行时连接驱动
+- 新增 `backend/prisma.config.ts`：CLI（`migrate`/`generate`/`studio`）用它读取 `DATABASE_URL`，取代原来写在 `schema.prisma` 里的 `datasource.url`
+- `schema.prisma` 的 `datasource` 块只保留 `provider = "postgresql"`，不再写连接串
+- `src/config/prisma.js` 改用 `@prisma/adapter-pg` 的 `PrismaPg` 适配器实例化 `PrismaClient({ adapter })`，运行时连接串从这里传入，跟 CLI 那份配置分开管
+- `backend/package.json` 加 `"type": "module"`，全部约 20 个源码文件（`app.js`、所有 `routes/controllers/services/middleware/config/utils`）从 CommonJS（`require`/`module.exports`）改写成 ESM（`import`/`export`），所有相对路径 import 补上显式 `.js` 后缀
+- 用真实 Neon 数据库重新跑了一遍注册/登录/查用户/建账户的冒烟测试，并且顺便验证了上一条 Cascade Delete 记录：直接 `prisma.user.delete()` 不用再手动先删子表，账户记录被自动级联删除，证明数据库层面的约束改动确实生效
+
+**为什么这样设计**
+
+- 这次升级的直接触发点：IDE 里 Prisma 插件提示 `schema.prisma` 里 `datasource.url` "no longer supported"——这是 Prisma 7 的强制要求，不是可选项，所以决定索性升到 7 而不是留在 5.x 硬压掉这条警告。
+- 生成器 provider 选了 `prisma-client-js`（旧的、但 Prisma 7 里依然可用），没有换成新的 `prisma-client` provider：新 provider 默认输出 TypeScript 源码，即便设了 `generatedFileExtension = "js"`，实测生成出来的 `.js` 文件里仍然混着 `export type X = ...` 这类 TS-only 语法，Node 直接跑会报语法错误——这是 7.10.0 这个版本这个功能还不成熟的坑，踩过之后放弃，改回成熟稳定、纯 JS 输出的旧 provider。
+- ESM 迁移虽然工作量比预期大很多（原本以为只是换个配置文件，实际是 Prisma 7 要求 Client 端必须走 driver adapter，而 adapter 生态默认假设 ESM 环境），但既然要升级到 7，与其让项目同时存在"CLI 用新配置、Client 端却因为留在 CommonJS 而各种手动兼容"的别扭状态，不如一次性改干净，后端代码风格前后统一。
+
+**放弃的替代方案**
+
+- 没有用 `prisma@latest`（npm dist-tag 实际指向 `8.0.0-rc.13`，是个还没转正的 release candidate）——特意锁定 `prisma`、`@prisma/client`、`@prisma/adapter-pg` 都用 `7.10.0` 精确版本，避免 CLI 和 Client 版本不一致，也避免用还在候选阶段、可能有更多坑的大版本。
+- 没有为了用新 `prisma-client` generator 而给项目加一层 TypeScript 构建流程（tsx/ts-node）：项目本来就是纯 JS 技术栈，为了赶新 generator 的时髦去引入编译步骤，成本和收益不成比例，等这个 generator 在未来版本稳定输出纯 JS 后再考虑切换。

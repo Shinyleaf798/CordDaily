@@ -1,1 +1,24 @@
 .claude/settings.local.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Env files
+.env
+.env.local
+
+# Prisma
+backend/prisma/migrations/dev.db
+
+# Expo / React Native
+mobile/.expo/
+mobile/node_modules/
+
+# Next.js
+web/.next/
+web/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

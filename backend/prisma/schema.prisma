@@ -1,0 +1,168 @@
+// 完整字段设计见 docs/PROJECT-PLAN.md 第2节，改结构前先改那份文档
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 连接串不再放这里，见 backend/prisma.config.ts（CLI）和 src/config/prisma.js（运行时 adapter）
+datasource db {
+  provider = "postgresql"
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum RecurringFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum AccountType {
+  CASH
+  BANK
+  EWALLET
+  CREDIT_CARD
+  OTHER
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  baseCurrency String   @default("MYR")
+  createdAt    DateTime @default(now())
+
+  categories            Category[]
+  transactions          Transaction[]
+  budgets               Budget[]
+  recurringTransactions RecurringTransaction[]
+  accounts              Account[]
+  transfers             Transfer[]
+}
+
+model Category {
+  id     String          @id @default(uuid())
+  name   String
+  icon   String?
+  type   TransactionType
+  userId String
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   Category?  @relation("SubCategory", fields: [parentId], references: [id])
+  children Category[] @relation("SubCategory")
+
+  transactions          Transaction[]
+  budgets               Budget[]
+  recurringTransactions RecurringTransaction[]
+}
+
+model Account {
+  id             String      @id @default(uuid())
+  name           String
+  type           AccountType
+  currency       String      @default("MYR")
+  openingBalance Decimal     @default(0)
+  icon           String?
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now())
+
+  transactions          Transaction[]
+  recurringTransactions RecurringTransaction[]
+  transfersOut          Transfer[]              @relation("FromAccount")
+  transfersIn           Transfer[]              @relation("ToAccount")
+}
+
+model Transaction {
+  id               String          @id // 客户端生成的UUID，不用 @default(uuid())
+  title            String
+  remarks          String?
+  amount           Decimal
+  currency         String          @default("MYR")
+  exchangeRate     Decimal         @default(1)
+  amountInBase     Decimal
+  type             TransactionType
+  date             DateTime
+  tags             String[]        @default([])
+  isReimbursable   Boolean         @default(false)
+  excludeFromStats Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recurringId String?
+  recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id])
+
+  images TransactionImage[]
+}
+
+model TransactionImage {
+  id            String      @id @default(uuid())
+  url           String // Cloudinary 图片地址
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+}
+
+model Budget {
+  id         String   @id @default(uuid())
+  amount     Decimal // 以用户基准货币计算的月度预算上限
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, categoryId])
+}
+
+model RecurringTransaction {
+  id           String             @id
+  title        String
+  remarks      String?
+  amount       Decimal
+  currency     String             @default("MYR")
+  exchangeRate Decimal            @default(1)
+  type         TransactionType
+  frequency    RecurringFrequency
+  startDate    DateTime
+  nextRunDate  DateTime // 下次该生成记录的日期，App打开时检查
+  endDate      DateTime?
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  generatedTransactions Transaction[]
+}
+
+model Transfer {
+  id            String   @id
+  amount        Decimal
+  date          DateTime
+  note          String?
+  fromAccountId String
+  fromAccount   Account  @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccountId   String
+  toAccount     Account  @relation("ToAccount", fields: [toAccountId], references: [id])
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+}
