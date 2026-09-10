@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { useAuthStore } from '@/store/auth.store';
+import { authScreenTransition } from '@/components/auth-screen.styles';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -36,10 +37,11 @@ export default function RootLayout() {
         <Stack>
           <Stack.Protected guard={!!user}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="add" options={{ presentation: 'modal', title: 'Add' }} />
+            <Stack.Screen name="add" options={{ presentation: 'modal' }} />
           </Stack.Protected>
           <Stack.Protected guard={!user}>
-            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={authScreenTransition} />
+            <Stack.Screen name="register" options={authScreenTransition} />
           </Stack.Protected>
         </Stack>
       </ThemeProvider>

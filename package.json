@@ -1,0 +1,10 @@
+{
+  "name": "corddaily",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n backend,mobile -c blue,magenta \"npm run dev --prefix backend\" \"npm start --prefix mobile\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
