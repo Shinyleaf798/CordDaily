@@ -59,7 +59,7 @@ export default function LoginScreen() {
         />
 
         {error && (
-          <ThemedText type="small" themeColor="text" style={styles.error}>
+          <ThemedText type="small" style={[styles.error, { color: theme.expense }]}>
             {error}
           </ThemedText>
         )}
@@ -67,12 +67,16 @@ export default function LoginScreen() {
         <Pressable
           onPress={handleSubmit}
           disabled={isSubmitting || !email || !password}
-          style={[styles.button, { opacity: isSubmitting || !email || !password ? 0.5 : 1 }]}>
-          {isSubmitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Log in</ThemedText>}
+          style={[styles.button, { backgroundColor: theme.accent, opacity: isSubmitting || !email || !password ? 0.5 : 1 }]}>
+          {isSubmitting ? (
+            <ActivityIndicator color={theme.onAccent} />
+          ) : (
+            <ThemedText style={[styles.buttonText, { color: theme.onAccent }]}>Log in</ThemedText>
+          )}
         </Pressable>
 
         <Link href="/register" style={styles.switchModeButton}>
-          <ThemedText type="small" themeColor="text" style={styles.switchModeText}>
+          <ThemedText type="small" style={[styles.switchModeText, { color: theme.accent }]}>
             Don&apos;t have an account? Sign up
           </ThemedText>
         </Link>

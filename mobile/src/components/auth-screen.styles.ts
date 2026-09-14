@@ -29,24 +29,19 @@ export const authScreenStyles = StyleSheet.create({
   button: {
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#e8891b',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.two,
   },
   buttonText: {
-    color: '#ffffff',
     fontWeight: '600',
   },
   error: {
-    color: '#e5484d',
     textAlign: 'center',
   },
   switchModeButton: {
     marginTop: Spacing.two,
     textAlign: 'center',
   },
-  switchModeText: {
-    color: '#e8891b',
-  },
+  switchModeText: {},
 });

@@ -52,7 +52,7 @@ export function CustomTabBar({ state, navigation }: TabBarProps) {
         {leftRoutes.map(renderTab)}
 
         <Pressable onPress={() => router.push('/add')} style={[styles.fab, { backgroundColor: theme.accent }]}>
-          <Ionicons name="add" size={28} color="#ffffff" />
+          <Ionicons name="add" size={28} color={theme.onAccent} />
         </Pressable>
 
         {rightRoutes.map(renderTab)}

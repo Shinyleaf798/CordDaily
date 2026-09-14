@@ -2,9 +2,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 
+import { ThemeScheme } from '@/constants/theme';
 import { useAuthStore } from '@/store/auth.store';
+import { useThemeStore } from '@/store/theme.store';
 import { authScreenTransition } from '@/components/auth-screen.styles';
 
 SplashScreen.preventAutoHideAsync();
@@ -12,14 +13,20 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const isHydrated = useAuthStore((s) => s.isHydrated);
+  const isAuthHydrated = useAuthStore((s) => s.isHydrated);
   const user = useAuthStore((s) => s.user);
-  const hydrate = useAuthStore((s) => s.hydrate);
+  const hydrateAuth = useAuthStore((s) => s.hydrate);
+
+  const isThemeHydrated = useThemeStore((s) => s.isHydrated);
+  const themeName = useThemeStore((s) => s.themeName);
+  const hydrateTheme = useThemeStore((s) => s.hydrate);
+
+  const isHydrated = isAuthHydrated && isThemeHydrated;
 
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    hydrateAuth();
+    hydrateTheme();
+  }, [hydrateAuth, hydrateTheme]);
 
   useEffect(() => {
     if (isHydrated) {
@@ -33,7 +40,7 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={ThemeScheme[themeName] === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Protected guard={!!user}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

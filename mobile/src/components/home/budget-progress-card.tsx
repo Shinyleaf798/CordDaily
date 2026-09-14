@@ -57,7 +57,7 @@ export function BudgetProgressCard({ budgetTotal, spent, daysInMonth, daysElapse
       <View style={[styles.footerRow, { borderTopColor: theme.backgroundSelected }]}>
         <View style={styles.footerItem}>
           <View style={styles.footerItemLeft}>
-            <View style={[styles.dot, { backgroundColor: '#f5a95c' }]} />
+            <View style={[styles.dot, { backgroundColor: theme.accentSecondary }]} />
             <ThemedText type="small" themeColor="textSecondary">
               本月日均消费
             </ThemedText>

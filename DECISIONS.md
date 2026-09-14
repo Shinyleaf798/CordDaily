@@ -130,3 +130,30 @@
 
 - **没有让登录后的完整流程（tabs、资产页本地读写）在 Web 上跑通**：`expo-secure-store` 在 Web 平台缺失部分核心方法（`getValueWithKeyAsync`），这是 Expo 官方仓库里一个长期存在、反复被报告的已知问题，不是这个项目代码写错了。手机端从设计上就不打算支持 Web（CLAUDE.md 里电脑端是完全独立的 Next.js 项目），所以没有为了让 Web 测试通过而专门加一套"Web 环境下退化成 localStorage"的兼容代码——那是为一个根本不会上线的平台增加复杂度。已验证：TypeScript 严格检查通过、Metro 能完整打包整个路由树、登录页正确渲染、登录表单能正确把请求送到真实后端并拿到正确响应（失败点确认卡在 `SecureStore` 持久化这一步，说明网络层和表单逻辑都是对的）。真正端到端验证（登录后的 tabs、本地 SQLite 读写）需要用 Expo Go 在真机/模拟器上跑一遍，这是下一步要做的事。
 - **`app.json` 的 `web.output` 从模板默认的 `"static"` 改成了 `"single"`**：`"static"` 触发的 SSR 打包流程会跟 `expo-sqlite` 的 Web Worker 实现冲突（Metro 报 `Worker chunk not found`），`"single"`（纯 SPA 模式）没有这个问题。因为这个项目根本不需要 Web 的 SEO/服务端预渲染，`"single"` 反而更贴近实际需求，不是"为了绕过 bug 将就出来的配置"。
+
+---
+
+## 2026-09-14 手机端三套可切换主题（白色·彩色 / 黑金 / 黑紫）
+
+**做了什么**
+
+- 把 `src/constants/theme.ts` 的 `Colors` 从原来的 `light`/`dark` 两键改成 `whiteColorful`/`blackGold`/`blackPurple` 三键，每套色板补了 `accentSecondary`（卡片强调色，替代之前散落各处的 `#f5a95c` 硬编码）和 `onAccent`（叠在 accent 色块上的文字/图标颜色，黑金主题下是深色，其余两套是白色，保证对比度）
+- 新增 `ThemeName`/`ThemeNames`/`ThemeLabels`/`ThemeScheme` 几个辅助导出；`ThemeScheme` 单独存 light/dark，不混进色板对象里，避免污染 `ThemeColor`（`ThemedView`/`ThemedText` 的 `type`/`themeColor` prop 类型）
+- 新增 `src/store/theme.store.ts`（zustand，模式抄 `auth.store.ts`）：`themeName` + `hydrate()` + `setThemeName()`，持久化用 `expo-secure-store`（跟 token 共用同一套存储，不为一个非敏感字符串单独引入 `AsyncStorage` 依赖）
+- `src/hooks/use-theme.ts` 从"读系统 `useColorScheme()`"改成"读 `useThemeStore`"，返回值形状不变，绝大多数消费方（`ThemedView`/`ThemedText` 及各页面）不用改代码
+- `src/app/_layout.tsx` 在原有 `useAuthStore.hydrate()` 基础上并行 `hydrate()` 主题 store，两个都完成才隐藏启动屏；`expo-router` 的 `ThemeProvider`（决定系统导航栏外观）改成看 `ThemeScheme[themeName]` 而不是系统深色模式
+- 删掉了变得不再被引用的 `src/hooks/use-color-scheme.ts` 和 `.web.ts`（Expo 模板自带，改用手动主题后没人再依赖系统配色）
+- 扫了一遍全仓库残留的硬编码颜色，改用主题 token：`auth-screen.styles.ts`/`login.tsx`/`register.tsx`（按钮、错误文字、切换链接文字）、`home/month-summary-card.tsx`、`home/budget-progress-card.tsx`、`custom-tab-bar.tsx`（FAB 图标）、`add-transaction/amount-keypad.tsx`（保存按钮文字）、`(tabs)/assets.tsx`（保存按钮文字）、`(tabs)/settings.tsx`（退出登录的红色）
+- 在"我的"页加了一排主题选择 chip（`ThemeNames.map(...)`），点了立即生效并持久化，否则新主题系统做完也没有入口能切换
+
+**为什么这样设计**
+
+- 三套主题里有两套是深色、一套是浅色，没法用原来"跟随系统 light/dark 二选一"的模型表达，所以把"配色方案"从"系统深浅色"改成"用户手动选的主题名"，这是这次改动的核心，而不是简单加个新配色
+- 保持 `Colors[themeName]` 的字段形状跟原来的 `Colors.light`/`Colors.dark` 完全一致（只是多了 `accentSecondary`/`onAccent` 两个新字段），是为了让 `useTheme()` 的返回值形状不变——这样绝大多数只是读 `theme.text`/`theme.accent` 的组件完全不用碰，改动面收在 `theme.ts`/`theme.store.ts`/`use-theme.ts` 三个文件，外加少数几处本来就硬编码了颜色（没走主题系统）的组件
+- 新加 `onAccent` 而不是让每个用到"accent 色块上叠文字/图标"的地方各自猜一个白色/黑色：黑金主题的 accent 是偏亮的金色 `#d4af37`，白字对比度不够，需要深色文字；另外两套主题 accent 够深，白字没问题。写死在每个组件里会导致黑金主题一上线，所有"橙色按钮上叠白字"的地方全部返工
+- 主题偏好持久化选了复用 `expo-secure-store` 而不是引入 `@react-native-async-storage/async-storage`：这份数据不敏感，本可以用未加密的 AsyncStorage，但项目里还没有这个依赖，为了持久化一个字符串专门加一个新的存储库不划算；`auth.store.ts` 已经证明了 SecureStore 读写的模式是稳的，直接照抄复用
+
+**放弃的替代方案**
+
+- 没有保留"跟随系统深色模式"作为第四个选项：三套主题都是用户主动选的品牌化配色（尤其黑金/黑紫这种强设计感的主题），跟"自动跟随系统"这种偏工具类 App 的诉求不太搭；如果以后要加，可以在 `ThemeName` 里加一个 `system` 伪主题，在 `useTheme()` 里特判去读 `useColorScheme()`，不影响现在这套结构
+- 没有把 `assets.tsx` 里输入框的半透明灰色边框 (`#80808040`) 也收进主题 token：这是一个跟 accent/语义色无关的中性描边色，三套主题背景虽然不同但半透明灰在深色和浅色背景上都读得清，不属于这次"主题化"要解决的问题范围内

@@ -58,7 +58,7 @@ export default function RegisterScreen() {
         />
 
         {error && (
-          <ThemedText type="small" themeColor="text" style={styles.error}>
+          <ThemedText type="small" style={[styles.error, { color: theme.expense }]}>
             {error}
           </ThemedText>
         )}
@@ -66,12 +66,16 @@ export default function RegisterScreen() {
         <Pressable
           onPress={handleSubmit}
           disabled={isSubmitting || !email || password.length < 8}
-          style={[styles.button, { opacity: isSubmitting || !email || password.length < 8 ? 0.5 : 1 }]}>
-          {isSubmitting ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>Sign up</ThemedText>}
+          style={[styles.button, { backgroundColor: theme.accent, opacity: isSubmitting || !email || password.length < 8 ? 0.5 : 1 }]}>
+          {isSubmitting ? (
+            <ActivityIndicator color={theme.onAccent} />
+          ) : (
+            <ThemedText style={[styles.buttonText, { color: theme.onAccent }]}>Sign up</ThemedText>
+          )}
         </Pressable>
 
         <Link href="/login" style={styles.switchModeButton}>
-          <ThemedText type="small" themeColor="text" style={styles.switchModeText}>
+          <ThemedText type="small" style={[styles.switchModeText, { color: theme.accent }]}>
             Already have an account? Log in
           </ThemedText>
         </Link>

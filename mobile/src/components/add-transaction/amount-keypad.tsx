@@ -56,7 +56,7 @@ export function AmountKeypad({ value, onChange, onSave, saveDisabled }: AmountKe
           onPress={onSave}
           disabled={saveDisabled}
           style={[styles.saveButton, { backgroundColor: theme.accent, opacity: saveDisabled ? 0.5 : 1 }]}>
-          <ThemedText style={styles.saveLabel}>保存</ThemedText>
+          <ThemedText style={[styles.saveLabel, { color: theme.onAccent }]}>保存</ThemedText>
         </Pressable>
       </View>
     </View>
@@ -107,7 +107,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveLabel: {
-    color: '#ffffff',
     fontWeight: '700',
     fontSize: 16,
   },
