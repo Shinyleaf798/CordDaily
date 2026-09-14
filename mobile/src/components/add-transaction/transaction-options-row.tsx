@@ -49,21 +49,21 @@ export function TransactionOptionsRow({
       <View style={styles.iconRow}>
         <View style={styles.iconGroup}>
           <Pressable style={styles.iconButton} onPress={() => setIsTagInputOpen((v) => !v)}>
-            <Ionicons name={tags.length > 0 ? 'pricetag' : 'pricetag-outline'} size={20} color={tags.length > 0 ? theme.accent : theme.textSecondary} />
+            <Ionicons name={tags.length > 0 ? 'pricetag' : 'pricetag-outline'} size={20} color={tags.length > 0 ? theme.cardHighlight : theme.textSecondary} />
             <ThemedText type="small" themeColor={tags.length > 0 ? 'text' : 'textSecondary'}>
               标签{tags.length > 0 ? ` (${tags.length})` : ''}
             </ThemedText>
           </Pressable>
 
           <Pressable style={styles.iconButton} onPress={() => onReimbursableChange(!isReimbursable)}>
-            <Ionicons name={isReimbursable ? 'cash' : 'cash-outline'} size={20} color={isReimbursable ? theme.accent : theme.textSecondary} />
+            <Ionicons name={isReimbursable ? 'cash' : 'cash-outline'} size={20} color={isReimbursable ? theme.cardHighlight : theme.textSecondary} />
             <ThemedText type="small" themeColor={isReimbursable ? 'text' : 'textSecondary'}>
               报销
             </ThemedText>
           </Pressable>
 
           <Pressable style={styles.iconButton} onPress={() => onExcludeFromStatsChange(!excludeFromStats)}>
-            <Ionicons name={excludeFromStats ? 'eye-off' : 'eye-off-outline'} size={20} color={excludeFromStats ? theme.accent : theme.textSecondary} />
+            <Ionicons name={excludeFromStats ? 'eye-off' : 'eye-off-outline'} size={20} color={excludeFromStats ? theme.cardHighlight : theme.textSecondary} />
             <ThemedText type="small" themeColor={excludeFromStats ? 'text' : 'textSecondary'}>
               不计入统计
             </ThemedText>

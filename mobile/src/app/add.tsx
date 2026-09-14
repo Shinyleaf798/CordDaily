@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
   },
   categoryCard: {
-    borderRadius: 16,
+    borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: Spacing.half,
     paddingTop: Spacing.two,

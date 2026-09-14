@@ -9,7 +9,6 @@ import { TransactionDateGroupHeader } from '@/components/transaction-date-group-
 import { TransactionListItem, type TransactionListItemData } from '@/components/transaction-list-item';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useAuthStore } from '@/store/auth.store';
 
 // TODO(dummy data): 接 db/transactions.ts + db/budgets.ts 之后，把下面这几个常量换成真实 hooks（useMonthSummary / useBudgetStatus / useRecentTransactions）
 const today = new Date();
@@ -63,14 +62,13 @@ function groupByDate(transactions: MockTransaction[]) {
 // 首页：月度收支总览 + 预算进度 + 近7天账单（按天分组，每组一个日期标题 + 当天支出小计）
 export default function HomeScreen() {
   const theme = useTheme();
-  const user = useAuthStore((s) => s.user);
   const dateGroups = groupByDate(RECENT_TRANSACTIONS);
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={styles.content}>
         <ThemedText type="title" style={styles.greeting}>
-          Hi{user?.name ? `, ${user.name}` : ''}
+          首页
         </ThemedText>
 
         <MonthSummaryCard {...MONTH_SUMMARY} />
@@ -88,15 +86,23 @@ export default function HomeScreen() {
           <ThemedView type="backgroundElement" style={styles.listCard}>
             {dateGroups.map((group, groupIndex) => {
               const dailyExpense = group.items.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+              const dailyIncome = group.items.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
+              const isLastGroup = groupIndex === dateGroups.length - 1;
               return (
-                <View key={group.date.toISOString()}>
-                  <TransactionDateGroupHeader label={formatDateGroupLabel(group.date)} totalExpense={dailyExpense} />
+                <View
+                  key={group.date.toISOString()}
+                  style={!isLastGroup && { borderBottomColor: theme.textSecondary, borderBottomWidth: StyleSheet.hairlineWidth }}>
+                  <TransactionDateGroupHeader
+                    label={formatDateGroupLabel(group.date)}
+                    totalExpense={dailyExpense}
+                    totalIncome={dailyIncome}
+                  />
                   {group.items.map((item, itemIndex) => {
-                    const isLast = groupIndex === dateGroups.length - 1 && itemIndex === group.items.length - 1;
+                    const isLast = itemIndex === group.items.length - 1;
                     return (
                       <View
                         key={item.id}
-                        style={[styles.itemWrap, !isLast && { borderBottomColor: theme.backgroundSelected, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+                        style={[styles.itemWrap, !isLast && { borderBottomColor: theme.textSecondary, borderBottomWidth: StyleSheet.hairlineWidth }]}>
                         <TransactionListItem {...item} />
                       </View>
                     );
@@ -129,9 +135,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.one,
   },
   listCard: {
-    borderRadius: 16,
+    borderRadius: 8,
     overflow: 'hidden',
-    paddingVertical: Spacing.one,
   },
   itemWrap: {
     paddingHorizontal: Spacing.three,

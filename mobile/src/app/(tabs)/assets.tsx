@@ -74,8 +74,8 @@ export default function AssetsScreen() {
               keyboardType="numeric"
               style={[styles.input, { color: theme.text }]}
             />
-            <Pressable onPress={handleCreate} disabled={!name.trim()} style={[styles.saveButton, { backgroundColor: theme.accent }]}>
-              <ThemedText style={{ color: theme.onAccent, fontWeight: '600' }}>保存</ThemedText>
+            <Pressable onPress={handleCreate} disabled={!name.trim()} style={[styles.saveButton, { backgroundColor: theme.cardHighlight }]}>
+              <ThemedText style={{ color: theme.onCardHighlight, fontWeight: '600' }}>保存</ThemedText>
             </Pressable>
           </ThemedView>
         )}

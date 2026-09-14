@@ -4,6 +4,8 @@ import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ThemedText } from '@/components/themed-text';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // 直接从 expo-router 的 Tabs 组件推导 tabBar 参数类型，而不是从 @react-navigation/bottom-tabs 单独 import——
@@ -20,6 +22,13 @@ const ICONS: Record<string, { filled: IoniconName; outline: IoniconName }> = {
   settings: { filled: 'person', outline: 'person-outline' },
 };
 
+const LABELS: Record<string, string> = {
+  index: '首页',
+  calendar: '日历',
+  assets: '资产',
+  settings: '我的',
+};
+
 // 5 个底部按钮：4 个正常 tab + 中间凸起的圆形＋号按钮（跳去 /add 弹窗，不是真正的 tab）
 // 见 docs/PROJECT-PLAN.md 第6节手机端页面结构
 export function CustomTabBar({ state, navigation }: TabBarProps) {
@@ -31,6 +40,8 @@ export function CustomTabBar({ state, navigation }: TabBarProps) {
   const renderTab = (route: (typeof routes)[number], index: number) => {
     const isFocused = state.index === routes.indexOf(route);
     const icons = ICONS[route.name] ?? { filled: 'ellipse', outline: 'ellipse-outline' };
+    const label = LABELS[route.name] ?? route.name;
+    const color = isFocused ? theme.text : theme.textSecondary;
 
     const onPress = () => {
       const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -41,18 +52,19 @@ export function CustomTabBar({ state, navigation }: TabBarProps) {
 
     return (
       <Pressable key={route.key} onPress={onPress} style={styles.tabButton}>
-        <Ionicons name={isFocused ? icons.filled : icons.outline} size={24} color={isFocused ? theme.text : theme.textSecondary} />
+        <Ionicons name={isFocused ? icons.filled : icons.outline} size={24} color={color} />
+        <ThemedText style={[styles.tabLabel, { color }]}>{label}</ThemedText>
       </Pressable>
     );
   };
 
   return (
-    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: theme.backgroundElement, borderTopColor: theme.backgroundSelected }]}>
       <View style={styles.row}>
         {leftRoutes.map(renderTab)}
 
-        <Pressable onPress={() => router.push('/add')} style={[styles.fab, { backgroundColor: theme.accent }]}>
-          <Ionicons name="add" size={28} color={theme.onAccent} />
+        <Pressable onPress={() => router.push('/add')} style={[styles.fab, { backgroundColor: theme.cardHighlight }]}>
+          <Ionicons name="add" size={28} color={theme.onCardHighlight} />
         </Pressable>
 
         {rightRoutes.map(renderTab)}
@@ -69,13 +81,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    height: 56,
+    height: 64,
     paddingHorizontal: 8,
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: Spacing.half,
   },
   fab: {
     width: 52,

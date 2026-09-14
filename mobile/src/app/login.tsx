@@ -67,16 +67,16 @@ export default function LoginScreen() {
         <Pressable
           onPress={handleSubmit}
           disabled={isSubmitting || !email || !password}
-          style={[styles.button, { backgroundColor: theme.accent, opacity: isSubmitting || !email || !password ? 0.5 : 1 }]}>
+          style={[styles.button, { backgroundColor: theme.cardHighlight, opacity: isSubmitting || !email || !password ? 0.5 : 1 }]}>
           {isSubmitting ? (
-            <ActivityIndicator color={theme.onAccent} />
+            <ActivityIndicator color={theme.onCardHighlight} />
           ) : (
-            <ThemedText style={[styles.buttonText, { color: theme.onAccent }]}>Log in</ThemedText>
+            <ThemedText style={[styles.buttonText, { color: theme.onCardHighlight }]}>Log in</ThemedText>
           )}
         </Pressable>
 
         <Link href="/register" style={styles.switchModeButton}>
-          <ThemedText type="small" style={[styles.switchModeText, { color: theme.accent }]}>
+          <ThemedText type="small" style={[styles.switchModeText, { color: theme.cardHighlight }]}>
             Don&apos;t have an account? Sign up
           </ThemedText>
         </Link>

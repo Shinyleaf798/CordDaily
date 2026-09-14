@@ -23,40 +23,50 @@ export const ThemeScheme: Record<ThemeName, 'light' | 'dark'> = {
   blackPurple: 'dark',
 };
 
+// 各 token 的用途（三套主题里语义一致，只是取值不同）：
+// - text / textSecondary：主/次文字颜色
+// - background：页面底色
+// - backgroundElement：卡片、输入框等"表面"背景色，比 background 深一级，靠色差而不是描边区分层次
+// - backgroundSelected：再深一级，用于选中态背景（如已选 chip）和分隔线/描边颜色（borderColor 系列）
+// - cardHighlight：主题强调色（按钮、进度条、色条等），三套主题唯一真正不同的颜色
+// - onCardHighlight：铺在 cardHighlight 上的文字/图标颜色，保证对比度
+// - income / expense：收入/支出的语义色，跟主题强调色无关，三套主题基本复用同一对红绿
+// - cardBorder：目前只给 budget-progress-card 用，跟 backgroundElement 拆开是为了单独调这张卡片的底色，
+//   不影响输入框、tab bar、月度总览卡等其他共用 backgroundElement 的地方
 export const Colors = {
   whiteColorful: {
     text: '#000000',
     textSecondary: '#60646C',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
+    background: '#F0F0F3',
+    backgroundElement: '#ffffff',
     backgroundSelected: '#E0E1E6',
-    accent: '#e8891b',
-    accentSecondary: '#f5a95c',
-    onAccent: '#ffffff',
+    cardBorder: '#ffffff',
+    cardHighlight: '#f5a95c',
+    onCardHighlight: '#ffffff',
     income: '#12b76a',
     expense: '#e5484d',
   },
   blackGold: {
-    text: '#f5f0e6',
-    textSecondary: '#a89a78',
+    text: '#ffffff',
+    textSecondary: '#a3a3a3',
     background: '#000000',
-    backgroundElement: '#1a1712',
-    backgroundSelected: '#2b2415',
-    accent: '#d4af37',
-    accentSecondary: '#f0cf6b',
-    onAccent: '#1a1712',
+    backgroundElement: '#1c1c1c',
+    backgroundSelected: '#2c2c2c',
+    cardBorder: '#1c1c1c',
+    cardHighlight: '#d4af37',
+    onCardHighlight: '#1a1a1a',
     income: '#32d583',
     expense: '#f97066',
   },
   blackPurple: {
-    text: '#f4f0fa',
-    textSecondary: '#a898c4',
+    text: '#ffffff',
+    textSecondary: '#a3a3a3',
     background: '#000000',
-    backgroundElement: '#180f24',
-    backgroundSelected: '#2a1d40',
-    accent: '#a855f7',
-    accentSecondary: '#c9a6ff',
-    onAccent: '#ffffff',
+    backgroundElement: '#1c1c1c',
+    backgroundSelected: '#2c2c2c',
+    cardBorder: '#1c1c1c',
+    cardHighlight: '#a855f7',
+    onCardHighlight: '#ffffff',
     income: '#32d583',
     expense: '#f97066',
   },

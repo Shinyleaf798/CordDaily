@@ -16,17 +16,17 @@ export function MonthSummaryCard({ month, expense, income, balance }: MonthSumma
   const theme = useTheme();
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.accentSecondary }]}>
-      <ThemedText type="small" style={[styles.month, { color: theme.onAccent }]}>
+    <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+      <ThemedText type="small" themeColor="textSecondary">
         {month} · 支出
       </ThemedText>
-      <ThemedText style={[styles.expense, { color: theme.onAccent }]}>RM{expense.toFixed(2)}</ThemedText>
+      <ThemedText style={styles.expense}>RM{expense.toFixed(2)}</ThemedText>
 
       <View style={styles.footerRow}>
-        <ThemedText type="small" style={[styles.footerText, { color: theme.onAccent }]}>
+        <ThemedText type="small" themeColor="textSecondary">
           收入 RM{income.toFixed(2)}
         </ThemedText>
-        <ThemedText type="small" style={[styles.footerText, { color: theme.onAccent }]}>
+        <ThemedText type="small" themeColor="textSecondary">
           结余 {balance < 0 ? '-' : ''}RM{Math.abs(balance).toFixed(2)}
         </ThemedText>
       </View>
@@ -38,9 +38,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 20,
     padding: Spacing.four,
-  },
-  month: {
-    opacity: 0.85,
+    
   },
   expense: {
     fontSize: 36,
@@ -52,8 +50,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.four,
     marginTop: Spacing.three,
-  },
-  footerText: {
-    opacity: 0.9,
   },
 });

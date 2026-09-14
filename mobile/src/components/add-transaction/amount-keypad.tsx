@@ -55,8 +55,8 @@ export function AmountKeypad({ value, onChange, onSave, saveDisabled }: AmountKe
         <Pressable
           onPress={onSave}
           disabled={saveDisabled}
-          style={[styles.saveButton, { backgroundColor: theme.accent, opacity: saveDisabled ? 0.5 : 1 }]}>
-          <ThemedText style={[styles.saveLabel, { color: theme.onAccent }]}>保存</ThemedText>
+          style={[styles.saveButton, { backgroundColor: theme.cardHighlight, opacity: saveDisabled ? 0.5 : 1 }]}>
+          <ThemedText style={[styles.saveLabel, { color: theme.onCardHighlight }]}>保存</ThemedText>
         </Pressable>
       </View>
     </View>

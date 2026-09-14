@@ -29,11 +29,11 @@ export function CategoryGrid({ categories, selectedId, onSelect }: CategoryGridP
             <View
               style={[
                 styles.iconWrap,
-                { backgroundColor: theme.background, borderColor: isSelected ? theme.accent : theme.backgroundSelected },
+                { backgroundColor: theme.background, borderColor: isSelected ? theme.cardHighlight : theme.backgroundSelected },
               ]}>
               <ThemedText style={styles.iconText}>{category.icon}</ThemedText>
             </View>
-            <ThemedText type="small" themeColor={isSelected ? undefined : 'textSecondary'} style={isSelected ? { color: theme.accent } : undefined} numberOfLines={1}>
+            <ThemedText type="small" themeColor={isSelected ? undefined : 'textSecondary'} style={isSelected ? { color: theme.cardHighlight } : undefined} numberOfLines={1}>
               {category.name}
             </ThemedText>
           </Pressable>

@@ -24,7 +24,7 @@ export function BudgetProgressCard({ budgetTotal, spent, daysInMonth, daysElapse
   const dailyRemaining = remaining / remainingDays;
 
   return (
-    <ThemedView type="backgroundElement" style={styles.card}>
+    <ThemedView type="cardBorder" style={styles.card}>
       <View style={styles.headerRow}>
         <ThemedText type="default">本月预算</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
@@ -54,10 +54,10 @@ export function BudgetProgressCard({ budgetTotal, spent, daysInMonth, daysElapse
         </View>
       </View>
 
-      <View style={[styles.footerRow, { borderTopColor: theme.backgroundSelected }]}>
+      <View style={[styles.footerRow, { backgroundColor: theme.cardHighlight + '26', borderTopColor: theme.backgroundSelected }]}>
         <View style={styles.footerItem}>
           <View style={styles.footerItemLeft}>
-            <View style={[styles.dot, { backgroundColor: theme.accentSecondary }]} />
+            <View style={[styles.dot, { backgroundColor: '#12b76a' }]} />
             <ThemedText type="small" themeColor="textSecondary">
               本月日均消费
             </ThemedText>
@@ -66,7 +66,7 @@ export function BudgetProgressCard({ budgetTotal, spent, daysInMonth, daysElapse
         </View>
         <View style={styles.footerItem}>
           <View style={styles.footerItemLeft}>
-            <View style={[styles.dot, { backgroundColor: theme.accent }]} />
+            <View style={[styles.dot, { backgroundColor: '#e5484d' }]} />
             <ThemedText type="small" themeColor="textSecondary">
               剩余每日可消费
             </ThemedText>
@@ -101,7 +101,13 @@ const styles = StyleSheet.create({
   footerRow: {
     gap: Spacing.two,
     paddingTop: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.four,
+    marginHorizontal: -Spacing.four,
+    marginBottom: -Spacing.four,
     borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
   footerItem: {
     flexDirection: 'row',

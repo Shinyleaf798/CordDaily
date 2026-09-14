@@ -41,7 +41,7 @@ export default function SettingsScreen() {
                   styles.themeChip,
                   {
                     backgroundColor: theme.backgroundElement,
-                    borderColor: name === themeName ? theme.accent : 'transparent',
+                    borderColor: name === themeName ? theme.cardHighlight : 'transparent',
                   },
                 ]}>
                 <ThemedText type="small">{ThemeLabels[name]}</ThemedText>
