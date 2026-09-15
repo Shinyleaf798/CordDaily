@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { SetBudgetLink } from '@/components/home/set-budget-link';
 import { TransactionListItem } from '@/components/transaction/transaction-list-item';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { ThemedText } from '@/components/ui/themed-text';
@@ -52,9 +53,15 @@ export function RingLayout({ data }: { data: HomeViewData }) {
           </View>
         </CircularProgress>
 
-        <ThemedText themeColor="textSecondary" style={styles.ringFooter}>
-          {data.hasBudget ? `预算 ${formatCurrency(data.budgetTotal)}` : '还没设置预算'}
-        </ThemedText>
+        {data.hasBudget ? (
+          <ThemedText themeColor="textSecondary" style={styles.ringFooter}>
+            预算 {formatCurrency(data.budgetTotal)}
+          </ThemedText>
+        ) : (
+          <View style={styles.ringFooterLink}>
+            <SetBudgetLink />
+          </View>
+        )}
       </View>
 
       <View style={[styles.pill, { backgroundColor: theme.backgroundElement }]}>
@@ -193,6 +200,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
+  },
+  // 换成"去设预算"的入口时外面包的是 View，不能共用上面那份（里面是文字样式）
+  ringFooterLink: {
+    marginTop: 10,
   },
   pill: {
     flexDirection: 'row',

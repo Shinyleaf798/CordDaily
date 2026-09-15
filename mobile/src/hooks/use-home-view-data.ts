@@ -88,8 +88,8 @@ export function buildHomeViewData(input: {
   const daysElapsed = now.getDate();
 
   const budgetTotal = budgetStatus?.budgetTotal ?? 0;
-  // 预算口径的"已消费"取各分类预算对应的花费之和，跟月度总支出不是同一个数：
-  // 没设预算的分类不该算进预算消耗，否则永远显示超支
+  // 预算口径的"已消费"= 本月全部支出（跳过 excludeFromStats）。
+  // 跟 summary.expense 的区别只在于它来自 budgetStatus 这个查询，口径是一致的
   const spent = budgetStatus?.spent ?? 0;
   const hasBudget = budgetTotal > 0;
   const remaining = budgetTotal - spent;

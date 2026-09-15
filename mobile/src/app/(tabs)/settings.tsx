@@ -39,7 +39,7 @@ export default function SettingsScreen() {
             账本
           </ThemedText>
           {[
-            { href: '/budgets' as const, icon: 'pie-chart-outline' as const, label: '预算', hint: '按分类设额度，超支在本地实时计算' },
+            { href: '/set-budget' as const, icon: 'cash-outline' as const, label: '预算', hint: '设本月总预算，超支在本地实时计算' },
             { href: '/tags' as const, icon: 'pricetags-outline' as const, label: '标签汇总', hint: '按旅行、装修这类跨分类的事件看花销' },
             { href: '/reimbursements' as const, icon: 'cash-outline' as const, label: '报销', hint: '看现在垫了多少钱还没收回来' },
           ].map((entry) => (

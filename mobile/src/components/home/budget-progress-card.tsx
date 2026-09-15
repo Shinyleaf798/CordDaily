@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
+import { SetBudgetLink } from '@/components/home/set-budget-link';
 import { PaceBar } from '@/components/ui/pace-bar';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
@@ -79,9 +80,7 @@ export function BudgetProgressCard({
             </View>
           </>
         ) : (
-          <ThemedText themeColor="textSecondary" style={styles.paceText}>
-            还没设置预算
-          </ThemedText>
+          <SetBudgetLink />
         )}
       </View>
 

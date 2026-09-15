@@ -57,7 +57,7 @@ export default function RootLayout() {
           <Stack.Protected guard={!!user}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="add" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="budgets" />
+            <Stack.Screen name="set-budget" options={{ presentation: 'modal' }} />
             <Stack.Screen name="tags" />
             <Stack.Screen name="reimbursements" />
           </Stack.Protected>

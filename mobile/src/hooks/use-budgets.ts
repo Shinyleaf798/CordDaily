@@ -1,10 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getBudgetStatus, listBudgets, upsertBudget } from '@/db/budgets';
-
-export function useBudgets() {
-  return useQuery({ queryKey: ['budgets'], queryFn: listBudgets });
-}
+import { getBudgetStatus, getOverallBudget, setOverallBudget } from '@/db/budgets';
 
 export function useBudgetStatus(date?: Date) {
   const monthKey = (date ?? new Date()).toISOString().slice(0, 7);
@@ -14,12 +10,17 @@ export function useBudgetStatus(date?: Date) {
   });
 }
 
-export function useUpsertBudget() {
+export function useOverallBudget() {
+  return useQuery({ queryKey: ['overallBudget'], queryFn: getOverallBudget });
+}
+
+// 预算一改，首页的进度、日均消费、剩余每日可消费全都要跟着变，所以连 budgetStatus 一起失效
+export function useSetOverallBudget() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ categoryId, amount }: { categoryId: string; amount: number }) => upsertBudget(categoryId, amount),
+    mutationFn: (amount: number) => setOverallBudget(amount),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] });
+      queryClient.invalidateQueries({ queryKey: ['overallBudget'] });
       queryClient.invalidateQueries({ queryKey: ['budgetStatus'] });
     },
   });

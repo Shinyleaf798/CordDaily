@@ -1,52 +1,47 @@
 import { getDb } from './client';
 
-// 预算超支判断在本地算，不依赖服务器（CLAUDE.md 核心原则#4）：
-// 就算很久没同步，手机上看到的预算提醒依然是准的。
-// 算法跟后端 budget.service.js 保持一致——按分类对当月 EXPENSE 的 amountInBase 求和，
-// 且同样跳过 excludeFromStats 的交易（垫付的钱不该算进预算消耗）。
-
-export type Budget = {
-  categoryId: string;
-  amount: number;
-  synced: number;
-};
-
-export type BudgetStatusItem = {
-  categoryId: string;
-  categoryName: string;
-  categoryIcon: string | null;
-  budget: number;
-  spent: number;
-  remaining: number;
-  /** 已用百分比，预算为 0 时返回 0 而不是 Infinity */
-  percentage: number;
-  isOverspent: boolean;
-};
+// 预算只有一种：一个月一个总数，用户在首页弹窗里直接填。
+//
+// 「已消费」= 本月全部支出，跳过 excludeFromStats 的交易（垫付的钱之后会回来，不该占用额度）。
+// 超支判断仍然在本地算，不依赖服务器实时数据（CLAUDE.md 原则#4）——就算很久没同步，
+// 手机上看到的预算提醒依然是准的。
+//
+// 早先做过"按分类设额度、总额靠加总"的版本，已经整个去掉（见 DECISIONS.md）。
+// 本地 budgets 表保留着但不再读写，免得删表连带删掉用户已经填过的数据。
 
 export type BudgetStatus = {
+  /** 用户填的整体月度预算；没填过是 0 */
   budgetTotal: number;
+  /** 本月全部支出（已跳过 excludeFromStats） */
   spent: number;
-  items: BudgetStatusItem[];
 };
 
-export async function listBudgets(): Promise<Budget[]> {
+const OVERALL_BUDGET_KEY = 'overallMonthlyBudget';
+
+// 预算存在本地 app_settings 里，不进服务器数据库：它是一个偏好值，不是账目数据。
+// 这张表 v1 就建好了，是通用 key-value，值统一按字符串存。
+export async function getOverallBudget(): Promise<number | null> {
   const db = await getDb();
-  return db.getAllAsync<Budget>('SELECT categoryId, amount, synced FROM budgets');
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [
+    OVERALL_BUDGET_KEY,
+  ]);
+  if (!row) return null;
+  const amount = Number(row.value);
+  // 存进去的是脏值时当作没设过，而不是让首页拿到 NaN 去算百分比
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
-// categoryId 是主键，所以"给某个分类设预算"天然就是 upsert 语义，不需要额外的 id
-// （跟后端 POST /budgets 的设计一致，见 DECISIONS.md 2026-09-09 那条）
-export async function upsertBudget(categoryId: string, amount: number): Promise<void> {
+// 填 0 或负数等于取消预算，直接删行，不留一条 value = '0' 的噪音记录
+export async function setOverallBudget(amount: number): Promise<void> {
   const db = await getDb();
-  if (amount <= 0) {
-    // 设成 0 等于取消这个分类的预算，直接删行，避免列表里留一堆 0 额度的噪音
-    await db.runAsync('DELETE FROM budgets WHERE categoryId = ?', [categoryId]);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    await db.runAsync('DELETE FROM app_settings WHERE key = ?', [OVERALL_BUDGET_KEY]);
     return;
   }
   await db.runAsync(
-    `INSERT INTO budgets (categoryId, amount, synced) VALUES (?, ?, 0)
-     ON CONFLICT(categoryId) DO UPDATE SET amount = excluded.amount, synced = 0`,
-    [categoryId, amount],
+    `INSERT INTO app_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [OVERALL_BUDGET_KEY, String(amount)],
   );
 }
 
@@ -56,55 +51,19 @@ function monthRange(date = new Date()) {
   return [start.toISOString(), end.toISOString()] as const;
 }
 
-// 一次查询同时拿到"有预算的分类"和"当月已花"，LEFT JOIN 的方向是 budgets → transactions，
-// 所以设了预算但这个月还没花钱的分类也会出现（spent = 0），不会从列表里消失
 export async function getBudgetStatus(date = new Date()): Promise<BudgetStatus> {
   const db = await getDb();
   const [start, end] = monthRange(date);
 
-  const rows = await db.getAllAsync<{
-    categoryId: string;
-    categoryName: string | null;
-    categoryIcon: string | null;
-    budget: number;
-    spent: number | null;
-  }>(
-    `SELECT b.categoryId          AS categoryId,
-            c.name                AS categoryName,
-            c.icon                AS categoryIcon,
-            b.amount              AS budget,
-            SUM(t.amountInBase)   AS spent
-     FROM budgets b
-     LEFT JOIN categories c ON c.id = b.categoryId
-     LEFT JOIN transactions t
-            ON t.categoryId = b.categoryId
-           AND t.type = 'EXPENSE'
-           AND t.excludeFromStats = 0
-           AND t.date >= ? AND t.date < ?
-     GROUP BY b.categoryId
-     ORDER BY b.amount DESC`,
+  const row = await db.getFirstAsync<{ total: number | null }>(
+    `SELECT SUM(amountInBase) AS total
+     FROM transactions
+     WHERE type = 'EXPENSE' AND excludeFromStats = 0 AND date >= ? AND date < ?`,
     [start, end],
   );
 
-  const items: BudgetStatusItem[] = rows.map((row) => {
-    const spent = row.spent ?? 0;
-    return {
-      categoryId: row.categoryId,
-      categoryName: row.categoryName ?? '未分类',
-      categoryIcon: row.categoryIcon,
-      budget: row.budget,
-      spent,
-      remaining: row.budget - spent,
-      percentage: row.budget > 0 ? (spent / row.budget) * 100 : 0,
-      isOverspent: spent > row.budget,
-    };
-  });
-
   return {
-    // 总预算是各分类预算加总的衍生值，不单独存一个"总预算"字段——
-    // 存了就会出现"总数跟分项对不上"的经典不一致问题
-    budgetTotal: items.reduce((sum, item) => sum + item.budget, 0),
-    spent: items.reduce((sum, item) => sum + item.spent, 0),
-    items,
+    budgetTotal: (await getOverallBudget()) ?? 0,
+    spent: row?.total ?? 0,
   };
 }

@@ -56,7 +56,9 @@ export const MIGRATIONS: string[][] = [
     createdAt TEXT NOT NULL
   );`,
 
-  // categoryId 本身就是天然唯一键（一个分类只有一条预算），不单独生成 id
+  // 这张表在 v4 被删掉了（预算改成"一个月一个总数"，存在 app_settings 里）。
+  // 建表语句仍然留在 v1 不能拿掉：v1 是已发布版本，改它会让老设备的迁移路径跟新设备不一致——
+  // 新设备会 建表→删表，老设备是 建表(早就跑过)→删表，两条路径的终点必须一样。
   `CREATE TABLE IF NOT EXISTS budgets (
     categoryId TEXT PRIMARY KEY NOT NULL REFERENCES categories(id),
     amount REAL NOT NULL,
@@ -118,5 +120,11 @@ export const MIGRATIONS: string[][] = [
     // 首页按月查账单、报销清单按状态查，都吃这两个索引
     `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);`,
     `CREATE INDEX IF NOT EXISTS idx_transactions_reimbursable ON transactions(isReimbursable, reimbursedAt);`,
+  ],
+
+  // v4：删掉分类预算表。预算改成"一个月一个总数"，存在 app_settings 的
+  // overallMonthlyBudget 里（见 db/budgets.ts）。分类颗粒度太细，录入成本高于它带来的信息量。
+  [
+    `DROP TABLE IF EXISTS budgets;`,
   ],
 ];

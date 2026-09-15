@@ -10,7 +10,7 @@
 | 记账 | 新增 / 编辑 / 删除交易（主题、备注、金额、币种、汇率、分类、账户、日期时间、标签、图片） |
 | 分类 | 两级分类（父分类 + 子分类），新增 / 编辑 / 删除 |
 | 账户 | 多账户余额追踪（现金/银行卡/电子钱包/信用卡/其他），账户间转账 |
-| 预算 | 各分类月度预算上限，超支提醒，本地实时计算 |
+| 预算 | 整体月度预算：填一个总数，跟当月全部支出比；超支提醒，本地实时计算 |
 | 周期性交易 | 设置规则（频率/金额/分类/账户），本地自动补生成 |
 | 同步 | 本地 SQLite 存储，按周期（7天/1个月）自动同步或手动"立即同步"，单向推送 |
 | 统计（电脑端） | 月度收支趋势图、分类占比图、预算达成情况，均为只读 |
@@ -48,7 +48,6 @@ model User {
 
   categories             Category[]
   transactions           Transaction[]
-  budgets                Budget[]
   recurringTransactions  RecurringTransaction[]
   accounts               Account[]
   transfers              Transfer[]
@@ -67,7 +66,6 @@ model Category {
   children Category[] @relation("SubCategory")
 
   transactions           Transaction[]
-  budgets                Budget[]
   recurringTransactions  RecurringTransaction[]
 }
 
@@ -128,18 +126,6 @@ model TransactionImage {
   createdAt     DateTime    @default(now())
 }
 
-model Budget {
-  id         String   @id @default(uuid())
-  amount     Decimal          // 以用户基准货币计算的月度预算上限
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-  createdAt  DateTime @default(now())
-
-  @@unique([userId, categoryId])
-}
-
 model RecurringTransaction {
   id           String   @id
   title        String
@@ -184,7 +170,9 @@ model Transfer {
 
 - **`amountInBase` 在写入时就算好**：汇率由用户手动从 Wise 查到后输入，跟这笔交易强绑定，不是可以事后用"今天的汇率"重新计算的值；顺带也省了统计时每次都要转换汇率的开销。
 - **`id` 由客户端生成**：手机离线创建的记录，从诞生那一刻起 id 就确定，同步时用它做幂等去重，避免网络重试造成重复数据。
-- **分类是两级树状结构**：`parentId` 为空代表顶级分类，有值代表子分类。预算可以设在父分类或子分类任一层级，不强制颗粒度。
+- **分类是两级树状结构**：`parentId` 为空代表顶级分类，有值代表子分类。
+- **预算只有一个总数，不按分类设**：用户填「这个月打算花多少」，口径是「本月全部支出（跳过 `excludeFromStats`）vs 那个数」。曾经做过按分类设额度、总额靠加总的版本，用下来颗粒度太细、录入成本高于它带来的信息量，已整个去掉。这条不跟「账户余额是衍生值」冲突：余额是能从流水算出来的量，存了会不一致；预算是**用户直接给的输入**，本来就没有别的地方能算出来。
+- **预算存在本地 `app_settings(key, value)` 里**（key `overallMonthlyBudget`），不进服务器数据库：它是一个偏好值不是账目数据。代价是**换手机或重装 App 会丢**，等做用户设置同步时再一起推上去。
 - **账户余额是衍生值**：不存 `balance` 字段，用 `openingBalance + 交易/转账汇总` 实时计算，避免离线同步造成余额缓存不一致。
 - **周期交易和转账都是独立模型**：`RecurringTransaction` 是"规则"，生成的每一笔仍然是真实的 `Transaction`；`Transfer` 独立于 `Transaction`，因为转账不计入收支统计。
 - **图片只存 URL**：图片本身直传 Cloudinary，后端和数据库都不碰二进制数据。
@@ -214,8 +202,6 @@ model Transfer {
 | GET | `/transactions?from=&to=&categoryId=&accountId=&type=` | 查询交易，支持筛选 |
 | POST | `/transactions/batch` | 离线同步：批量推送本地未同步的交易 |
 | PUT/DELETE | `/transactions/:id` | 修改 / 删除单笔交易 |
-| GET/POST | `/budgets` | 预算的获取 / 新建 |
-| GET | `/budgets/status?month=` | 各分类预算 vs 实际花费 |
 | GET/POST | `/recurring-transactions` | 周期规则的获取 / 新建 |
 | PUT/DELETE | `/recurring-transactions/:id` | 修改（暂停）/ 删除规则 |
 | POST | `/transfers/batch` | 离线同步：批量推送转账记录 |
@@ -228,11 +214,13 @@ model Transfer {
 ## 5. 离线同步机制
 
 - **触发方式**：App 打开时对比 `lastSyncedAt` 与设置的周期（7天/1个月），到期自动同步；也可随时点"立即上传"手动触发，两者调用同一个同步函数
-- **同步内容**：单向推送本地所有 `synced=false` 的 `Transaction`、`Budget`、`RecurringTransaction`、`Account`、`Transfer` 记录
+- **同步内容**：单向推送本地所有 `synced=false` 的 `Transaction`、`RecurringTransaction`、`Account`、`Transfer` 记录（预算不在其中，见下条）
 - **本地额外存储**（不进服务器数据库）：
   ```
-  { syncFrequency: "WEEKLY" | "MONTHLY", lastSyncedAt: "2026-09-01T00:00:00Z" }
+  { syncFrequency: "WEEKLY" | "MONTHLY", lastSyncedAt: "2026-09-01T00:00:00Z",
+    overallMonthlyBudget: "2400" }
   ```
+  都存在本地 SQLite 的 `app_settings(key, value)` 表里（v1 就建好了，值统一按字符串存）。
 - **周期交易生成逻辑**（App 打开时执行）：
   ```
   对每条 active 的周期规则：
@@ -250,12 +238,12 @@ model Transfer {
 
 | 页面 | 内容 |
 |---|---|
-| 首页 | 月度收支总览卡片；预算环形进度条 + 已消费/剩余额度 + 日均消费/剩余每日可消费；近7天账单列表（含"全部账单"入口） |
+| 首页 | 两套可切换布局（节奏条 / 金环）；月度收支总览；预算进度 + 已消费/剩余额度 + 日均消费/剩余每日可消费；没设预算时给一个入口弹窗直接填；近7天账单列表 |
 | 日历 | 按天查看消费记录 |
 | 添加账单 | 支出/收入/转账切换；两级分类网格选择；主题+备注输入；金额键盘；标签行（报销/标签/不计入统计/拍照，支持多图） |
 | 资产 | 账户列表 + 余额；新建/编辑账户；转账；点进账户看该账户交易历史 |
 | 我的 → 分类管理 | 新增/编辑/删除两级分类 |
-| 我的 → 预算设置 | 设置各分类月度预算 |
+| 我的 → 预算 | 填本月总预算（跟首页「设置预算」是同一个弹窗） |
 | 我的 → 周期交易 | 新增/暂停/删除周期规则 |
 | 我的 → 同步设置 | 选择同步周期、立即同步按钮、显示上次同步时间和待同步笔数 |
 

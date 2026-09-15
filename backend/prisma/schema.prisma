@@ -39,7 +39,6 @@ model User {
 
   categories            Category[]
   transactions          Transaction[]
-  budgets               Budget[]
   recurringTransactions RecurringTransaction[]
   accounts              Account[]
   transfers             Transfer[]
@@ -58,7 +57,6 @@ model Category {
   children Category[] @relation("SubCategory")
 
   transactions          Transaction[]
-  budgets               Budget[]
   recurringTransactions RecurringTransaction[]
 }
 
@@ -120,18 +118,6 @@ model TransactionImage {
   transactionId String
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   createdAt     DateTime    @default(now())
-}
-
-model Budget {
-  id         String   @id @default(uuid())
-  amount     Decimal // 以用户基准货币计算的月度预算上限
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-  createdAt  DateTime @default(now())
-
-  @@unique([userId, categoryId])
 }
 
 model RecurringTransaction {
