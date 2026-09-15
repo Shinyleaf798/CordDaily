@@ -59,15 +59,33 @@ mobile/                # TypeScript；Expo SDK 57 默认模板把 app/ 放在 sr
 │   ├── app/          # Expo Router 路由页面
 │   ├── api/          # axios实例 + 各模块请求函数
 │   ├── db/            # expo-sqlite 本地数据库操作、同步逻辑
-│   ├── hooks/         # React Query hooks
+│   ├── hooks/         # React Query hooks + 页面级取数 hook（如 use-home-view-data）
 │   ├── store/         # zustand store
+│   ├── utils/         # 纯函数工具（金额格式化等）
+│   ├── constants/     # 主题色板、布局清单等静态配置
 │   └── components/
+│       ├── ui/              # 不认识任何业务概念的展示件（themed-text/view、进度条）
+│       ├── transaction/     # 「一笔交易长什么样」，跨页面复用
+│       ├── navigation/      # app 骨架（底部 tab bar）
+│       ├── auth/            # 登录/注册共用
+│       ├── home/            # 首页专属，含 layouts/ 下的可切换布局
+│       ├── add-transaction/ # 记账页专属
+│       └── assets/          # 资产页专属
 
 web/
 ├── app/              # Next.js App Router 页面
 ├── components/
 │   └── charts/
 ```
+
+### components/ 的两条归类规则
+
+1. **顶层不放散文件，只放目录**。看到 `components/` 底下直接躺着一个 `.tsx`，就是还没归好类。
+2. **目录名回答「谁在用」**：只有一个页面用 → 放那个页面的目录；跨页面用 → 按领域分。
+   判断一个件该进 `ui/` 还是某个页面目录，看它**认不认识业务概念**——`PaceBar` 只知道
+   「一个进度 + 一个参考位置」，不认识「预算」，所以进 `ui/`，哪怕目前只有首页在用。
+   反过来，`transaction-list-item` 认识「收入/支出」，但它描述的是跨页面的领域概念，
+   所以进 `transaction/` 而不是 `home/`——放进 `home/` 会逼着日历页从 home 里 import。
 
 ## 统一 API 响应格式
 

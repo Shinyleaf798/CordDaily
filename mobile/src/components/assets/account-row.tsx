@@ -1,11 +1,10 @@
 import { StyleSheet, View } from 'react-native';
 
-import { useAccountBalance } from '@/hooks/use-accounts';
+import { ThemedText } from '@/components/ui/themed-text';
+import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { Account } from '@/db/accounts';
-
-import { ThemedText } from './themed-text';
-import { ThemedView } from './themed-view';
+import { useAccountBalance } from '@/hooks/use-accounts';
 
 export function AccountRow({ account }: { account: Account }) {
   const { data: balance } = useAccountBalance(account.id);

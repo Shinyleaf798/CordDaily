@@ -3,11 +3,13 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/ui/themed-text';
+import { ThemedView } from '@/components/ui/themed-view';
+import { HomeLayoutHints, HomeLayoutLabels, HomeLayoutNames } from '@/constants/home-layout';
 import { Spacing, ThemeLabels, ThemeNames } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore } from '@/store/auth.store';
+import { useHomeLayoutStore } from '@/store/home-layout.store';
 import { useThemeStore } from '@/store/theme.store';
 
 // 分类管理 / 预算设置 / 周期交易 / 同步设置这几个二级页面还没做，先把入口和登出放这里
@@ -17,6 +19,8 @@ export default function SettingsScreen() {
   const clearSession = useAuthStore((s) => s.clearSession);
   const themeName = useThemeStore((s) => s.themeName);
   const setThemeName = useThemeStore((s) => s.setThemeName);
+  const layoutName = useHomeLayoutStore((s) => s.layoutName);
+  const setLayoutName = useHomeLayoutStore((s) => s.setLayoutName);
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
@@ -51,6 +55,35 @@ export default function SettingsScreen() {
                 </ThemedText>
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+            </Pressable>
+          ))}
+        </View>
+
+        {/* 首页布局跟主题是两个独立设置：布局管结构、主题管配色，可以任意组合 */}
+        <View style={styles.card}>
+          <ThemedText type="small" themeColor="textSecondary">
+            首页布局
+          </ThemedText>
+          {HomeLayoutNames.map((name) => (
+            <Pressable
+              key={name}
+              onPress={() => setLayoutName(name)}
+              style={[
+                styles.layoutRow,
+                {
+                  backgroundColor: theme.backgroundElement,
+                  borderColor: name === layoutName ? theme.cardHighlight : 'transparent',
+                },
+              ]}>
+              <View style={styles.linkText}>
+                <ThemedText type="default">{HomeLayoutLabels[name]}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {HomeLayoutHints[name]}
+                </ThemedText>
+              </View>
+              {name === layoutName ? (
+                <Ionicons name="checkmark-circle" size={20} color={theme.cardHighlight} />
+              ) : null}
             </Pressable>
           ))}
         </View>
@@ -106,6 +139,15 @@ const styles = StyleSheet.create({
   linkText: {
     flex: 1,
     gap: 2,
+  },
+  // 布局选项带一行说明，所以是整行的卡片而不是 chip；选中态跟主题 chip 一样用描边表示
+  layoutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    padding: Spacing.three,
+    borderRadius: 12,
+    borderWidth: 2,
   },
   themeRow: {
     flexDirection: 'row',

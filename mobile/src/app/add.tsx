@@ -9,7 +9,7 @@ import { CategoryGrid, type CategoryGridItem } from '@/components/add-transactio
 import { TransactionNoteFields } from '@/components/add-transaction/transaction-note-fields';
 import { TransactionOptionsRow } from '@/components/add-transaction/transaction-options-row';
 import { TransactionTypeTabs, type TransactionTypeTab } from '@/components/add-transaction/transaction-type-tabs';
-import { ThemedView } from '@/components/themed-view';
+import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useCategories } from '@/hooks/use-categories';

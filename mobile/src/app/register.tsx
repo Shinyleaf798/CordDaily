@@ -4,11 +4,11 @@ import { ActivityIndicator, Pressable, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import * as authApi from '@/api/auth';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/ui/themed-text';
+import { ThemedView } from '@/components/ui/themed-view';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore } from '@/store/auth.store';
-import { authScreenStyles as styles } from '@/components/auth-screen.styles';
+import { authScreenStyles as styles } from '@/components/auth/auth-screen.styles';
 
 export default function RegisterScreen() {
   const theme = useTheme();

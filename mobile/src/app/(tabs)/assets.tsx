@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AccountRow } from '@/components/account-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { AccountRow } from '@/components/assets/account-row';
+import { ThemedText } from '@/components/ui/themed-text';
+import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { AccountType } from '@/db/accounts';
 import { useAccounts, useCreateAccount } from '@/hooks/use-accounts';
