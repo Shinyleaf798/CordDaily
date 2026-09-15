@@ -20,8 +20,7 @@ export function TransactionTypeTabs({ value, onChange }: TransactionTypeTabsProp
   const theme = useTheme();
 
   return (
-    // 这个胶囊底色故意写死成黑金主题的 backgroundElement，不跟随用户选的主题切换
-    <View style={[styles.container, { backgroundColor: '#b4b4b4' }]}>
+    <View style={[styles.container, { backgroundColor: theme.tabTrackBackground }]}>
       {TABS.map((tab) => {
         const isActive = tab.key === value;
         return (

@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
 import { ThemeScheme } from '@/constants/theme';
+import { seedDefaultCategories } from '@/db/categories';
 import { useAuthStore } from '@/store/auth.store';
 import { useThemeStore } from '@/store/theme.store';
 import { authScreenTransition } from '@/components/auth-screen.styles';
@@ -26,6 +27,11 @@ export default function RootLayout() {
   useEffect(() => {
     hydrateAuth();
     hydrateTheme();
+    // 首次启动灌默认分类。放在这里而不是 db/client.ts 的 getDb 里，是因为 categories.ts 要 import getDb，
+    // 反过来让 client.ts import categories.ts 会形成循环依赖
+    seedDefaultCategories().catch(() => {
+      // 灌种子失败不该挡住启动：分类页仍然可以手动新建
+    });
   }, [hydrateAuth, hydrateTheme]);
 
   useEffect(() => {
@@ -45,6 +51,9 @@ export default function RootLayout() {
           <Stack.Protected guard={!!user}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="add" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="budgets" />
+            <Stack.Screen name="tags" />
+            <Stack.Screen name="reimbursements" />
           </Stack.Protected>
           <Stack.Protected guard={!user}>
             <Stack.Screen name="login" options={authScreenTransition} />

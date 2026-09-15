@@ -1,43 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AmountKeypad } from '@/components/add-transaction/amount-keypad';
 import { CategoryGrid, type CategoryGridItem } from '@/components/add-transaction/category-grid';
+import { TransactionNoteFields } from '@/components/add-transaction/transaction-note-fields';
 import { TransactionOptionsRow } from '@/components/add-transaction/transaction-options-row';
 import { TransactionTypeTabs, type TransactionTypeTab } from '@/components/add-transaction/transaction-type-tabs';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useAccounts } from '@/hooks/use-accounts';
+import { useCategories } from '@/hooks/use-categories';
+import { useCreateTransaction } from '@/hooks/use-transactions';
 import { useTheme } from '@/hooks/use-theme';
-
-// TODO(dummy data): 接分类种子数据 + db/categories.ts 之后，把这两份列表换成 useCategories('EXPENSE' | 'INCOME')
-const EXPENSE_CATEGORIES: CategoryGridItem[] = [
-  { id: 'cat-food', name: '餐饮', icon: '🍜' },
-  { id: 'cat-shopping', name: '购物', icon: '🛍️' },
-  { id: 'cat-transport', name: '交通', icon: '🚌' },
-  { id: 'cat-daily', name: '日常', icon: '🏠' },
-  { id: 'cat-entertainment', name: '娱乐', icon: '🎮' },
-  { id: 'cat-medical', name: '医疗', icon: '💊' },
-  { id: 'cat-education', name: '学习', icon: '📚' },
-  { id: 'cat-social', name: '社交', icon: '🤝' },
-  { id: 'cat-other-expense', name: '其他', icon: '📦' },
-];
-const INCOME_CATEGORIES: CategoryGridItem[] = [
-  { id: 'cat-salary', name: '工资', icon: '💰' },
-  { id: 'cat-bonus', name: '奖金', icon: '🧧' },
-  { id: 'cat-parttime', name: '兼职', icon: '💼' },
-  { id: 'cat-other-income', name: '其他收入', icon: '💵' },
-];
 
 // 支出/收入的完整记账表单。支出/收入切换直接做进原生顶部导航栏（见下面的 <Stack.Screen options>），
 // 不再单独画一条自己的 header 行——避免和原生 header 重叠出现两条
 export default function AddScreen() {
   const theme = useTheme();
   const { data: accounts } = useAccounts();
+  const createTransaction = useCreateTransaction();
 
   const [type, setType] = useState<TransactionTypeTab>('EXPENSE');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -45,6 +29,8 @@ export default function AddScreen() {
   const [amount, setAmount] = useState('0');
   const [topic, setTopic] = useState('');
   const [remark, setRemark] = useState('');
+  const [merchant, setMerchant] = useState('');
+  const [location, setLocation] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [isReimbursable, setIsReimbursable] = useState(false);
   const [excludeFromStats, setExcludeFromStats] = useState(false);
@@ -59,29 +45,45 @@ export default function AddScreen() {
     setSelectedCategoryId(null);
   }, [type]);
 
-  const categories = type === 'INCOME' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  // 勾上报销时顺带打开"不计入统计"：这笔钱之后会回来，算进消费统计会让当月分类金额虚高，
+  // 而且收回时记一笔收入也抵消不掉支出分类的数字。仍然允许用户手动再关掉，所以只在打开的那一刻联动
+  const handleReimbursableChange = (value: boolean) => {
+    setIsReimbursable(value);
+    if (value) setExcludeFromStats(true);
+  };
+
+  const { data: categoryRows } = useCategories(type);
+  const categories: CategoryGridItem[] = (categoryRows ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    icon: c.icon ?? '📦',
+  }));
+
   const numericAmount = Number(amount);
-  const canSave = !!selectedCategoryId && !!accountId && numericAmount > 0;
+  const canSave = !!selectedCategoryId && !!accountId && numericAmount > 0 && !createTransaction.isPending;
 
   const handleSave = () => {
     if (!canSave || !selectedCategoryId || !accountId) return;
     const category = categories.find((c) => c.id === selectedCategoryId);
 
-    // TODO(dummy data): 换成 useCreateTransaction().mutate(...)，实际写入 SQLite
-    console.log('new transaction (dummy)', {
-      title: topic.trim() || category?.name || '',
-      remarks: remark.trim() || null,
-      amount: numericAmount,
-      type,
-      categoryId: selectedCategoryId,
-      accountId,
-      tags,
-      isReimbursable,
-      excludeFromStats,
-      date: new Date().toISOString(),
-    });
-
-    router.back();
+    createTransaction.mutate(
+      {
+        // title 在 schema 里是 NOT NULL，但主题是可选的（随手买瓶水不会有"为了什么事"），
+        // 所以按 主题 > 店名 > 分类名 兜底，保证列表主行永远有东西显示
+        title: topic.trim() || merchant.trim() || category?.name || '',
+        merchant,
+        location,
+        remarks: remark,
+        amount: numericAmount,
+        type,
+        categoryId: selectedCategoryId,
+        accountId,
+        tags,
+        isReimbursable,
+        excludeFromStats,
+      },
+      { onSuccess: () => router.back() },
+    );
   };
 
   return (
@@ -105,33 +107,23 @@ export default function AddScreen() {
       </ScrollView>
 
       <ThemedView type="backgroundElement" style={styles.bottomSheet}>
-        <View style={styles.noteRow}>
-          <View style={styles.noteInputs}>
-            <TextInput
-              value={topic}
-              onChangeText={setTopic}
-              placeholder="点击输入标题"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.noteInput, { color: theme.text }]}
-            />
-            <TextInput
-              value={remark}
-              onChangeText={setRemark}
-              placeholder="点击输入备注"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.noteInput, { color: theme.text }]}
-            />
-          </View>
-          <ThemedText type="title" style={styles.amountDisplay}>
-            RM{numericAmount.toFixed(2)}
-          </ThemedText>
-        </View>
+        <TransactionNoteFields
+          topic={topic}
+          onTopicChange={setTopic}
+          remark={remark}
+          onRemarkChange={setRemark}
+          merchant={merchant}
+          onMerchantChange={setMerchant}
+          location={location}
+          onLocationChange={setLocation}
+          amount={numericAmount}
+        />
 
         <TransactionOptionsRow
           tags={tags}
           onTagsChange={setTags}
           isReimbursable={isReimbursable}
-          onReimbursableChange={setIsReimbursable}
+          onReimbursableChange={handleReimbursableChange}
           excludeFromStats={excludeFromStats}
           onExcludeFromStatsChange={setExcludeFromStats}
           onCameraPress={() => {
@@ -164,23 +156,5 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     paddingTop: Spacing.three,
     gap: Spacing.three,
-  },
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.two,
-    gap: Spacing.two,
-  },
-  noteInputs: {
-    flex: 1,
-    gap: Spacing.one,
-  },
-  noteInput: {
-    fontSize: 14,
-  },
-  amountDisplay: {
-    fontSize: 28,
-    lineHeight: 34,
   },
 });

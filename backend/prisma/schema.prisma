@@ -79,9 +79,14 @@ model Account {
   transfersIn           Transfer[]              @relation("ToAccount")
 }
 
+// 录入的四个文字字段各管一个维度：title=为了什么事、merchant=在哪家、remarks=具体买了啥、location=在哪一带。
+// merchant/location 可复用（会被反复输入同样的值），但故意不拆成独立表——
+// 建表意味着多一个同步端点和"商家必须先于交易插入"的顺序依赖，而补全和 GROUP BY 统计客户端一条 SQL 就够了
 model Transaction {
   id               String          @id // 客户端生成的UUID，不用 @default(uuid())
   title            String
+  merchant         String?
+  location         String?
   remarks          String?
   amount           Decimal
   currency         String          @default("MYR")
@@ -91,6 +96,7 @@ model Transaction {
   date             DateTime
   tags             String[]        @default([])
   isReimbursable   Boolean         @default(false)
+  reimbursedAt     DateTime? // null=待报销，有值=已收回
   excludeFromStats Boolean         @default(false)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt

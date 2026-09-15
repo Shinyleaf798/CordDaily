@@ -8,31 +8,13 @@ import { ThemedView } from '@/components/themed-view';
 import { TransactionDateGroupHeader } from '@/components/transaction-date-group-header';
 import { TransactionListItem, type TransactionListItemData } from '@/components/transaction-list-item';
 import { Spacing } from '@/constants/theme';
+import { useBudgetStatus } from '@/hooks/use-budgets';
+import { useMonthSummary, useRecentTransactions } from '@/hooks/use-transactions';
 import { useTheme } from '@/hooks/use-theme';
 
-// TODO(dummy data): 接 db/transactions.ts + db/budgets.ts 之后，把下面这几个常量换成真实 hooks（useMonthSummary / useBudgetStatus / useRecentTransactions）
 const today = new Date();
-const yesterday = new Date(today);
-yesterday.setDate(today.getDate() - 1);
-const dayBeforeYesterday = new Date(today);
-dayBeforeYesterday.setDate(today.getDate() - 2);
 
-const MONTH_SUMMARY = { month: `${today.getMonth() + 1}月`, expense: 56.1, income: 0, balance: -56.1 };
-const BUDGET_STATUS = {
-  budgetTotal: 800,
-  spent: 56.1,
-  daysInMonth: new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate(),
-  daysElapsed: today.getDate(),
-};
-
-type MockTransaction = TransactionListItemData & { date: Date };
-
-const RECENT_TRANSACTIONS: MockTransaction[] = [
-  { id: '1', date: today, icon: '🚌', title: '车费', categoryLabel: '交通', time: '08:02', amount: 3.6, type: 'EXPENSE' },
-  { id: '2', date: today, icon: '🛒', title: '日用品', categoryLabel: '购物', time: '19:20', note: '洗发水', amount: 23, type: 'EXPENSE' },
-  { id: '3', date: yesterday, icon: '🍚', title: '午餐', categoryLabel: '餐饮', time: '13:16', note: 'tjmart 菜饭', amount: 18, type: 'EXPENSE' },
-  { id: '4', date: dayBeforeYesterday, icon: '🍔', title: '午餐', categoryLabel: '餐饮', time: '13:40', note: 'McDonald', amount: 11.5, type: 'EXPENSE' },
-];
+type HomeTransaction = TransactionListItemData & { date: Date };
 
 const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -47,8 +29,8 @@ function formatDateGroupLabel(date: Date) {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAY_LABELS[date.getDay()]}`;
 }
 
-function groupByDate(transactions: MockTransaction[]) {
-  const groups = new Map<string, { date: Date; items: MockTransaction[] }>();
+function groupByDate(transactions: HomeTransaction[]) {
+  const groups = new Map<string, { date: Date; items: HomeTransaction[] }>();
   for (const transaction of transactions) {
     const key = stripTime(transaction.date).toISOString();
     if (!groups.has(key)) {
@@ -59,10 +41,32 @@ function groupByDate(transactions: MockTransaction[]) {
   return Array.from(groups.values()).sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
+function formatTime(iso: string) {
+  const date = new Date(iso);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 // 首页：月度收支总览 + 预算进度 + 近7天账单（按天分组，每组一个日期标题 + 当天支出小计）
 export default function HomeScreen() {
   const theme = useTheme();
-  const dateGroups = groupByDate(RECENT_TRANSACTIONS);
+  const { data: summary } = useMonthSummary();
+  const { data: budgetStatus } = useBudgetStatus();
+  const { data: recent } = useRecentTransactions(7);
+
+  // 列表行显示全部交易（包括"不计入统计"的），汇总数字则由 getMonthSummary 过滤掉它们——
+  // 账单是流水，统计是口径，两者故意不一致
+  const items: HomeTransaction[] = (recent ?? []).map((t) => ({
+    id: t.id,
+    date: new Date(t.date),
+    icon: t.categoryIcon ?? '📦',
+    title: t.title,
+    categoryLabel: t.categoryName ?? '未分类',
+    time: formatTime(t.date),
+    note: t.remarks ?? undefined,
+    amount: t.amount,
+    type: t.type,
+  }));
+  const dateGroups = groupByDate(items);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -71,8 +75,20 @@ export default function HomeScreen() {
           首页
         </ThemedText>
 
-        <MonthSummaryCard {...MONTH_SUMMARY} />
-        <BudgetProgressCard {...BUDGET_STATUS} />
+        <MonthSummaryCard
+          month={summary?.month ?? `${today.getMonth() + 1}月`}
+          income={summary?.income ?? 0}
+          expense={summary?.expense ?? 0}
+          balance={summary?.balance ?? 0}
+        />
+        {/* 预算卡的"已消费"取各分类预算对应的花费之和，跟月度总支出不是同一个数：
+            没设预算的分类不该算进预算消耗，否则永远显示超支 */}
+        <BudgetProgressCard
+          budgetTotal={budgetStatus?.budgetTotal ?? 0}
+          spent={budgetStatus?.spent ?? 0}
+          daysInMonth={new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()}
+          daysElapsed={today.getDate()}
+        />
 
         <ThemedText type="subtitle" style={styles.sectionTitle}>
           近7天账单

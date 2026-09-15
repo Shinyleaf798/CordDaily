@@ -90,17 +90,20 @@ model Account {
 
 model Transaction {
   id               String   @id   // 客户端生成的UUID，不用@default(uuid())
-  title            String
-  remarks          String?
+  title            String           // 列表主行显示用，录入时按 主题 || 店名 || 分类名 兜底填充，保证非空
+  merchant         String?          // 店家名，如"麦当劳"。可复用，靠客户端 DISTINCT 做历史补全
+  location         String?          // 粗粒度地名，如"吉隆坡机场"。同样可复用、可补全
+  remarks          String?          // 明细，如"3个汉堡，2个薯条"。每笔唯一，不做补全
   amount           Decimal
   currency         String   @default("MYR")
   exchangeRate     Decimal  @default(1)
   amountInBase     Decimal
   type             TransactionType
   date             DateTime
-  tags             String[] @default([])
-  isReimbursable   Boolean  @default(false)
-  excludeFromStats Boolean  @default(false)
+  tags             String[] @default([])   // 跟分类正交的第二个汇总维度：一次旅行/一场装修会横跨多个分类，用标签才圈得起来
+  isReimbursable   Boolean  @default(false) // 这笔钱会回来（公司报销、朋友AA垫付）
+  reimbursedAt     DateTime?                // null=待报销，有值=已收回。只有一个 isReimbursable 布尔值区分不了这两态，标记会越积越清不掉
+  excludeFromStats Boolean  @default(false) // 钱动了但不算"我的消费"（代付、一次性大额）。注意账户余额不看这个字段，余额要真实
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

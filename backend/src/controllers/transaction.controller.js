@@ -7,6 +7,8 @@ const imageSchema = z.object({ url: z.string().url() });
 const transactionItemSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
+  merchant: z.string().optional(),
+  location: z.string().optional(),
   remarks: z.string().optional(),
   amount: z.number(),
   currency: z.string().default("MYR"),
@@ -19,6 +21,7 @@ const transactionItemSchema = z.object({
   recurringId: z.string().uuid().optional(),
   tags: z.array(z.string()).default([]),
   isReimbursable: z.boolean().default(false),
+  reimbursedAt: z.coerce.date().nullish(),
   excludeFromStats: z.boolean().default(false),
   images: z.array(imageSchema).default([]),
 });

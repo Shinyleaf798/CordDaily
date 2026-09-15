@@ -33,6 +33,7 @@ export const ThemeScheme: Record<ThemeName, 'light' | 'dark'> = {
 // - income / expense：收入/支出的语义色，跟主题强调色无关，三套主题基本复用同一对红绿
 // - cardBorder：目前只给 budget-progress-card 用，跟 backgroundElement 拆开是为了单独调这张卡片的底色，
 //   不影响输入框、tab bar、月度总览卡等其他共用 backgroundElement 的地方
+// - tabTrackBackground：分段控件（如收支类型切换）的轨道底色，选中项用 background 铺出高亮块
 export const Colors = {
   whiteColorful: {
     text: '#000000',
@@ -45,6 +46,7 @@ export const Colors = {
     onCardHighlight: '#ffffff',
     income: '#12b76a',
     expense: '#e5484d',
+    tabTrackBackground: '#E0E1E6',
   },
   blackGold: {
     text: '#ffffff',
@@ -57,6 +59,7 @@ export const Colors = {
     onCardHighlight: '#1a1a1a',
     income: '#32d583',
     expense: '#f97066',
+    tabTrackBackground: '#4d4d4d',
   },
   blackPurple: {
     text: '#ffffff',
@@ -69,6 +72,7 @@ export const Colors = {
     onCardHighlight: '#ffffff',
     income: '#32d583',
     expense: '#f97066',
+    tabTrackBackground: '#4d4d4d',
   },
 } as const;
 

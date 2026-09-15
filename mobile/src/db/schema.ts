@@ -1,9 +1,13 @@
 // 本地 SQLite 是唯一的数据录入入口（CLAUDE.md 核心原则#1），这里的表基本对应后端 Prisma schema，
 // 但去掉了 userId（本地只服务当前登录的这一个人，不需要按用户过滤），
 // 并给需要同步的表加了 synced 字段：本地新建/修改的记录 synced=0，成功推送到服务器后改成 1。
-export const MIGRATIONS = [
-  `PRAGMA journal_mode = WAL;`,
-
+//
+// MIGRATIONS 按版本号分组，下标 i 就是「从 user_version i 升到 i+1」要跑的语句（见 client.ts）。
+// 只靠 CREATE TABLE IF NOT EXISTS 是不够的：老用户手机上库已经建好了，之后加的列不会被补上，
+// 所以加字段必须往数组末尾追加一组新的 ALTER TABLE，而不是去改前面那组已发布的建表语句。
+export const MIGRATIONS: string[][] = [
+  // v1：初始表结构
+  [
   `CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -94,4 +98,25 @@ export const MIGRATIONS = [
     key TEXT PRIMARY KEY NOT NULL,
     value TEXT NOT NULL
   );`,
+  ],
+
+  // v2：记账表单拆出「店名」和「地点」两个可复用字段。
+  // 两列都可空——随手买瓶水不会填店名，也不是每笔都记得地点。
+  // 索引是给输入时的历史补全用的（按出现次数取 TOP N，见 db/transactions.ts 的 suggest* 查询）
+  [
+    `ALTER TABLE transactions ADD COLUMN merchant TEXT;`,
+    `ALTER TABLE transactions ADD COLUMN location TEXT;`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_merchant ON transactions(merchant);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_location ON transactions(location);`,
+  ],
+
+  // v3：报销从"一个布尔值"补成完整的两态。
+  // 只有 isReimbursable 的话，标记一旦打上就再也清不掉，待报销列表会越积越长失去意义；
+  // reimbursedAt 为 null 才是"待收回"，有值表示钱已经回来了
+  [
+    `ALTER TABLE transactions ADD COLUMN reimbursedAt TEXT;`,
+    // 首页按月查账单、报销清单按状态查，都吃这两个索引
+    `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_reimbursable ON transactions(isReimbursable, reimbursedAt);`,
+  ],
 ];
