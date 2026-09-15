@@ -1,16 +1,16 @@
-import { Stack, router } from 'expo-router';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DialogActions, ModalDialog } from '@/components/ui/modal-dialog';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useOverallBudget, useSetOverallBudget } from '@/hooks/use-budgets';
 import { useTheme } from '@/hooks/use-theme';
 
-// 本月预算：填一个总数就完事。口径是「本月全部支出 vs 这个数」，
-// 清空则视为没设预算，首页的预算卡退回提示状态。
+// 本月预算：填一个总数就完事。口径是「本月全部支出 vs 这个数」，清空视为没设预算。
+// 壳（遮罩、居中、键盘避让）交给 ModalDialog，这里只管这一屏问什么、存什么。
+// 路由那边配的是 ScreenTransitions.dialog，headerShown 已经在预设里关掉了。
 export default function SetBudgetScreen() {
   const theme = useTheme();
   const { data: overall } = useOverallBudget();
@@ -20,95 +20,83 @@ export default function SetBudgetScreen() {
   // 后者会多渲染一轮，还正好是 eslint 的 react-hooks/set-state-in-effect 要拦的写法
   const [draft, setDraft] = useState<string | null>(null);
   const value = draft ?? (overall != null ? String(overall) : '');
+  const amount = parseAmount(value);
 
+  const dismiss = () => router.back();
+
+  // 金额非法时按钮是禁用的，走到这里 amount 一定 > 0。
+  // 不把"输入空的"当成清除——清除有单独的按钮，误触保存不该把预算抹掉
   const save = () => {
-    const amount = Number(value);
-    setOverallBudget.mutate(Number.isFinite(amount) ? amount : 0, {
-      onSuccess: () => router.back(),
-    });
+    setOverallBudget.mutate(amount, { onSuccess: dismiss });
   };
 
   const clear = () => {
-    setOverallBudget.mutate(0, { onSuccess: () => router.back() });
+    setOverallBudget.mutate(0, { onSuccess: dismiss });
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['bottom', 'left', 'right']}>
-      <Stack.Screen options={{ headerShown: false }} />
+    <ModalDialog title="本月预算" onDismiss={dismiss}>
+      <ThemedText themeColor="textSecondary" style={styles.label}>
+        这个月总共打算花多少
+      </ThemedText>
 
-      <ThemedView style={styles.container}>
-        <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <ThemedText type="small" themeColor="textSecondary">
-              取消
-            </ThemedText>
-          </Pressable>
-          <ThemedText type="default" style={styles.headerTitle}>
-            本月预算
-          </ThemedText>
-          <Pressable onPress={save} hitSlop={12} disabled={setOverallBudget.isPending}>
-            <ThemedText type="smallBold" style={{ color: theme.cardHighlight }}>
-              保存
-            </ThemedText>
-          </Pressable>
-        </View>
+      <View style={[styles.inputRow, { borderBottomColor: theme.cardHighlight }]}>
+        <ThemedText style={[styles.currency, { color: theme.cardHighlight }]}>RM</ThemedText>
+        <TextInput
+          value={value}
+          onChangeText={setDraft}
+          keyboardType="numeric"
+          returnKeyType="done"
+          onSubmitEditing={save}
+          autoFocus
+          placeholder="0"
+          placeholderTextColor={theme.textSecondary}
+          style={[styles.input, { color: theme.text }]}
+        />
+      </View>
 
-        <View style={[styles.inputCard, { backgroundColor: theme.backgroundElement }]}>
-          <ThemedText themeColor="textSecondary" style={styles.inputLabel}>
-            这个月总共打算花多少
-          </ThemedText>
-          <View style={styles.inputRow}>
-            <ThemedText style={[styles.currency, { color: theme.cardHighlight }]}>RM</ThemedText>
-            <TextInput
-              value={value}
-              onChangeText={setDraft}
-              keyboardType="numeric"
-              returnKeyType="done"
-              onSubmitEditing={save}
-              autoFocus
-              placeholder="0"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.input, { color: theme.text }]}
-            />
-          </View>
-        </View>
+      <ThemedText themeColor="textSecondary" style={styles.hint}>
+        首页会用「本月全部支出 ÷ 这个数」算进度，以及日均消费和剩余每日可消费。
+      </ThemedText>
 
-        <ThemedText themeColor="textSecondary" style={styles.hint}>
-          首页会用「本月全部支出 ÷ 这个数」算进度，以及日均消费和剩余每日可消费。
+      {/* 写库失败以前是完全静默的：弹窗不关、也不说为什么，看起来就是"点了没反应" */}
+      {setOverallBudget.isError ? (
+        <ThemedText style={[styles.error, { color: theme.expense }]}>
+          保存失败：{(setOverallBudget.error as Error).message}
         </ThemedText>
+      ) : null}
 
-        {overall != null ? (
-          <Pressable onPress={clear} style={[styles.clearButton, { borderColor: theme.expense }]}>
-            <ThemedText type="small" style={{ color: theme.expense }}>
-              清除预算
-            </ThemedText>
-          </Pressable>
-        ) : null}
-      </ThemedView>
-    </SafeAreaView>
+      <DialogActions
+        confirmLabel="保存"
+        onCancel={dismiss}
+        onConfirm={save}
+        confirmDisabled={amount <= 0 || setOverallBudget.isPending}
+      />
+
+      {overall != null ? (
+        <Pressable onPress={clear} hitSlop={8} style={styles.clearButton}>
+          <ThemedText style={[styles.clearText, { color: theme.expense }]}>清除预算</ThemedText>
+        </Pressable>
+      ) : null}
+    </ModalDialog>
   );
 }
 
+// 千分位逗号、空格、误打的货币符号都先剥掉再解析：
+// App 里金额一律显示成 "1,842.50"，用户照着这个格式输入 "2,400" 是完全合理的，
+// 而 Number("2,400") 是 NaN——之前这里会把 NaN 兜底成 0，等于静默清除预算
+function parseAmount(raw: string): number {
+  const amount = Number(raw.replace(/[^\d.]/g, ''));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: Spacing.four,
-    gap: Spacing.three,
+  error: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    fontWeight: '600',
-  },
-  inputCard: {
-    borderRadius: 16,
-    padding: Spacing.three,
-    gap: Spacing.one,
-  },
-  inputLabel: {
+  label: {
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '500',
@@ -117,6 +105,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 6,
+    paddingBottom: Spacing.one,
+    borderBottomWidth: 2,
+    marginTop: Spacing.one,
   },
   currency: {
     fontSize: 20,
@@ -125,22 +116,23 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 36,
-    lineHeight: 44,
+    fontSize: 34,
+    lineHeight: 42,
     fontWeight: '700',
     padding: 0,
   },
   hint: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: '500',
   },
   clearButton: {
-    marginTop: 'auto',
-    height: 44,
-    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: Spacing.one,
+  },
+  clearText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
   },
 });

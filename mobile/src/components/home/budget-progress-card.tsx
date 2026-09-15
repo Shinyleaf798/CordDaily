@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
-import { SetBudgetLink } from '@/components/home/set-budget-link';
+import { EditBudgetLink, SetBudgetLink } from '@/components/home/set-budget-link';
 import { PaceBar } from '@/components/ui/pace-bar';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
@@ -52,9 +52,14 @@ export function BudgetProgressCard({
     <ThemedView type="cardBorder" style={styles.card}>
       <View style={styles.headerRow}>
         <ThemedText style={styles.title}>本月预算</ThemedText>
-        <ThemedText themeColor="textSecondary" style={styles.headerMeta}>
-          {hasBudget ? `已用 ${formatCurrency(spent)} / ${formatCurrency(budgetTotal)}` : `本月已花 ${formatCurrency(spent)}`}
-        </ThemedText>
+        {/* 设过预算之后，这一行就是改预算的入口——数字本身能点，不用再去别处找 */}
+        {hasBudget ? (
+          <EditBudgetLink label={`已用 ${formatCurrency(spent)} / ${formatCurrency(budgetTotal)}`} />
+        ) : (
+          <ThemedText themeColor="textSecondary" style={styles.headerMeta}>
+            本月已花 {formatCurrency(spent)}
+          </ThemedText>
+        )}
       </View>
 
       <View style={styles.barWrap}>

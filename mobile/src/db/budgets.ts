@@ -22,7 +22,7 @@ const OVERALL_BUDGET_KEY = 'overallMonthlyBudget';
 // 这张表 v1 就建好了，是通用 key-value，值统一按字符串存。
 export async function getOverallBudget(): Promise<number | null> {
   const db = await getDb();
-  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [
+  const row = await db.getFirstAsync<{ value: string }>('SELECT "value" FROM app_settings WHERE "key" = ?', [
     OVERALL_BUDGET_KEY,
   ]);
   if (!row) return null;
@@ -31,18 +31,23 @@ export async function getOverallBudget(): Promise<number | null> {
   return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
-// 填 0 或负数等于取消预算，直接删行，不留一条 value = '0' 的噪音记录
+// 填 0 或负数等于取消预算，直接删行，不留一条 value = '0' 的噪音记录。
+//
+// 两个列名都加了双引号：KEY 是 SQLite 的关键字，裸写在 ON CONFLICT(key) 这种
+// 「索引列清单」的位置上，Android 侧会 prepare 失败，报成一个没头没尾的
+// NativeDatabase.prepareAsync NullPointerException。
+// 顺带把 upsert 换成 INSERT OR REPLACE：这是一张两列的 key-value 表，
+// 两者语义相同，但后者的语法老得多，不依赖 SQLite 3.24+ 的 upsert 解析。
 export async function setOverallBudget(amount: number): Promise<void> {
   const db = await getDb();
   if (!Number.isFinite(amount) || amount <= 0) {
-    await db.runAsync('DELETE FROM app_settings WHERE key = ?', [OVERALL_BUDGET_KEY]);
+    await db.runAsync('DELETE FROM app_settings WHERE "key" = ?', [OVERALL_BUDGET_KEY]);
     return;
   }
-  await db.runAsync(
-    `INSERT INTO app_settings (key, value) VALUES (?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    [OVERALL_BUDGET_KEY, String(amount)],
-  );
+  await db.runAsync('INSERT OR REPLACE INTO app_settings ("key", "value") VALUES (?, ?)', [
+    OVERALL_BUDGET_KEY,
+    String(amount),
+  ]);
 }
 
 function monthRange(date = new Date()) {

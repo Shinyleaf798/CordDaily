@@ -3,12 +3,12 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
+import { ScreenTransitions } from '@/constants/screen-transitions';
 import { ThemeScheme } from '@/constants/theme';
 import { seedDefaultCategories } from '@/db/categories';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
 import { useThemeStore } from '@/store/theme.store';
-import { authScreenTransition } from '@/components/auth/auth-screen.styles';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -56,14 +56,14 @@ export default function RootLayout() {
         <Stack>
           <Stack.Protected guard={!!user}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="add" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="set-budget" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="add" options={ScreenTransitions.fullScreenModal} />
+            <Stack.Screen name="set-budget" options={ScreenTransitions.dialog} />
             <Stack.Screen name="tags" />
             <Stack.Screen name="reimbursements" />
           </Stack.Protected>
           <Stack.Protected guard={!user}>
-            <Stack.Screen name="login" options={authScreenTransition} />
-            <Stack.Screen name="register" options={authScreenTransition} />
+            <Stack.Screen name="login" options={ScreenTransitions.crossFade} />
+            <Stack.Screen name="register" options={ScreenTransitions.crossFade} />
           </Stack.Protected>
         </Stack>
       </ThemeProvider>

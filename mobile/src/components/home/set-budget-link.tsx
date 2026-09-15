@@ -36,4 +36,40 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
   },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  editLabel: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
 });
+
+type EditBudgetLinkProps = {
+  /** 显示什么文字，由调用方决定——预算卡想显示"已用 X / Y"，金环布局想显示"预算 Y" */
+  label: string;
+};
+
+// 已经设过预算时的编辑入口：一段文字 + 一个小箭头，点了回到同一个弹窗改数字。
+// 跟 SetBudgetLink 放同一个文件，是因为两者回答的是同一个问题——"点了去哪设预算"，
+// 只是一个用在空状态、一个用在已有值的状态，目的地必须永远一致。
+export function EditBudgetLink({ label }: EditBudgetLinkProps) {
+  const theme = useTheme();
+
+  return (
+    <Pressable
+      onPress={() => router.push('/set-budget')}
+      hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+      style={styles.editRow}>
+      <ThemedText themeColor="textSecondary" style={styles.editLabel}>
+        {label}
+      </ThemedText>
+      {/* 箭头用强调色：文字本身要保持克制（它在卡片标题行里，不该抢戏），
+          但完全不给提示的话没人知道这里能点 */}
+      <Ionicons name="chevron-forward" size={12} color={theme.cardHighlight} />
+    </Pressable>
+  );
+}
