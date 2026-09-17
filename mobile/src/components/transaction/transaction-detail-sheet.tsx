@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { CategoryIcon } from '@/components/category/category-icon';
 import { DialogActions, ModalDialog } from '@/components/ui/modal-dialog';
 import { ModalHost } from '@/components/ui/modal-host';
-import { ModalSheet } from '@/components/ui/modal-sheet';
+import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useDeleteTransaction, useDuplicateTransaction, useTransaction } from '@/hooks/use-transactions';
@@ -36,15 +36,18 @@ export function TransactionDetailSheet({ transactionId, onDismiss }: Transaction
   const deleteTransaction = useDeleteTransaction();
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const sheet = useSheetTransition(onDismiss, 0.65);
 
   const handleEdit = () => {
-    // 先关弹层再跳页：原生 Modal 还开着就导航的话，它会浮在新页面上面盖住记账表单
-    onDismiss();
-    router.push({ pathname: '/add', params: { id: transactionId } });
+    // 先关弹层再跳页：Modal 是独立原生窗口，还开着就导航的话会浮在记账表单上面
+    sheet.close(() => {
+      onDismiss();
+      router.push({ pathname: '/add', params: { id: transactionId } });
+    });
   };
 
   const handleDuplicate = () => {
-    duplicateTransaction.mutate(transactionId, { onSuccess: onDismiss });
+    duplicateTransaction.mutate(transactionId, { onSuccess: () => sheet.close() });
   };
 
   const handleDelete = () => {
@@ -78,8 +81,8 @@ export function TransactionDetailSheet({ transactionId, onDismiss }: Transaction
   }
 
   return (
-    <ModalHost visible onRequestClose={onDismiss}>
-      <ModalSheet onDismiss={onDismiss} maxHeightRatio={0.65}>
+    <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
+      <ModalSheet transition={sheet}>
         {isPending || !transaction ? (
           <View style={styles.loading}>
             <ActivityIndicator color={theme.cardHighlight} />

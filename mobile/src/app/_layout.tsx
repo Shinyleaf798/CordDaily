@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { Stack } from 'expo-router/js-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
@@ -54,20 +55,8 @@ export default function RootLayout() {
     }
   }, [isHydrated]);
 
-  /**
-   * 根视图底色，跟着主题走。
-   *
-   * 这不是锦上添花，是转场白屏的唯一解：expo-router 自带的那份 native stack 里，
-   * 屏幕一失去焦点，它的内容整块被设成 display:'none'
-   * （见 expo-router/build/react-navigation/native-stack/views/NativeStackView.js）。
-   * 点返回的那一刻内容瞬间消失，连 contentStyle 那层 View 一起藏掉，
-   * 滑走的是一个空的原生 Screen——露出的就是根视图底色。
-   * 那个默认值在 Android 上是白，所以黑色主题下会闪一下刺眼的白。
-   *
-   * 把它设成主题底色，那一帧就变成"一块纯色面板带着 header 滑走"，跟页面本身是同一个色。
-   * 内容本身留不住（display:'none' 写在 expo-router 内部，userland 改不了），
-   * 但看得见的白屏没有了。
-   */
+  // 根视图底色：整棵 React 树后面那块原生窗口，启动图收掉到首屏之间、透明屏底下会露出来。
+  // 它在 Android 上默认是白的，黑色主题下不设就闪一下刺眼的白。
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(theme.background).catch(() => {
       // 设不上只是回到默认底色，不该挡住启动
@@ -78,14 +67,9 @@ export default function RootLayout() {
     return null;
   }
 
-  // 导航器自己也有一套颜色：屏幕底色、header 底色、返回箭头、标题文字，全归它管，
-  // 而它默认只有 light/dark 两档现成色板，跟这个 App 的三套主题对不上。
-  //
-  // 后果不只是"header 灰得不太一样"：**屏幕底色是画在原生 Screen 这一层的**，
-  // 页面内容没渲染出来的那几帧（转场中、异步取数中）就只剩它。之前那几帧是白的，
-  // 因为那时连它都没接上，露出的是 Android 原生窗口底色。
-  //
-  // 只覆盖颜色，保留 base 的 dark 标记和字体配置——那两样是给系统控件用的，改了没好处。
+  // 导航器有自己一套颜色（屏幕底色、header、返回箭头、标题），默认只有 light/dark 两档，对不上三套主题。
+  // colors.background 就是每张卡片的底色，内容没渲染出来的那几帧只剩它——所以各屏不用再单独铺背景。
+  // 只覆盖颜色，保留 base 的 dark 标记和字体配置：那两样是给系统控件用的。
   const base = ThemeScheme[themeName] === 'dark' ? DarkTheme : DefaultTheme;
   const navigationTheme = {
     ...base,
@@ -103,6 +87,9 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider value={navigationTheme}>
+        {/* JS 栈，不是默认那份原生栈：原生栈 pop 时路由当场从 state.routes 移除、React 立刻卸载，
+            而原生层还在播动画，滑走的是个空壳（NativeStackView.js:53-54）。JS 栈用 closingRouteKeys
+            留到动画播完才移除，顺带动画也变成可以自己写的（见 DECISIONS.md 2026-09-17）。 */}
         <Stack>
           <Stack.Protected guard={!!user}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -110,24 +97,25 @@ export default function RootLayout() {
                 返回动画不用单独配：slide_from_right 的出场本来就是它的逆过程。
 
                 title 必须写在这里，不能只靠 TransactionForm 里那个 <Stack.Screen>：
-                那份 options 跟着组件走，组件不在的那几帧（转场、编辑模式还在查数据）标题会退回
+                那份 options 跟着组件走，组件不在的那几帧（编辑模式还在查数据）标题会退回
                 路由名 "Add"。写在路由这一层的才是这个页面的"底线外观"，
                 组件里那份只负责它额外要的东西（收支切换 tabs、关闭按钮）。
 
-                contentStyle 跟上面那个 navigationTheme 是两层：navigationTheme 画的是原生 Screen 的底，
-                内容一个都不剩时靠它；contentStyle 画的是包着 children 的那层容器。两层都铺上，
-                是因为 children 没了的时候第二层会塌成 0 高度，光靠它兜不住。 */}
+                headerTitleAlign 必须显式写：默认是"iOS 居中、其它平台靠左"。原生栈上看着居中是巧合
+                （自定义 title 被塞进左侧容器再包一层 flex:1 撑满），JS 栈老实按 align 摆。 */}
             <Stack.Screen
               name="add"
-              options={{ ...ScreenTransitions.push, title: '记一笔', contentStyle: { backgroundColor: theme.background } }}
+              options={{ ...ScreenTransitions.push, title: '记一笔', headerTitleAlign: 'center' }}
             />
             <Stack.Screen name="set-budget" options={ScreenTransitions.dialog} />
+            <Stack.Screen name="categories" options={{ ...ScreenTransitions.push, title: '分类管理' }} />
+            {/* 跟记一笔、分类管理同一类，用同一个 push。以前空着看不出来是因为原生栈在 Android 上
+                会把 slide_from_right 回落成默认；JS 栈照字面执行，不写就分叉成两种动画。 */}
+            <Stack.Screen name="tags" options={{ ...ScreenTransitions.push, title: '标签汇总' }} />
             <Stack.Screen
-              name="categories"
-              options={{ ...ScreenTransitions.push, title: '分类管理', contentStyle: { backgroundColor: theme.background } }}
+              name="reimbursements"
+              options={{ ...ScreenTransitions.push, title: '报销' }}
             />
-            <Stack.Screen name="tags" />
-            <Stack.Screen name="reimbursements" />
           </Stack.Protected>
           <Stack.Protected guard={!user}>
             <Stack.Screen name="login" options={ScreenTransitions.crossFade} />

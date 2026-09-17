@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack } from 'expo-router';
+import { Stack } from 'expo-router/js-stack';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

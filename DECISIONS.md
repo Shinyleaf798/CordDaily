@@ -730,3 +730,72 @@
 
 没有去追"为什么那几帧里表单不在"。原生栈 pop 时的挂载时机是 react-native-screens 的行为，
 改不动也不该改。把那一帧修得跟正常状态一样，比让它不出现更实在。
+
+## 2026-09-17 从原生栈换到 JS 栈（expo-router/js-stack）
+
+**改了什么**
+
+- `mobile/src/app/_layout.tsx`：`<Stack>` 的来源从 `expo-router` 换成 `expo-router/js-stack`。
+  没有装新依赖——expo-router 57 自己就带着一份 vendored 的 `@react-navigation/stack`，
+  并且把它作为公开入口导出（内部那份 `createStackNavigator` 的注释原话是
+  "App code should use `Stack` from `expo-router/js-stack`"）。
+- `mobile/src/constants/screen-transitions.ts`：预设值几乎原样保留（JS 栈认识同一批
+  `animation` 名字和 `presentation: 'transparentModal'`），改的是类型收口：
+  从一堆 `as const` 换成 `satisfies Record<string, StackNavigationOptions>`，
+  写错选项名编译期就报。
+- 三个用 `<Stack.Screen options>` 设 header 的地方（`tags`、`reimbursements`、
+  `transaction-form`）改成从 `expo-router/js-stack` import，拿到的才是 JS 栈的 options 类型。
+- 删掉两处 `contentStyle: { backgroundColor: theme.background }`：那是原生栈的选项名，
+  JS 栈对应的是 `cardStyle`；但这里连 `cardStyle` 都不用写，因为卡片底色本来就取
+  `navigationTheme.colors.background`（见 vendored 的 `views/Stack/CardContainer.js`
+  那行 `presentation === 'transparentModal' ? 'transparent' : colors.background`），
+  上一条决策里接上的那个 navigationTheme 已经把它管住了。
+
+**为什么这样设计**
+
+直接起因是想要自己写转场动画。但真正非换不可的，是原生栈上一个改不掉的现象：
+**页面关闭时内容先被清空、再滑走**——看到的是一块纯色面板带着 header 滑出去。
+
+根因查到底了，在 expo-router 内部这份 native stack 的 view 里
+（`react-navigation/native-stack/views/NativeStackView.js:53-54`）：
+
+```js
+state.routes.concat(...).map((route, i) => { const isFocused = state.index === i; ... })
+```
+
+pop 的一瞬间，被关闭的那条路由**当场从 `state.routes` 里消失**，React 立刻卸载整棵子树，
+而原生层这时才开始播关闭动画——滑走的必然是空壳。
+
+JS 栈没有这个问题，因为它不信任 `state.routes` 就是"该画什么"：
+`views/Stack/CardStack.js` 里维护了一个 `closingRouteKeys`，被关掉的路由留在它自己的局部
+state 里，**动画播完才真正移除**。同一件事，一个交给原生去播、React 侧提前撒手，
+另一个自己从头管到尾，所以只有后者能让内容跟着一起滑。
+
+换栈顺带解决了动画这一半：`animation` 现在只是 `cardStyleInterpolator + transitionSpec`
+的一个快捷名字，想自定义就直接写那两个，都从 `expo-router/js-stack` 导出。
+另外 `slide_from_right` 在 JS 栈上两端都真的是"从右滑"，不像原生栈在 Android 上会回落成平台默认。
+
+**放弃了什么替代方案**
+
+- **改 `animation` 参数**：无关。滑动本身一直是好的（进场时首页完整跟着平移），坏的是内容存在与否。
+- **`NativeStackView.js` 第 88 行那个 `display: 'none'`**：那行管的是**下层**屏幕。
+  pop 时被关闭的路由根本没进那个 `.map()`，轮不到它生效。
+- **用 `contentStyle` 铺底色兜住**：那层 View 跟着一起被卸载，兜不住。
+  （这条上一次已经踩过一遍，见上一节。）
+- **升级 expo-router**：57.0.21 里那段代码逐字节相同，升级不解决。
+- **`usePreventRemove` 拦住 GO_BACK**：实测**能**拦住、内容也确实保持挂载，
+  但要配 `presentation: 'transparentModal'` + 自绘动画 + 手搓侧滑手势，
+  而且那条路自己也得关掉原生动画（`animation: 'none'`）——
+  **等于同样是 JS 动画，却多付了内部 API 和手搓手势的代价**。这是选 JS 栈而不是它的决定性理由。
+
+**已知代价（接受）**
+
+动画由 JS/Animated 驱动而不是原生线程；header 从原生控件换成
+`@react-navigation/elements` 渲染——这个项目的 header 本来就全是自定义的
+（收支 tabs + X），不受影响。
+
+**保留没动的**
+
+上一条决策里加的 navigationTheme（用 App 色板拼的导航器主题）和
+`SystemUI.setBackgroundColorAsync(theme.background)` 都留着：前者现在是每张卡片的底色，
+后者管的是启动图收掉到首屏之间那几帧、以及透明屏底下真的什么都没有的时候。

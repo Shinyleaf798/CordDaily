@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ModalHost } from '@/components/ui/modal-host';
-import { ModalSheet } from '@/components/ui/modal-sheet';
+import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -38,6 +38,8 @@ const TIME_ITEM_WIDTH = 44;
  */
 export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePickerSheetProps) {
   const theme = useTheme();
+  // 0.8：日历 + 时间带比别的弹层高。这个比例同时决定了起始位移，所以只在这里写一次
+  const sheet = useSheetTransition(onDismiss, 0.8);
 
   // 草稿：日期和时间都改这一个值。翻月份不算改值，所以单独存
   const [draft, setDraft] = useState(value);
@@ -65,8 +67,8 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
   ];
 
   return (
-    <ModalHost visible onRequestClose={onDismiss}>
-      <ModalSheet title="选择日期" onDismiss={onDismiss} maxHeightRatio={0.8}>
+    <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
+      <ModalSheet title="选择日期" transition={sheet}>
         {/* 日历和时间带包在可滚动区里，底部那一行留在外面。
             时间带展开后内容在小屏上会超过弹层高度，而 ModalSheet 只是 maxHeight，超出部分直接裁掉——
             被裁掉的恰好是最下面的「确定」，那就又变成一个"点了没反应"的按钮 */}
@@ -159,7 +161,7 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
           </Pressable>
 
           <Pressable
-            onPress={() => onSelect(draft)}
+            onPress={() => sheet.close(() => onSelect(draft))}
             style={[styles.confirmButton, { backgroundColor: theme.cardHighlight }]}>
             <ThemedText type="small" style={{ color: theme.onCardHighlight, fontWeight: '700' }}>
               确定

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ui/themed-text';
@@ -24,106 +24,114 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <ThemedView style={styles.container}>
-        <ThemedText type="title">我的</ThemedText>
+      {/* 底色铺在 ScrollView 外面：它自己的高度等于内容高度，内容短时下面会露出没底色的空白 */}
+      <ThemedView style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.container}>
+          <ThemedText type="title">我的</ThemedText>
 
-        <View style={styles.card}>
-          <ThemedText type="default">{user?.email}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            基准货币 {user?.baseCurrency}
-          </ThemedText>
-        </View>
+          <View style={styles.card}>
+            <ThemedText type="default">{user?.email}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              基准货币 {user?.baseCurrency}
+            </ThemedText>
+          </View>
 
-        <View style={styles.card}>
-          <ThemedText type="small" themeColor="textSecondary">
-            账本
-          </ThemedText>
-          {[
-            { href: '/categories' as const, icon: 'grid-outline' as const, label: '分类管理', hint: '增删改分类和图标，记账页那个「设置」格子通到同一页' },
-            { href: '/set-budget' as const, icon: 'cash-outline' as const, label: '预算', hint: '设本月总预算，超支在本地实时计算' },
-            { href: '/tags' as const, icon: 'pricetags-outline' as const, label: '标签汇总', hint: '按旅行、装修这类跨分类的事件看花销' },
-            { href: '/reimbursements' as const, icon: 'cash-outline' as const, label: '报销', hint: '看现在垫了多少钱还没收回来' },
-          ].map((entry) => (
-            <Pressable
-              key={entry.href}
-              onPress={() => router.push(entry.href)}
-              style={[styles.linkRow, { backgroundColor: theme.backgroundElement }]}>
-              <Ionicons name={entry.icon} size={20} color={theme.cardHighlight} />
-              <View style={styles.linkText}>
-                <ThemedText type="default">{entry.label}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {entry.hint}
-                </ThemedText>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-            </Pressable>
-          ))}
-        </View>
-
-        {/* 首页布局跟主题是两个独立设置：布局管结构、主题管配色，可以任意组合 */}
-        <View style={styles.card}>
-          <ThemedText type="small" themeColor="textSecondary">
-            首页布局
-          </ThemedText>
-          {HomeLayoutNames.map((name) => (
-            <Pressable
-              key={name}
-              onPress={() => setLayoutName(name)}
-              style={[
-                styles.layoutRow,
-                {
-                  backgroundColor: theme.backgroundElement,
-                  borderColor: name === layoutName ? theme.cardHighlight : 'transparent',
-                },
-              ]}>
-              <View style={styles.linkText}>
-                <ThemedText type="default">{HomeLayoutLabels[name]}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {HomeLayoutHints[name]}
-                </ThemedText>
-              </View>
-              {name === layoutName ? (
-                <Ionicons name="checkmark-circle" size={20} color={theme.cardHighlight} />
-              ) : null}
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.card}>
-          <ThemedText type="small" themeColor="textSecondary">
-            主题
-          </ThemedText>
-          <View style={styles.themeRow}>
-            {ThemeNames.map((name) => (
+          <View style={styles.card}>
+            <ThemedText type="small" themeColor="textSecondary">
+              账本
+            </ThemedText>
+            {[
+              { href: '/categories' as const, icon: 'grid-outline' as const, label: '分类管理', hint: '增删改分类和图标，记账页那个「设置」格子通到同一页' },
+              { href: '/set-budget' as const, icon: 'cash-outline' as const, label: '预算', hint: '设本月总预算，超支在本地实时计算' },
+              { href: '/tags' as const, icon: 'pricetags-outline' as const, label: '标签汇总', hint: '按旅行、装修这类跨分类的事件看花销' },
+              { href: '/reimbursements' as const, icon: 'cash-outline' as const, label: '报销', hint: '看现在垫了多少钱还没收回来' },
+            ].map((entry) => (
               <Pressable
-                key={name}
-                onPress={() => setThemeName(name)}
-                style={[
-                  styles.themeChip,
-                  {
-                    backgroundColor: theme.backgroundElement,
-                    borderColor: name === themeName ? theme.cardHighlight : 'transparent',
-                  },
-                ]}>
-                <ThemedText type="small">{ThemeLabels[name]}</ThemedText>
+                key={entry.href}
+                onPress={() => router.push(entry.href)}
+                style={[styles.linkRow, { backgroundColor: theme.backgroundElement }]}>
+                <Ionicons name={entry.icon} size={20} color={theme.cardHighlight} />
+                <View style={styles.linkText}>
+                  <ThemedText type="default">{entry.label}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {entry.hint}
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
               </Pressable>
             ))}
           </View>
-        </View>
 
-        <Pressable onPress={() => clearSession()} style={[styles.logoutButton, { borderColor: theme.expense }]}>
-          <ThemedText type="default" style={{ color: theme.expense }}>
-            退出登录
-          </ThemedText>
-        </Pressable>
+          {/* 首页布局跟主题是两个独立设置：布局管结构、主题管配色，可以任意组合 */}
+          <View style={styles.card}>
+            <ThemedText type="small" themeColor="textSecondary">
+              首页布局
+            </ThemedText>
+            {HomeLayoutNames.map((name) => (
+              <Pressable
+                key={name}
+                onPress={() => setLayoutName(name)}
+                style={[
+                  styles.layoutRow,
+                  {
+                    backgroundColor: theme.backgroundElement,
+                    borderColor: name === layoutName ? theme.cardHighlight : 'transparent',
+                  },
+                ]}>
+                <View style={styles.linkText}>
+                  <ThemedText type="default">{HomeLayoutLabels[name]}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {HomeLayoutHints[name]}
+                  </ThemedText>
+                </View>
+                {name === layoutName ? (
+                  <Ionicons name="checkmark-circle" size={20} color={theme.cardHighlight} />
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.card}>
+            <ThemedText type="small" themeColor="textSecondary">
+              主题
+            </ThemedText>
+            <View style={styles.themeRow}>
+              {ThemeNames.map((name) => (
+                <Pressable
+                  key={name}
+                  onPress={() => setThemeName(name)}
+                  style={[
+                    styles.themeChip,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      borderColor: name === themeName ? theme.cardHighlight : 'transparent',
+                    },
+                  ]}>
+                  <ThemedText type="small">{ThemeLabels[name]}</ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <Pressable onPress={() => clearSession()} style={[styles.logoutButton, { borderColor: theme.expense }]}>
+            <ThemedText type="default" style={{ color: theme.expense }}>
+              退出登录
+            </ThemedText>
+          </Pressable>
+        </ScrollView>
       </ThemedView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
+  },
+  // flexGrow 而不是 flex: 1——这是内容容器：不够高时撑满可视区，够高时按内容走。
+  // 少了它，下面 logoutButton 的 marginTop: 'auto' 会失效（没有多余空间可 auto）
+  container: {
+    flexGrow: 1,
     padding: Spacing.four,
     gap: Spacing.four,
   },

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ModalHost } from '@/components/ui/modal-host';
-import { ModalSheet } from '@/components/ui/modal-sheet';
+import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { AccountTypeLabels } from '@/constants/account-types';
 import { Spacing } from '@/constants/theme';
@@ -24,10 +24,11 @@ type AccountPickerSheetProps = {
  */
 export function AccountPickerSheet({ accounts, selectedId, onSelect, onDismiss }: AccountPickerSheetProps) {
   const theme = useTheme();
+  const sheet = useSheetTransition(onDismiss);
 
   return (
-    <ModalHost visible onRequestClose={onDismiss}>
-      <ModalSheet title="选择账户" onDismiss={onDismiss}>
+    <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
+      <ModalSheet title="选择账户" transition={sheet}>
         {accounts.length === 0 ? (
           // 一个账户都没有时记不了账（accountId 是 NOT NULL），所以这里要把话说清楚，
           // 而不是让用户对着一个空列表猜为什么保存按钮是灰的
@@ -41,7 +42,7 @@ export function AccountPickerSheet({ accounts, selectedId, onSelect, onDismiss }
               return (
                 <Pressable
                   key={account.id}
-                  onPress={() => onSelect(account.id)}
+                  onPress={() => sheet.close(() => onSelect(account.id))}
                   style={[
                     styles.row,
                     {

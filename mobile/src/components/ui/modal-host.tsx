@@ -5,6 +5,9 @@ type ModalHostProps = {
   visible: boolean;
   /** Android 实体返回键 / 手势返回时调什么 */
   onRequestClose: () => void;
+  /** 'fade' 交给 RN Modal 做，配 ModalDialog；'none' 让内容自己驱动，ModalSheet 必须用它——
+   *  Modal 的 fade 淡的是整层，卡片会跟着半透明，底下那一屏就透出来了 */
+  animation?: 'fade' | 'none';
   children: ReactNode;
 };
 
@@ -23,14 +26,12 @@ type ModalHostProps = {
  * 用 RN 的 Modal 而不是在页面里绝对定位一个 View：Modal 是系统级窗口，
  * 能盖住原生 header 和底部 tab bar，绝对定位的 View 盖不住。
  */
-export function ModalHost({ visible, onRequestClose, children }: ModalHostProps) {
+export function ModalHost({ visible, onRequestClose, animation = 'fade', children }: ModalHostProps) {
   return (
     <Modal
       visible={visible}
       transparent
-      // 动画交给里面的内容去做也行，但 fade 对两种壳都说得通：
-      // 对话框本来就是淡入的，底部弹层在这一层淡入、内容自己不再动，看起来仍然是"浮上来一层"
-      animationType="fade"
+      animationType={animation}
       statusBarTranslucent
       onRequestClose={onRequestClose}>
       {children}

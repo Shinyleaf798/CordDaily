@@ -1,5 +1,5 @@
 import { BlurView } from 'expo-blur';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemeScheme } from '@/constants/theme';
 import { useThemeStore } from '@/store/theme.store';
@@ -13,28 +13,29 @@ type ModalBackdropProps = {
 // 弹层背后那一层：毛玻璃 + 压暗 + 点击关闭。对话框和底部弹层共用同一个，
 // 保证两种弹层的"背景观感"一致——不一致的话会让人以为是两个不同的东西。
 //
-// 平台差异：BlurView 在 iOS 上能直接糊到底下那一屏；Android 需要把被糊的内容包进
-// BlurTargetView，而弹层和底下那屏是两个路由，跨路由包不了。所以下面垫了一层半透明黑，
-// iOS 得到真毛玻璃，Android 至少得到"背景被压暗"，两端都不会出现"遮罩看不见"的情况。
+// BlurView 只在 iOS 渲染（那边 UIVisualEffectView 直接糊背后内容，不用配置）。
+// Android 糊不动——被糊的内容要包进 BlurTargetView，而这里隔着路由甚至隔着原生窗口。
+// 必须显式不渲染它：没有 blurTarget 时它不会跳过，而是铺一块 rgba(25,25,25,0.28) 凑成双份压暗。
 export function ModalBackdrop({ onPress, intensity = 40 }: ModalBackdropProps) {
   const themeName = useThemeStore((s) => s.themeName);
+  const isDark = ThemeScheme[themeName] === 'dark';
 
   return (
     <Pressable style={StyleSheet.absoluteFill} onPress={onPress} disabled={!onPress}>
-      <BlurView
-        intensity={intensity}
-        tint={ThemeScheme[themeName] === 'dark' ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[StyleSheet.absoluteFill, styles.scrim]} />
+      {Platform.OS === 'ios' ? (
+        <BlurView
+          intensity={intensity}
+          tint={isDark ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? SCRIM_DARK : SCRIM_LIGHT }]} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  // 固定黑色，不跟主题走：遮罩的作用是把背景压暗好让弹层浮起来，
-  // 白色主题下用浅色遮罩就完全失去了这个作用
-  scrim: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-  },
-});
+// 颜色固定黑（浅色遮罩在白色主题下压不暗），只有浓度分档。
+// 纯黑叠加是各通道乘同一系数，只降明度、不改色相和饱和度；
+// 但深色主题背景本就是 #000000，遮罩只压得到亮元素，所以要比白色主题淡得多。
+const SCRIM_LIGHT = 'rgba(0, 0, 0, 0.45)';
+const SCRIM_DARK = 'rgba(0, 0, 0, 0.22)';
