@@ -7,12 +7,12 @@ import { TransactionListItem } from '@/components/transaction/transaction-list-i
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
-import type { HomeViewData } from '@/hooks/use-home-view-data';
+import type { HomeLayoutProps } from '@/components/home/layouts/types';
 import { useTheme } from '@/hooks/use-theme';
 
 // 布局 A「节奏条」：月度总览卡 + 预算节奏卡 + 近7天账单（一天一张卡）。
 // 全部信息都装在卡片里，层次靠卡片边界交代，是两套布局里更稳、更耐看的那个。
-export function PaceLayout({ data }: { data: HomeViewData }) {
+export function PaceLayout({ data, onSelectTransaction }: HomeLayoutProps) {
   const theme = useTheme();
 
   return (
@@ -60,7 +60,7 @@ export function PaceLayout({ data }: { data: HomeViewData }) {
                     <View style={[styles.rowDivider, { backgroundColor: theme.backgroundSelected }]} />
                   ) : null}
                   <View style={styles.itemWrap}>
-                    <TransactionListItem {...item} surface="card" />
+                    <TransactionListItem {...item} surface="card" onPress={() => onSelectTransaction(item.id)} />
                   </View>
                 </View>
               ))}

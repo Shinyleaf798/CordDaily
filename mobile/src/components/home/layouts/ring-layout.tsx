@@ -6,13 +6,13 @@ import { TransactionListItem } from '@/components/transaction/transaction-list-i
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
-import type { HomeViewData } from '@/hooks/use-home-view-data';
+import type { HomeLayoutProps } from '@/components/home/layouts/types';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
 
 // 布局 B「金环」：把"本月还能花多少"做成页面主角，月度收支退成一条三栏 pill，
 // 账单直接铺在页面底色上、只用细线分隔。信息比 A 少，但第一眼看到的就是最该看的那个数。
-export function RingLayout({ data }: { data: HomeViewData }) {
+export function RingLayout({ data, onSelectTransaction }: HomeLayoutProps) {
   const theme = useTheme();
 
   // 超支之后环和中心数字都翻成支出色：还用强调色的话，一个负数配金色看着像还有额度
@@ -131,7 +131,7 @@ export function RingLayout({ data }: { data: HomeViewData }) {
               </View>
               {group.items.map((item) => (
                 <View key={item.id} style={[styles.rowWrap, { borderTopColor: theme.backgroundSelected }]}>
-                  <TransactionListItem {...item} surface="page" />
+                  <TransactionListItem {...item} surface="page" onPress={() => onSelectTransaction(item.id)} />
                 </View>
               ))}
             </View>
