@@ -127,4 +127,27 @@ export const MIGRATIONS: string[][] = [
   [
     `DROP TABLE IF EXISTS budgets;`,
   ],
+
+  // v5：默认分类的图标从 emoji 改成 `builtin:key` 引用（见 constants/category-icons.ts）。
+  // 只改代码里的 DEFAULT_CATEGORIES 是不够的——seedDefaultCategories 只在空库时跑一次，
+  // 已经装过 App 的设备永远轮不到它，那些机器上的默认分类会一直停在 emoji，
+  // 以后把图片放进 assets/categories/ 也不会显示。
+  //
+  // 按 emoji 精确匹配来改，所以顶多误伤到"用户自建了一个也用 🍜 的分类"——
+  // 那种情况改完显示的仍然是同一个 🍜（图片没登记时落回兜底 emoji），看不出差别。
+  [
+    `UPDATE categories SET icon = 'builtin:food' WHERE icon = '🍜';`,
+    `UPDATE categories SET icon = 'builtin:shopping' WHERE icon = '🛍️';`,
+    `UPDATE categories SET icon = 'builtin:transport' WHERE icon = '🚌';`,
+    `UPDATE categories SET icon = 'builtin:daily' WHERE icon = '🏠';`,
+    `UPDATE categories SET icon = 'builtin:entertainment' WHERE icon = '🎮';`,
+    `UPDATE categories SET icon = 'builtin:medical' WHERE icon = '💊';`,
+    `UPDATE categories SET icon = 'builtin:study' WHERE icon = '📚';`,
+    `UPDATE categories SET icon = 'builtin:social' WHERE icon = '🤝';`,
+    `UPDATE categories SET icon = 'builtin:other' WHERE icon = '📦';`,
+    `UPDATE categories SET icon = 'builtin:salary' WHERE icon = '💰';`,
+    `UPDATE categories SET icon = 'builtin:bonus' WHERE icon = '🧧';`,
+    `UPDATE categories SET icon = 'builtin:parttime' WHERE icon = '💼';`,
+    `UPDATE categories SET icon = 'builtin:refund' WHERE icon = '💵';`,
+  ],
 ];

@@ -26,12 +26,24 @@ export const ScreenTransitions = {
     headerShown: false,
   },
 
-  /** 整页表单（如记一笔）：系统 modal，盖住底下那一屏 */
+  /**
+   * 整页 modal：系统级弹窗，从下往上盖住底下那一屏。目前没人用。
+   *
+   * 记一笔原来走这个，后来换成了 push——它是一条"进去做完事再出来"的流程，
+   * 不是一个需要强调"你正被打断"的弹窗。而且 presentation: 'modal' 会接管转场，
+   * animation 那一栏写什么都不生效，想要左右滑就必须离开 modal。
+   */
   fullScreenModal: {
     presentation: 'modal' as const,
   },
 
-  /** 普通二级页：从右推入。iOS 是系统默认手感，Android 上这个值会回落成平台默认 */
+  /**
+   * 普通二级页：从右滑入，返回时原路滑回右边。
+   * iOS 是系统默认手感，Android 上这个值会回落成平台默认。
+   *
+   * 记一笔、分类管理都走这个：它们是"进去做完事再出来"的页面，
+   * 左右滑的方向本身就在表达"我进到更深一层了 / 我退回来了"。
+   */
   push: {
     animation: 'slide_from_right' as const,
   },

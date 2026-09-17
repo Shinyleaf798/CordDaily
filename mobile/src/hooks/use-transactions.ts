@@ -2,7 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   createTransaction,
+  deleteTransaction,
+  duplicateTransaction,
   getMonthSummary,
+  getTransaction,
   getPendingReimbursementTotal,
   getTagBreakdown,
   listReimbursements,
@@ -10,8 +13,10 @@ import {
   listTagSummaries,
   setReimbursed,
   suggestFieldValues,
+  updateTransaction,
   type CreateTransactionInput,
   type SuggestionField,
+  type UpdateTransactionInput,
 } from '@/db/transactions';
 
 // 数据源是本地 SQLite，不是网络请求；用 React Query 单纯是为了缓存和 mutation 状态管理（同 use-accounts）
@@ -49,10 +54,45 @@ export function useMonthSummary(date?: Date) {
   });
 }
 
+/** 单笔详情。id 为空时不查——详情弹层关着的时候没必要打库 */
+export function useTransaction(id: string | null | undefined) {
+  return useQuery({
+    queryKey: [...TRANSACTIONS_KEY, 'detail', id],
+    queryFn: () => getTransaction(id!),
+    enabled: !!id,
+  });
+}
+
 export function useCreateTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateTransactionInput) => createTransaction(input),
+    onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
+// 改、复制、删都跟新增一样会牵动首页列表、月度汇总、预算、标签和账户余额，
+// 所以统一走 invalidateAll，不逐个挑——挑漏了就是"改完数字没变"这类查不出来的 bug
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateTransactionInput) => updateTransaction(input),
+    onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
+export function useDuplicateTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => duplicateTransaction(id),
+    onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
+export function useDeleteTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteTransaction(id),
     onSuccess: () => invalidateAll(queryClient),
   });
 }

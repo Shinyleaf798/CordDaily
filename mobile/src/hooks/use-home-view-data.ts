@@ -3,6 +3,7 @@ import type { BudgetStatus } from '@/db/budgets';
 import type { MonthSummary, TransactionWithCategory } from '@/db/transactions';
 import { useBudgetStatus } from '@/hooks/use-budgets';
 import { useMonthSummary, useRecentTransactions } from '@/hooks/use-transactions';
+import { WEEKDAY_LABELS, diffInDays, formatClockTime, formatMonthDay, startOfDay } from '@/utils/date';
 
 export type HomeTransaction = TransactionListItemData & { date: Date };
 
@@ -44,22 +45,11 @@ export type HomeViewData = {
   dayGroups: HomeDayGroup[];
 };
 
-const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-
-function stripTime(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function formatTime(iso: string) {
-  const date = new Date(iso);
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
 // 今天/昨天这两天用相对说法当主标签、具体日期当副标签；再往前就直接报日期，星期退到副标签。
 // 相对说法找得快，具体日期又不能丢——两个都放，靠字号分主次
 function formatDateGroupLabel(date: Date, now: Date) {
-  const diffDays = Math.round((stripTime(now).getTime() - stripTime(date).getTime()) / 86400000);
-  const monthDay = `${date.getMonth() + 1}月${date.getDate()}日`;
+  const diffDays = diffInDays(now, date);
+  const monthDay = formatMonthDay(date);
   const weekday = WEEKDAY_LABELS[date.getDay()];
   if (diffDays === 0) return { label: '今天', subLabel: `${monthDay} ${weekday}` };
   if (diffDays === 1) return { label: '昨天', subLabel: `${monthDay} ${weekday}` };
@@ -109,10 +99,12 @@ export function buildHomeViewData(input: {
   const items: HomeTransaction[] = (recent ?? []).map((t) => ({
     id: t.id,
     date: new Date(t.date),
-    icon: t.categoryIcon ?? '📦',
+    // 不在这里兜底成 emoji：icon 的三种写法怎么渲染、渲染不出来落回什么，
+    // 统一由 CategoryIcon / parseCategoryIcon 回答，这里原样传过去
+    icon: t.categoryIcon,
     title: t.title,
     categoryLabel: t.categoryName ?? '未分类',
-    time: formatTime(t.date),
+    time: formatClockTime(new Date(t.date)),
     note: t.remarks ?? undefined,
     amount: t.amount,
     type: t.type,
@@ -120,7 +112,7 @@ export function buildHomeViewData(input: {
 
   const groups = new Map<string, HomeTransaction[]>();
   for (const item of items) {
-    const key = stripTime(item.date).toISOString();
+    const key = startOfDay(item.date).toISOString();
     const existing = groups.get(key);
     if (existing) existing.push(item);
     else groups.set(key, [item]);

@@ -41,6 +41,11 @@ export type TransactionWithCategory = Transaction & {
   categoryIcon: string | null;
 };
 
+// 详情弹层要连账户名一起显示，比 TransactionWithCategory 多一个 JOIN
+export type TransactionDetail = TransactionWithCategory & {
+  accountName: string | null;
+};
+
 function mapRow<T extends TransactionRow>(row: T) {
   return {
     ...row,
@@ -122,6 +127,113 @@ export async function createTransaction(input: CreateTransactionInput): Promise<
   );
 
   return mapRow(row);
+}
+
+/** 单笔详情。带上分类名/图标和账户名，详情弹层一次查询就够，不用再各查一次 */
+export async function getTransaction(id: string): Promise<TransactionDetail | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<
+    TransactionRow & { categoryName: string | null; categoryIcon: string | null; accountName: string | null }
+  >(
+    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon, a.name AS accountName
+     FROM transactions t
+     LEFT JOIN categories c ON c.id = t.categoryId
+     LEFT JOIN accounts a ON a.id = t.accountId
+     WHERE t.id = ?`,
+    [id],
+  );
+
+  return row ? mapRow(row) : null;
+}
+
+export type UpdateTransactionInput = CreateTransactionInput & { id: string };
+
+/**
+ * 改一笔已有的交易。
+ *
+ * 不动的三个字段：`id`（客户端生成，是同步幂等的依据，改了就变成另一笔）、
+ * `createdAt`（录入时刻，跟交易发生时刻 date 是两件事）、`reimbursedAt`（报销收回状态有自己的入口）。
+ * `synced` 一律置 0：这条记录跟服务器上那份已经不一样了，下次同步要重新推。
+ */
+export async function updateTransaction(input: UpdateTransactionInput): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+
+  await db.runAsync(
+    `UPDATE transactions SET
+       title = ?, merchant = ?, location = ?, remarks = ?, amount = ?, amountInBase = ?, type = ?, date = ?,
+       tags = ?, isReimbursable = ?, excludeFromStats = ?, categoryId = ?, accountId = ?, updatedAt = ?, synced = 0
+     WHERE id = ?`,
+    [
+      input.title,
+      input.merchant?.trim() || null,
+      input.location?.trim() || null,
+      input.remarks?.trim() || null,
+      input.amount,
+      input.amount,
+      input.type,
+      input.date ?? now,
+      JSON.stringify(input.tags ?? []),
+      input.isReimbursable ? 1 : 0,
+      input.excludeFromStats ? 1 : 0,
+      input.categoryId,
+      input.accountId,
+      now,
+      input.id,
+    ],
+  );
+}
+
+/**
+ * 复制一笔，日期落在**此刻**而不是原来那天。
+ *
+ * 复制的用途是"今天又买了一样的东西"——每天同一杯咖啡、每周同一趟车费。
+ * 原样照搬旧日期的话，复制出来的那笔会直接落进历史里：首页只看近7天，
+ * 复制一笔三周前的账，界面上什么都不会发生，用户只会以为按钮坏了。
+ *
+ * `reimbursedAt` 也不抄：那是旧的那笔钱已经收回来了，新的这笔还没有。
+ */
+export async function duplicateTransaction(id: string): Promise<Transaction> {
+  const db = await getDb();
+  const source = await db.getFirstAsync<TransactionRow>('SELECT * FROM transactions WHERE id = ?', [id]);
+  if (!source) throw new Error('这笔交易已经不在了');
+
+  const now = new Date().toISOString();
+  const copy: TransactionRow = {
+    ...source,
+    id: Crypto.randomUUID(),
+    date: now,
+    reimbursedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    synced: 0,
+  };
+
+  await db.runAsync(
+    `INSERT INTO transactions
+       (id, title, merchant, location, remarks, amount, currency, exchangeRate, amountInBase, type, date,
+        tags, isReimbursable, reimbursedAt, excludeFromStats, categoryId, accountId, recurringId, createdAt, updatedAt, synced)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      copy.id, copy.title, copy.merchant, copy.location, copy.remarks, copy.amount, copy.currency, copy.exchangeRate,
+      copy.amountInBase, copy.type, copy.date, copy.tags, copy.isReimbursable, copy.reimbursedAt, copy.excludeFromStats,
+      copy.categoryId, copy.accountId, copy.recurringId, copy.createdAt, copy.updatedAt, copy.synced,
+    ],
+  );
+
+  return mapRow(copy);
+}
+
+/**
+ * 真删行，不是软删除。
+ *
+ * 已知代价：这笔要是已经同步到服务器了，本地删掉服务器上那份还在——单向同步没有"删除"这个动作。
+ * 等做同步时要补一张墓碑表（记下被删的 id 推给服务器），现在服务器上一条数据都还没有，
+ * 为一个还不存在的问题先建表不划算。这条记在 DECISIONS.md 里，别忘了。
+ */
+export async function deleteTransaction(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM transactions WHERE id = ?', [id]);
 }
 
 // 首页的近期账单。不过滤 excludeFromStats——账单列表要显示全部交易，

@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
 import { useThemeStore } from '@/store/theme.store';
 
-// 分类管理 / 预算设置 / 周期交易 / 同步设置这几个二级页面还没做，先把入口和登出放这里
+// 周期交易 / 同步设置这两个二级页面还没做，先把入口和登出放这里
 export default function SettingsScreen() {
   const theme = useTheme();
   const user = useAuthStore((s) => s.user);
@@ -39,6 +39,7 @@ export default function SettingsScreen() {
             账本
           </ThemedText>
           {[
+            { href: '/categories' as const, icon: 'grid-outline' as const, label: '分类管理', hint: '增删改分类和图标，记账页那个「设置」格子通到同一页' },
             { href: '/set-budget' as const, icon: 'cash-outline' as const, label: '预算', hint: '设本月总预算，超支在本地实时计算' },
             { href: '/tags' as const, icon: 'pricetags-outline' as const, label: '标签汇总', hint: '按旅行、装修这类跨分类的事件看花销' },
             { href: '/reimbursements' as const, icon: 'cash-outline' as const, label: '报销', hint: '看现在垫了多少钱还没收回来' },

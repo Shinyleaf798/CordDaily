@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
+import { AccountTypeLabels } from '@/constants/account-types';
 import { Spacing } from '@/constants/theme';
 import type { Account } from '@/db/accounts';
 import { useAccountBalance } from '@/hooks/use-accounts';
@@ -14,7 +15,7 @@ export function AccountRow({ account }: { account: Account }) {
       <View>
         <ThemedText type="default">{account.name}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          {account.type}
+          {AccountTypeLabels[account.type]}
         </ThemedText>
       </View>
       <ThemedText type="smallBold">

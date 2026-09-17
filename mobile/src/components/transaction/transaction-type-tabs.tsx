@@ -1,7 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
-import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type TransactionTypeTab = 'EXPENSE' | 'INCOME';
@@ -16,6 +15,8 @@ type TransactionTypeTabsProps = {
   onChange: (value: TransactionTypeTab) => void;
 };
 
+// 收入/支出的分段切换。从 add-transaction/ 挪到 transaction/ 是因为分类管理页也要用同一个控件：
+// 留在记账页的目录里，就会逼着分类管理页从 add-transaction 里 import 一个跟记账无关的东西
 export function TransactionTypeTabs({ value, onChange }: TransactionTypeTabsProps) {
   const theme = useTheme();
 

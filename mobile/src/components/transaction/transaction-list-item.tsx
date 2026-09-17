@@ -1,12 +1,14 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { CategoryIcon } from '@/components/category/category-icon';
 import { ThemedText } from '@/components/ui/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 import { formatSignedAmount } from '@/utils/format';
 
 export type TransactionListItemData = {
   id: string;
-  icon: string;
+  /** 原样传库里 categories.icon 的值：emoji / builtin:key / file:// 都由 CategoryIcon 认 */
+  icon: string | null;
   title: string;
   categoryLabel: string;
   time: string;
@@ -22,6 +24,8 @@ type TransactionListItemProps = TransactionListItemData & {
    * 'page'：行直接铺在页面底色（background）上，图标用 backgroundElement，圆形
    */
   surface?: 'card' | 'page';
+  /** 点这一行做什么。不传就是纯展示，连按下的反馈都没有 */
+  onPress?: () => void;
 };
 
 // 单条交易行：两套首页布局和以后的日历/账户详情页都复用这一个组件，只是喂给它的数据和底色不同
@@ -37,12 +41,17 @@ export function TransactionListItem({
   amount,
   type,
   surface = 'card',
+  onPress,
 }: TransactionListItemProps) {
   const theme = useTheme();
   const onPage = surface === 'page';
 
+  // 不可点时退回 View，而不是给 Pressable 传 disabled：
+  // disabled 的 Pressable 仍然会吃掉触摸事件，外面包着的可滚动区域会跟着变迟钝
+  const Row = onPress ? Pressable : View;
+
   return (
-    <View style={styles.row}>
+    <Row style={styles.row} onPress={onPress}>
       <View
         style={[
           styles.iconWrap,
@@ -50,7 +59,7 @@ export function TransactionListItem({
             ? { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.backgroundElement }
             : { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.backgroundSelected },
         ]}>
-        <ThemedText style={styles.iconText}>{icon}</ThemedText>
+        <CategoryIcon icon={icon} size={19} />
       </View>
 
       <View style={styles.middle}>
@@ -64,7 +73,7 @@ export function TransactionListItem({
       <ThemedText style={[styles.amount, type === 'INCOME' && { color: theme.income }]}>
         {formatSignedAmount(amount, type)}
       </ThemedText>
-    </View>
+    </Row>
   );
 }
 
@@ -77,9 +86,6 @@ const styles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconText: {
-    fontSize: 19,
   },
   middle: {
     flex: 1,
