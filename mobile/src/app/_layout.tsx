@@ -116,6 +116,14 @@ export default function RootLayout() {
               name="reimbursements"
               options={{ ...ScreenTransitions.push, title: '报销' }}
             />
+            {/* 「我的」下面的四个二级页，跟其它二级页同一种转场和同一套标题规则 */}
+            <Stack.Screen name="settings/ledger" options={{ ...ScreenTransitions.push, title: '账本' }} />
+            <Stack.Screen
+              name="settings/home-layout"
+              options={{ ...ScreenTransitions.push, title: '首页布局' }}
+            />
+            <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
+            <Stack.Screen name="settings/other" options={{ ...ScreenTransitions.push, title: '其他' }} />
           </Stack.Protected>
           <Stack.Protected guard={!user}>
             <Stack.Screen name="login" options={ScreenTransitions.crossFade} />
