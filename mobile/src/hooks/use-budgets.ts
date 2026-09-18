@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getBudgetStatus, getOverallBudget, setOverallBudget } from '@/db/budgets';
+import { formatMonthKey } from '@/utils/date';
 
 export function useBudgetStatus(date?: Date) {
-  const monthKey = (date ?? new Date()).toISOString().slice(0, 7);
+  const monthKey = formatMonthKey(date ?? new Date());
   return useQuery({
     queryKey: ['budgetStatus', monthKey],
     queryFn: () => getBudgetStatus(date),

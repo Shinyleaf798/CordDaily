@@ -9,6 +9,7 @@ import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import { usePendingReimbursementTotal, useReimbursements, useSetReimbursed } from '@/hooks/use-transactions';
 import { useTheme } from '@/hooks/use-theme';
+import { formatMonthDay } from '@/utils/date';
 
 // 报销清单。这一页存在的理由就是顶上那个数字——"我现在垫了多少钱还没收回来"。
 // 只有 isReimbursable 一个布尔值是撑不起这页的：标记打上就再也清不掉，列表会越积越长，
@@ -77,7 +78,7 @@ export default function ReimbursementsScreen() {
                 <View style={styles.middle}>
                   <ThemedText type="default">{item.title}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
-                    {item.categoryName ?? '未分类'} · {item.date.slice(0, 10)}
+                    {item.categoryName ?? '未分类'} · {formatMonthDay(new Date(item.date))}
                     {item.merchant ? ` · ${item.merchant}` : ''}
                   </ThemedText>
                 </View>

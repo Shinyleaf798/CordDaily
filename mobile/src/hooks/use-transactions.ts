@@ -18,6 +18,7 @@ import {
   type SuggestionField,
   type UpdateTransactionInput,
 } from '@/db/transactions';
+import { formatMonthKey } from '@/utils/date';
 
 // 数据源是本地 SQLite，不是网络请求；用 React Query 单纯是为了缓存和 mutation 状态管理（同 use-accounts）
 const TRANSACTIONS_KEY = ['transactions'];
@@ -47,7 +48,7 @@ export function useRecentTransactions(days = 7) {
 }
 
 export function useMonthSummary(date?: Date) {
-  const monthKey = (date ?? new Date()).toISOString().slice(0, 7);
+  const monthKey = formatMonthKey(date ?? new Date());
   return useQuery({
     queryKey: ['monthSummary', monthKey],
     queryFn: () => getMonthSummary(date),

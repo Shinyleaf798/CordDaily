@@ -28,6 +28,12 @@ export function formatClockTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+/** 2026-09。给"这是哪个月"当 key 用——注意不能写成 toISOString().slice(0,7)，
+ *  那在东八区每月 1 号的 00:00-08:00 之间会算成上个月，跟本文件顶上说的是同一个坑 */
+export function formatMonthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
 /** 9月13日 */
 export function formatMonthDay(date: Date): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
