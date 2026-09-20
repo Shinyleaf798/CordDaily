@@ -31,12 +31,21 @@ export default function CategoriesScreen() {
   const { data: categories } = useCategories(type);
   const rows = categories ?? [];
   const { data: usage } = useCategoryUsage(rows.map((c) => c.id));
+
+  // 一级在外、二级挂在各自父下面。分层只在这一页做，记账页的网格自己也分一次——
+  // 两边要的形状不一样（这里是嵌套列表，那边是网格 + 浮层），共用一个结构反而都别扭
+  const parents = rows.filter((c) => !c.parentId);
+  const childrenOf = new Map<string, Category[]>();
+  for (const row of rows) {
+    if (!row.parentId) continue;
+    childrenOf.set(row.parentId, [...(childrenOf.get(row.parentId) ?? []), row]);
+  }
   const deleteCategory = useDeleteCategory();
 
   // null = 没开；{ category: null } = 新建；{ category } = 编辑那一条。
   // 用一个 state 表示三态，而不是 isOpen + editingCategory 两个——两个 state 就可能出现
   // "开着但没数据"这种本不该存在的组合
-  const [editor, setEditor] = useState<{ category: Category | null } | null>(null);
+  const [editor, setEditor] = useState<{ category: Category | null; parent?: Category } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Category | null>(null);
 
   // 只在成功时关对话框。失败了留在原地把 db 层抛的话显示出来——
@@ -59,34 +68,29 @@ export default function CategoriesScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.list}>
-          {rows.map((category) => {
-            const used = usage?.[category.id] ?? 0;
+          {parents.map((parent) => {
+            const children = childrenOf.get(parent.id) ?? [];
             return (
-              <View key={category.id} style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
-                <View style={[styles.iconWrap, { backgroundColor: theme.background }]}>
-                  <CategoryIcon icon={category.icon} size={20} />
-                </View>
-
-                <View style={styles.rowText}>
-                  <ThemedText type="default">{category.name}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {used > 0 ? `${used} 笔记录在用` : '还没用过'}
-                  </ThemedText>
-                </View>
-
-                <Pressable onPress={() => setEditor({ category })} hitSlop={8} style={styles.rowAction}>
-                  <Ionicons name="create-outline" size={20} color={theme.textSecondary} />
-                </Pressable>
-
-                {/* 被引用的分类删不掉（同后端 Restrict 策略），所以按钮直接灰掉：
-                    让用户点了才知道不行，比一开始就说明白要糟 */}
-                <Pressable
-                  onPress={() => setPendingDelete(category)}
-                  disabled={used > 0}
-                  hitSlop={8}
-                  style={[styles.rowAction, used > 0 && styles.disabledAction]}>
-                  <Ionicons name="trash-outline" size={20} color={used > 0 ? theme.textSecondary : theme.expense} />
-                </Pressable>
+              <View key={parent.id} style={styles.group}>
+                <CategoryRow
+                  category={parent}
+                  used={usage?.[parent.id] ?? 0}
+                  childCount={children.length}
+                  onEdit={() => setEditor({ category: parent })}
+                  onDelete={() => setPendingDelete(parent)}
+                  onAddChild={() => setEditor({ category: null, parent })}
+                />
+                {children.map((child) => (
+                  <CategoryRow
+                    key={child.id}
+                    category={child}
+                    used={usage?.[child.id] ?? 0}
+                    childCount={0}
+                    indented
+                    onEdit={() => setEditor({ category: child })}
+                    onDelete={() => setPendingDelete(child)}
+                  />
+                ))}
               </View>
             );
           })}
@@ -107,7 +111,12 @@ export default function CategoriesScreen() {
         <CategoryEditorDialog
           type={type}
           category={editor.category}
-          siblingNames={rows.map((c) => c.name)}
+          // 只跟同一层比重名：「餐饮 > 早餐」和「交通 > 早餐」互不冲突
+          siblingNames={rows
+            .filter((c) => (c.parentId ?? null) === (editor.parent?.id ?? editor.category?.parentId ?? null))
+            .map((c) => c.name)}
+          parentId={editor.parent?.id}
+          parentName={editor.parent?.name}
           onDismiss={() => setEditor(null)}
         />
       ) : null}
@@ -137,6 +146,63 @@ export default function CategoriesScreen() {
   );
 }
 
+type CategoryRowProps = {
+  category: Category;
+  used: number;
+  childCount: number;
+  indented?: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  /** 只有一级分类有这个按钮——二级不能再往下分，两层足够描述一笔消费了 */
+  onAddChild?: () => void;
+};
+
+// 一级和二级共用同一行，只差一个缩进和那个「+」。写成两份的话改样式要改两处
+function CategoryRow({ category, used, childCount, indented, onEdit, onDelete, onAddChild }: CategoryRowProps) {
+  const theme = useTheme();
+  // 有子分类的也删不掉：外键指着它，级联删会顺手带走一堆没提示过的东西（见 db/categories.ts）
+  const blocked = used > 0 || childCount > 0;
+
+  return (
+    <View
+      style={[
+        styles.row,
+        indented && styles.indentedRow,
+        { backgroundColor: indented ? theme.background : theme.backgroundElement },
+      ]}>
+      <View style={[styles.iconWrap, { backgroundColor: indented ? theme.backgroundElement : theme.background }]}>
+        <CategoryIcon icon={category.icon} size={20} />
+      </View>
+
+      <View style={styles.rowText}>
+        <ThemedText type="default">{category.name}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {childCount > 0 ? `${childCount} 个子分类` : used > 0 ? `${used} 笔记录在用` : '还没用过'}
+        </ThemedText>
+      </View>
+
+      {onAddChild ? (
+        <Pressable onPress={onAddChild} hitSlop={8} style={styles.rowAction}>
+          <Ionicons name="add" size={20} color={theme.cardHighlight} />
+        </Pressable>
+      ) : null}
+
+      <Pressable onPress={onEdit} hitSlop={8} style={styles.rowAction}>
+        <Ionicons name="create-outline" size={20} color={theme.textSecondary} />
+      </Pressable>
+
+      {/* 删不掉的直接灰掉：让用户点了才知道不行，比一开始就说明白要糟 */}
+      <Pressable
+        onPress={onDelete}
+        disabled={blocked}
+        hitSlop={8}
+        style={[styles.rowAction, blocked && styles.disabledAction]}>
+        <Ionicons name="trash-outline" size={20} color={blocked ? theme.textSecondary : theme.expense} />
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -148,6 +214,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.five,
     gap: Spacing.two,
+  },
+  // 一级和它的子分类贴在一起（间距比组与组之间小），一眼能看出谁挂在谁下面
+  group: {
+    gap: 2,
+  },
+  indentedRow: {
+    marginLeft: Spacing.five,
   },
   row: {
     flexDirection: 'row',

@@ -9,7 +9,7 @@ import { ScreenTransitions } from '@/constants/screen-transitions';
 import { ThemeScheme } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { seedDefaultAccount } from '@/db/accounts';
-import { seedDefaultCategories } from '@/db/categories';
+import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
 import { useThemeStore } from '@/store/theme.store';
@@ -41,9 +41,12 @@ export default function RootLayout() {
     // 首次启动灌默认分类和默认账户。放在这里而不是 db/client.ts 的 getDb 里，是因为这两个模块都要 import getDb，
     // 反过来让 client.ts import 它们会形成循环依赖。
     // 两个都是"空库才跑"，所以每次启动多两次 COUNT 查询，装过一次之后就直接返回
-    seedDefaultCategories().catch(() => {
-      // 灌种子失败不该挡住启动：分类页仍然可以手动新建
-    });
+    // 二级分类必须等一级灌完才跑：它按父分类的名字去找 parentId，父还不存在就全跳过了
+    seedDefaultCategories()
+      .then(seedDefaultSubcategories)
+      .catch(() => {
+        // 灌种子失败不该挡住启动：分类页仍然可以手动新建
+      });
     seedDefaultAccount().catch(() => {
       // 同上：资产页可以手动新建账户
     });

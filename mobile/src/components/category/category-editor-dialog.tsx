@@ -16,8 +16,13 @@ type CategoryEditorDialogProps = {
   type: CategoryType;
   /** 传了就是编辑，不传是新建 */
   category?: Category | null;
-  /** 同类型下已有的分类名，用来挡重名（编辑时会把自己排除掉） */
+  /** 同一层里已有的分类名，用来挡重名（编辑时会把自己排除掉）。同层才算重名：
+   *  「餐饮 > 早餐」和「交通 > 早餐」不冲突，各自的父不同 */
   siblingNames: string[];
+  /** 传了就是在这个一级分类下面新建子分类 */
+  parentId?: string | null;
+  /** 父分类名，只用于对话框标题 */
+  parentName?: string;
   onDismiss: () => void;
 };
 
@@ -28,7 +33,7 @@ type CategoryEditorDialogProps = {
  * 所以初始值可以直接从 props 读进 useState——不需要 useEffect 把 props 同步进 state，
  * 那个写法会多渲染一轮，也正是 eslint 的 react-hooks/set-state-in-effect 要拦的。
  */
-export function CategoryEditorDialog({ type, category, siblingNames, onDismiss }: CategoryEditorDialogProps) {
+export function CategoryEditorDialog({ type, category, siblingNames, parentId, parentName, onDismiss }: CategoryEditorDialogProps) {
   const theme = useTheme();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
@@ -49,13 +54,21 @@ export function CategoryEditorDialog({ type, category, siblingNames, onDismiss }
     if (category) {
       updateCategory.mutate({ id: category.id, name: trimmed, icon }, { onSuccess: onDismiss });
     } else {
-      createCategory.mutate({ name: trimmed, type, icon }, { onSuccess: onDismiss });
+      createCategory.mutate({ name: trimmed, type, icon, parentId }, { onSuccess: onDismiss });
     }
   };
 
   return (
     <ModalHost visible onRequestClose={onDismiss}>
-      <ModalDialog title={category ? '编辑分类' : `新建${type === 'EXPENSE' ? '支出' : '收入'}分类`} onDismiss={onDismiss}>
+      <ModalDialog
+        title={
+          category
+            ? '编辑分类'
+            : parentName
+              ? `在「${parentName}」下新建子分类`
+              : `新建${type === 'EXPENSE' ? '支出' : '收入'}分类`
+        }
+        onDismiss={onDismiss}>
         <TextInput
           value={name}
           onChangeText={setName}

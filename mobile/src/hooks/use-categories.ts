@@ -30,7 +30,8 @@ function invalidateCategoryConsumers(queryClient: ReturnType<typeof useQueryClie
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; type: CategoryType; icon?: string | null }) => createCategory(input),
+    mutationFn: (input: { name: string; type: CategoryType; icon?: string | null; parentId?: string | null }) =>
+      createCategory(input),
     onSuccess: () => invalidateCategoryConsumers(queryClient),
   });
 }
