@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ModalHost } from '@/components/ui/modal-host';
@@ -54,6 +54,24 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const leadingBlanks = new Date(year, month, 1).getDay();
 
+  /**
+   * 切成一周一行的二维数组。
+   *
+   * 原来是一个 flexWrap 容器 + 每格 width: '14.2857%'，那样在某些屏宽上会**排不下 7 列**：
+   * 1/7 是无限小数，每格四舍五入到整数像素之后 7 格加起来可能超过容器宽度，
+   * 第七格就被挤到下一行——表头会变成"日一二三四五 / 六"，整张日历跟着错位。
+   * 一周一个真的 row + 每格 flex: 1 就没有这个问题，剩余像素由 flex 自己分。
+   */
+  const weeks = useMemo(() => {
+    const cells: (number | null)[] = [
+      ...Array.from({ length: leadingBlanks }, () => null),
+      ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+    ];
+    // 补齐最后一周：不补的话那一行只有两三格，flex: 1 会把它们摊开占满整行
+    while (cells.length % 7 !== 0) cells.push(null);
+    return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+  }, [leadingBlanks, daysInMonth]);
+
   const shiftMonth = (delta: number) => setVisibleMonth(new Date(year, month + delta, 1));
 
   // 换日子只换年月日，时分原样留着——反过来也一样，两个维度互不干扰
@@ -101,7 +119,7 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
             </Pressable>
           </View>
 
-          <View style={styles.grid}>
+          <View style={styles.week}>
             {WEEKDAYS.map((label) => (
               <View key={label} style={styles.cell}>
                 <ThemedText type="small" themeColor="textSecondary">
@@ -109,34 +127,35 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
                 </ThemedText>
               </View>
             ))}
-
-            {/* 月初之前的空格。key 用负数，不会跟真实日期的 key 撞上 */}
-            {Array.from({ length: leadingBlanks }, (_, i) => (
-              <View key={-i - 1} style={styles.cell} />
-            ))}
-
-            {Array.from({ length: daysInMonth }, (_, i) => {
-              const day = i + 1;
-              const date = new Date(year, month, day);
-              const isSelected = isSameDay(date, draft);
-              const isToday = isSameDay(date, today);
-              // 未来的日期不拦：预付了下个月的房租、提前记一笔，都是真实存在的用法
-              return (
-                <Pressable key={day} onPress={() => pickDay(date)} style={styles.cell}>
-                  <View
-                    style={[
-                      styles.dayCircle,
-                      isSelected && { backgroundColor: theme.cardHighlight },
-                      !isSelected && isToday && { borderWidth: 1, borderColor: theme.cardHighlight },
-                    ]}>
-                    <ThemedText type="small" style={isSelected ? { color: theme.onCardHighlight } : undefined}>
-                      {day}
-                    </ThemedText>
-                  </View>
-                </Pressable>
-              );
-            })}
           </View>
+
+          {weeks.map((week, weekIndex) => (
+            <View key={weekIndex} style={styles.week}>
+              {week.map((day, dayIndex) => {
+                // null = 月初之前或月末之后的补位，占着格子不画东西
+                if (day === null) return <View key={dayIndex} style={styles.cell} />;
+
+                const date = new Date(year, month, day);
+                const isSelected = isSameDay(date, draft);
+                const isToday = isSameDay(date, today);
+                // 未来的日期不拦：预付了下个月的房租、提前记一笔，都是真实存在的用法
+                return (
+                  <Pressable key={dayIndex} onPress={() => pickDay(date)} style={styles.cell}>
+                    <View
+                      style={[
+                        styles.dayCircle,
+                        isSelected && { backgroundColor: theme.cardHighlight },
+                        !isSelected && isToday && { borderWidth: 1, borderColor: theme.cardHighlight },
+                      ]}>
+                      <ThemedText type="small" style={isSelected ? { color: theme.onCardHighlight } : undefined}>
+                        {day}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
 
           {isTimeOpen ? (
             <View style={styles.timeStrips}>
@@ -248,13 +267,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  grid: {
+  week: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
   },
-  // 七等分，不用 gap：gap 会让 7 列算不出整数宽度，某几行的格子会差一两个像素
+  // flex: 1 而不是 width: '14.2857%'——百分比在 7 列上会因四舍五入排不下，见上面 weeks 那段注释
   cell: {
-    width: `${100 / 7}%`,
+    flex: 1,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',

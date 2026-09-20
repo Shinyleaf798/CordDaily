@@ -1,12 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { formatClockTime, formatDayLabel } from '@/utils/date';
 
 type TransactionOptionsRowProps = {
+  date: Date;
+  onDatePress: () => void;
+  /** 没选到账户时传 null，那一格会用支出色提醒——这是保存前必须填的 */
+  accountName: string | null;
+  onAccountPress: () => void;
   tags: string[];
   onTagsChange: (tags: string[]) => void;
   isReimbursable: boolean;
@@ -16,10 +22,21 @@ type TransactionOptionsRowProps = {
   onCameraPress?: () => void;
 };
 
-// 对应 schema 里已有的三个字段：tags / isReimbursable / excludeFromStats。
-// "无成员"（数据模型没有这个概念）、"优惠"（没有对应字段）这次都不做。
-// 拍照按钮先做右侧的 UI 占位，实际的拍摄/选图 + Cloudinary 直传逻辑等后续接入图片存储阶段再实现
+/**
+ * 这笔账的全部附加项挤在一行里：日期、账户、标签、报销、不计入统计。
+ *
+ * 合成一行而不是分两行，是因为它们是同一类东西——**都有默认值、都不是每笔都要碰**。
+ * 分两行会让人以为上面那行（日期/账户）比下面那行重要，而实际上改账户的频率比打标签还低。
+ * 一行放不下就横向滚动，不折行：折行会让这块的高度随内容跳动，底下的键盘跟着上下移。
+ *
+ * 拍照按钮钉在右边、不进滚动区：它是这一行里唯一"打开另一个界面"的动作，
+ * 滑走了就找不着了。实际的拍摄/直传等接入图片存储阶段再做。
+ */
 export function TransactionOptionsRow({
+  date,
+  onDatePress,
+  accountName,
+  onAccountPress,
   tags,
   onTagsChange,
   isReimbursable,
@@ -46,32 +63,48 @@ export function TransactionOptionsRow({
 
   return (
     <View style={styles.container}>
-      <View style={styles.iconRow}>
-        <View style={styles.iconGroup}>
-          <Pressable style={styles.iconButton} onPress={() => setIsTagInputOpen((v) => !v)}>
-            <Ionicons name={tags.length > 0 ? 'pricetag' : 'pricetag-outline'} size={20} color={tags.length > 0 ? theme.cardHighlight : theme.textSecondary} />
-            <ThemedText type="small" themeColor={tags.length > 0 ? 'text' : 'textSecondary'}>
-              标签{tags.length > 0 ? ` (${tags.length})` : ''}
-            </ThemedText>
-          </Pressable>
+      <View style={styles.row}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.chips}>
+          <OptionChip
+            icon="calendar-outline"
+            label={`${formatDayLabel(date)} ${formatClockTime(date)}`}
+            onPress={onDatePress}
+          />
+          <OptionChip
+            icon="wallet-outline"
+            label={accountName ?? '选择账户'}
+            missing={!accountName}
+            onPress={onAccountPress}
+          />
+          <OptionChip
+            icon={tags.length > 0 ? 'pricetag' : 'pricetag-outline'}
+            label={`标签${tags.length > 0 ? ` (${tags.length})` : ''}`}
+            active={tags.length > 0}
+            onPress={() => setIsTagInputOpen((v) => !v)}
+          />
+          <OptionChip
+            icon={isReimbursable ? 'cash' : 'cash-outline'}
+            label="报销"
+            active={isReimbursable}
+            onPress={() => onReimbursableChange(!isReimbursable)}
+          />
+          <OptionChip
+            icon={excludeFromStats ? 'eye-off' : 'eye-off-outline'}
+            label="不计入统计"
+            active={excludeFromStats}
+            onPress={() => onExcludeFromStatsChange(!excludeFromStats)}
+          />
+        </ScrollView>
 
-          <Pressable style={styles.iconButton} onPress={() => onReimbursableChange(!isReimbursable)}>
-            <Ionicons name={isReimbursable ? 'cash' : 'cash-outline'} size={20} color={isReimbursable ? theme.cardHighlight : theme.textSecondary} />
-            <ThemedText type="small" themeColor={isReimbursable ? 'text' : 'textSecondary'}>
-              报销
-            </ThemedText>
-          </Pressable>
-
-          <Pressable style={styles.iconButton} onPress={() => onExcludeFromStatsChange(!excludeFromStats)}>
-            <Ionicons name={excludeFromStats ? 'eye-off' : 'eye-off-outline'} size={20} color={excludeFromStats ? theme.cardHighlight : theme.textSecondary} />
-            <ThemedText type="small" themeColor={excludeFromStats ? 'text' : 'textSecondary'}>
-              不计入统计
-            </ThemedText>
-          </Pressable>
-        </View>
-
-        <Pressable style={[styles.cameraButton, { backgroundColor: theme.backgroundElement }]} onPress={onCameraPress} hitSlop={8}>
-          <Ionicons name="camera-outline" size={20} color={theme.textSecondary} />
+        <Pressable
+          style={[styles.cameraButton, { backgroundColor: theme.background }]}
+          onPress={onCameraPress}
+          hitSlop={8}>
+          <Ionicons name="camera-outline" size={18} color={theme.textSecondary} />
         </Pressable>
       </View>
 
@@ -80,7 +113,10 @@ export function TransactionOptionsRow({
           {tags.length > 0 && (
             <View style={styles.chipRow}>
               {tags.map((tag) => (
-                <Pressable key={tag} onPress={() => removeTag(tag)} style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
+                <Pressable
+                  key={tag}
+                  onPress={() => removeTag(tag)}
+                  style={[styles.tagChip, { backgroundColor: theme.background }]}>
                   <ThemedText type="small">{tag} ×</ThemedText>
                 </Pressable>
               ))}
@@ -93,7 +129,7 @@ export function TransactionOptionsRow({
             placeholder="输入标签后回车"
             placeholderTextColor={theme.textSecondary}
             returnKeyType="done"
-            style={[styles.tagInput, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+            style={[styles.tagInput, { color: theme.text, backgroundColor: theme.background }]}
           />
         </View>
       )}
@@ -101,40 +137,74 @@ export function TransactionOptionsRow({
   );
 }
 
+type OptionChipProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  /** 这一项已经填了/开着 */
+  active?: boolean;
+  /** 这一项还缺着，且是保存前必填的 */
+  missing?: boolean;
+  onPress: () => void;
+};
+
+// 五项长得完全一样：黑底 + 白字 + 一个图标。差别只在图标和文字的颜色，
+// 用颜色而不是用形状表达状态，这样一行扫过去能立刻看出哪几项被动过
+function OptionChip({ icon, label, active, missing, onPress }: OptionChipProps) {
+  const theme = useTheme();
+  const accent = missing ? theme.expense : active ? theme.cardHighlight : theme.textSecondary;
+
+  return (
+    <Pressable onPress={onPress} style={[styles.chip, { backgroundColor: theme.background }]}>
+      <Ionicons name={icon} size={14} color={accent} />
+      <ThemedText type="small" numberOfLines={1} style={missing ? { color: theme.expense } : undefined}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.two,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingRight: Spacing.two,
+  },
+  chips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
     paddingHorizontal: Spacing.two,
   },
-  iconRow: {
+  // 整排缩一圈：省下来的高度全归数字键盘（它是 flex: 1，外壳高度不变的情况下自动吃掉）
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  iconGroup: {
-    flexDirection: 'row',
-    gap: Spacing.four,
-  },
-  iconButton: {
-    alignItems: 'center',
-    gap: 2,
+    gap: 4,
+    height: 28,
+    paddingHorizontal: Spacing.one,
+    borderRadius: 8,
   },
   cameraButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tagArea: {
     gap: Spacing.two,
+    paddingHorizontal: Spacing.two,
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.one,
   },
-  chip: {
+  tagChip: {
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,

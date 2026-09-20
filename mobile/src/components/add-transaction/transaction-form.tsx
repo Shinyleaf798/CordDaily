@@ -1,14 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Stack } from 'expo-router/js-stack';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccountPickerSheet } from '@/components/add-transaction/account-picker-sheet';
 import { AmountKeypad } from '@/components/add-transaction/amount-keypad';
 import { CategoryGrid, type CategoryGridItem } from '@/components/add-transaction/category-grid';
-import { TransactionMetaRow } from '@/components/add-transaction/transaction-meta-row';
 import { TransactionNoteFields } from '@/components/add-transaction/transaction-note-fields';
 import { TransactionOptionsRow } from '@/components/add-transaction/transaction-options-row';
 import { TransactionTypeTabs, type TransactionTypeTab } from '@/components/transaction/transaction-type-tabs';
@@ -20,6 +19,7 @@ import type { TransactionDetail } from '@/db/transactions';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useCategories } from '@/hooks/use-categories';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/use-transactions';
+import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
 import { useTheme } from '@/hooks/use-theme';
 
 type TransactionFormProps = {
@@ -37,6 +37,26 @@ type TransactionFormProps = {
  */
 export function TransactionForm({ initial }: TransactionFormProps) {
   const theme = useTheme();
+  const keyboardHeight = useKeyboardHeight();
+  // 两个高度都实测，不按屏幕比例硬算——外壳的 55% 还要扣掉安全区，算出来的和实际差一截
+  const [sheetHeight, setSheetHeight] = useState(0);
+  const [noteFieldsHeight, setNoteFieldsHeight] = useState(0);
+
+  // 输入块底边离屏幕底边本来就有这么远，键盘只要没盖过这个距离就不用动它
+  const restingGap = Math.max(0, sheetHeight - noteFieldsHeight);
+  const targetLift = Math.max(0, keyboardHeight - restingGap);
+  const [lift] = useState(() => new Animated.Value(0));
+  // 负值才是"往上"，所以取反一次给 translateY
+  const liftY = useMemo(() => Animated.multiply(lift, -1), [lift]);
+
+  useEffect(() => {
+    Animated.timing(lift, {
+      toValue: targetLift,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [lift, targetLift]);
 
 
   const { data: accounts } = useAccounts();
@@ -84,26 +104,23 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   };
 
   const { data: categoryRows } = useCategories(type);
+  // parentId 一起传进去，网格自己分一级二级——表单不需要知道分类有几层，
+  // 它只关心最后选中的那一个 id（选了子分类就是子分类的 id）
   const categories: CategoryGridItem[] = (categoryRows ?? []).map((c) => ({
     id: c.id,
     name: c.name,
     icon: c.icon,
+    parentId: c.parentId,
   }));
 
   const numericAmount = Number(amount);
 
-  // 保存按钮为什么是灰的，必须说出来。
-  // 之前只有一个 opacity 0.5 的按钮，点了完全没反应——账户列表为空时（accountId 恒为 null）
-  // 用户会以为是按钮坏了，而不会想到"我还没有账户"。
-  // 一次只报一条：同时列出三个待办只会让人不知道先干哪个
-  const blocker = !selectedCategoryId
-    ? '先选一个分类'
-    : !accountId
-      ? '先选一个账户——资产页里新建一个'
-      : !(numericAmount > 0)
-        ? '金额还是 0'
-        : null;
+  // 判断和提示是两件事：三个条件都拦着保存，但只有一个值得写出来。
+  // "没选分类""金额是 0"抬眼就看见，写出来是废话；而账户列表为空时（accountId 恒为 null）
+  // 用户会以为按钮坏了，根本想不到"我还没有账户"——这一条不说就真的没人能猜到
+  const blocker = !selectedCategoryId ? 'category' : !accountId ? 'account' : !(numericAmount > 0) ? 'amount' : null;
   const canSave = !blocker && !mutation.isPending;
+  const blockerHint = blocker === 'account' ? '先选一个账户——资产页里新建一个' : null;
 
   const handleSave = () => {
     if (!canSave || !selectedCategoryId || !accountId) return;
@@ -173,50 +190,70 @@ export function TransactionForm({ initial }: TransactionFormProps) {
         </ThemedView>
       </ScrollView>
 
-      <ThemedView type="backgroundElement" style={styles.bottomSheet}>
-        <TransactionNoteFields
-          topic={topic}
-          onTopicChange={setTopic}
-          remark={remark}
-          onRemarkChange={setRemark}
-          merchant={merchant}
-          onMerchantChange={setMerchant}
-          location={location}
-          onLocationChange={setLocation}
-          amount={numericAmount}
-        />
+      {/* 外壳也要有底色：输入块滑上去之后原来那块地方得有人画，否则露出的是页面黑底。
+          圆角两层都画——贴合时看着是一张卡，输入块滑上去时露出的也还是个圆角顶 */}
+      <ThemedView
+        type="backgroundElement"
+        onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
+        style={styles.bottomSheet}>
+        {/* 键盘弹出时这一块滑到键盘顶边。位移量是算出来的而不是直接用键盘高度：
+            它本来就离屏幕底边有 (外壳高 - 自己高) 那么远，只需要补上不够的那一截，
+            直接按键盘高度位移会冲过头。差值 <= 0 就说明本来就在键盘上方，不用动。
 
-        <TransactionMetaRow
-          date={date}
-          onDatePress={() => setOpenSheet('date')}
-          accountName={accountName}
-          onAccountPress={() => setOpenSheet('account')}
-        />
+            用 transform 而不是 position: absolute：transform 不参与布局，
+            所以它动的时候下面几块一格不挪，也不需要占位 View。
+            走 Animated 是为了跟键盘一起滑——直接改值会在键盘还没滑上来时先跳上去，
+            中间那一瞬间就会露出背景 */}
+        <Animated.View
+          onLayout={(e) => setNoteFieldsHeight(e.nativeEvent.layout.height)}
+          style={[
+            styles.noteFields,
+            { backgroundColor: theme.backgroundElement, transform: [{ translateY: liftY }] },
+          ]}>
+          <TransactionNoteFields
+            topic={topic}
+            onTopicChange={setTopic}
+            remark={remark}
+            onRemarkChange={setRemark}
+            merchant={merchant}
+            onMerchantChange={setMerchant}
+            location={location}
+            onLocationChange={setLocation}
+            amount={numericAmount}
+          />
+        </Animated.View>
 
-        <TransactionOptionsRow
-          tags={tags}
-          onTagsChange={setTags}
-          isReimbursable={isReimbursable}
-          onReimbursableChange={handleReimbursableChange}
-          excludeFromStats={excludeFromStats}
-          onExcludeFromStatsChange={setExcludeFromStats}
-          onCameraPress={() => {
-            // TODO(dummy data): 接 Cloudinary 客户端直传后开放拍照/选图，当前只是 UI 占位
-            console.log('camera pressed (todo: Cloudinary upload)');
-          }}
-        />
+        {/* 下半块：方角，因为它永远接在输入块下面，自己不是顶部 */}
+        <ThemedView type="backgroundElement" style={styles.actionBlock}>
+          <TransactionOptionsRow
+            date={date}
+            onDatePress={() => setOpenSheet('date')}
+            accountName={accountName}
+            onAccountPress={() => setOpenSheet('account')}
+            tags={tags}
+            onTagsChange={setTags}
+            isReimbursable={isReimbursable}
+            onReimbursableChange={handleReimbursableChange}
+            excludeFromStats={excludeFromStats}
+            onExcludeFromStatsChange={setExcludeFromStats}
+            onCameraPress={() => {
+              // TODO(dummy data): 接 Cloudinary 客户端直传后开放拍照/选图，当前只是 UI 占位
+              console.log('camera pressed (todo: Cloudinary upload)');
+            }}
+          />
 
-        {mutation.error ? (
-          <ThemedText type="small" style={[styles.saveHint, { color: theme.expense }]}>
-            没能保存：{mutation.error.message}
-          </ThemedText>
-        ) : blocker ? (
-          <ThemedText type="small" themeColor="textSecondary" style={styles.saveHint}>
-            还差一步：{blocker}
-          </ThemedText>
-        ) : null}
+          {mutation.error ? (
+            <ThemedText type="small" style={[styles.saveHint, { color: theme.expense }]}>
+              没能保存：{mutation.error.message}
+            </ThemedText>
+          ) : blockerHint ? (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.saveHint}>
+              {blockerHint}
+            </ThemedText>
+          ) : null}
 
-        <AmountKeypad value={amount} onChange={setAmount} onSave={handleSave} saveDisabled={!canSave} />
+          <AmountKeypad value={amount} onChange={setAmount} onSave={handleSave} saveDisabled={!canSave} />
+        </ThemedView>
       </ThemedView>
 
       {openSheet === 'date' ? (
@@ -251,21 +288,44 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.two,
     paddingBottom: Spacing.two,
   },
+  // 圆角跟底部面板的 20 对齐。不描边：深色主题下底色差已经把卡和页面分开了，
+  // 再画一圈线是同一件事说两遍
   categoryCard: {
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 20,
     paddingHorizontal: Spacing.half,
     paddingTop: Spacing.two,
     paddingBottom: Spacing.three,
+  },
+  // 圆角画在这里：不管它在原位还是被钉到键盘顶边，顶部永远是它，圆角就永远在对的地方。
+  // 不用 elevation：Android 上它会在底边拖一道投影，而两块之间本来就有 margin 隔开，
+  // 那道影子只会让缝看起来脏。压过下半块交给 zIndex
+  noteFields: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.two,
+    zIndex: 2,
+  },
+  // 方角：它永远接在输入块下面，自己不是顶部。flex: 1 吃掉外壳剩下的高度。
+  //
+  // 上边距用 padding 不用 margin：margin 是块外面的空隙，露出来的是页面底色（黑），
+  // 看着就像 chips 那行上面缺了一截背景；padding 在块里面，间距一样但底色是连着的。
+  // 也不写成上面那块的 marginBottom——它钉到键盘顶边时会脱离文档流，margin 跟着失效
+  actionBlock: {
+    flex: 1,
+    paddingBottom: Spacing.two,
+    gap: Spacing.two,
   },
   // 跟底部面板的 gap 是 Spacing.three，这行提示自己不再加上边距，免得跟保存键之间空出一大块
   saveHint: {
     paddingHorizontal: Spacing.two,
   },
+  // 主题那一行到键盘底部固定占屏幕的 55%，上面的分类网格拿剩下的 45%。
+  // 写百分比而不是像素：换台屏幕更长的手机，两边的比例不会跟着变形。
+  // 键盘自己是 flex: 1，所以这个数一改，键位跟着缩放，不用再调它内部的高度。
   bottomSheet: {
+    height: '55%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: Spacing.three,
-    gap: Spacing.three,
   },
 });

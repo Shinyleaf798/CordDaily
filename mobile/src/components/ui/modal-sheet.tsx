@@ -103,9 +103,10 @@ export function ModalSheet({ title, transition, dismissOnBackdropPress = true, c
               transform: [{ translateY }],
               backgroundColor: theme.backgroundElement,
               maxHeight: `${Math.round(maxHeightRatio * 100)}%`,
-              // 底部安全区由弹层自己补，不靠外面包 SafeAreaView——
-              // 包在外面的话弹层就贴不到屏幕最底下，底下会露出一条背景
-              paddingBottom: insets.bottom + Spacing.four,
+              // 底部安全区由弹层自己补，不靠外面包 SafeAreaView——包在外面弹层就贴不到屏幕最底下。
+              // 取 max 而不是相加：edge-to-edge 下 insets.bottom 已经是导航栏那么高了，
+              // 再加一个 Spacing.four 就会在按钮下面留出一条明显的空带
+              paddingBottom: Math.max(insets.bottom, Spacing.three),
             },
           ]}>
           {/* 顶部那道短横条：告诉用户这东西是从下面上来的、可以被打发走。
