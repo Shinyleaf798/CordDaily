@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import {
-  useAccountBalances,
+  useAccounts,
   useAccountTransactionCount,
   useCreateAccount,
   useDefaultAccountId,
@@ -16,22 +16,25 @@ import {
   useUpdateAccount,
 } from '@/hooks/use-accounts';
 import { useTheme } from '@/hooks/use-theme';
-import { formatCurrency } from '@/utils/format';
 
 /**
  * 新建 / 编辑账户（`/account-editor` 和 `/account-editor?id=xxx`）。
  *
- * 只有两个可填的字段：名称和期初余额。币种是只读的一行。
+ * 只有一个可填的字段：名称。币种是只读的一行。
  *
  * 账户在这个 App 里的职责只有一个——让一笔账能记下"我用什么付的"（现金、TNG、某张卡）。
  * 分类、图标、配色、卡号这些都没有：它们不影响任何一笔账的记录，
  * 只是让"新建一个账户"这件事看起来比实际更重。
+ *
+ * 「期初余额」也是这么去掉的：它唯一的用途是给账户余额一个起点，而余额已经不显示了
+ * （见 components/account/account-row.tsx）。留着就是在问一个之后永远不会被读的数。
+ * 库里那一列还在，保留原因写在 db/accounts.ts。
  */
 export default function AccountEditorScreen() {
   const theme = useTheme();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
-  const { data: accounts } = useAccountBalances();
+  const { data: accounts } = useAccounts();
   const { data: defaultAccountId } = useDefaultAccountId();
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
@@ -42,7 +45,6 @@ export default function AccountEditorScreen() {
 
   // 初始值直接读进 useState，不用 useEffect 把 props 同步进 state（同 CategoryEditorDialog）
   const [name, setName] = useState(existing?.name ?? '');
-  const [openingBalance, setOpeningBalance] = useState(existing ? String(existing.openingBalance) : '');
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const { data: affectedCount } = useAccountTransactionCount(isConfirmingDelete ? id : null);
@@ -58,8 +60,9 @@ export default function AccountEditorScreen() {
 
   const save = () => {
     if (!canSave) return;
-    const parsed = Number(openingBalance);
-    const payload = { name: trimmed, openingBalance: Number.isFinite(parsed) ? parsed : 0 };
+    // openingBalance 不再由界面提供：新建时走 createAccount 的默认值 0，
+    // 编辑时原样带回去，免得 updateAccount 把老账户上那个值默默重置掉
+    const payload = { name: trimmed, openingBalance: existing?.openingBalance ?? 0 };
 
     if (isEdit && id) updateAccount.mutate({ ...payload, id }, { onSuccess: () => router.back() });
     else createAccount.mutate(payload, { onSuccess: () => router.back() });
@@ -82,20 +85,6 @@ export default function AccountEditorScreen() {
 
           <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
 
-          <View style={styles.row}>
-            <ThemedText style={styles.rowLabel}>期初余额</ThemedText>
-            <TextInput
-              value={openingBalance}
-              onChangeText={setOpeningBalance}
-              placeholder="0.00"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="numbers-and-punctuation"
-              style={[styles.rowInput, { color: theme.text }]}
-            />
-          </View>
-
-          <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
-
           {/* 币种不给选：全 App 记账都按 MYR 存（transactions.currency 固定 'MYR'、汇率固定 1）。
               这里放一个选择器的话，选了 USD 的账户余额会拿一堆 MYR 的流水算出来，
               数字是错的而界面上看不出来。等真做多币种（记账时存汇率）再打开 */}
@@ -108,8 +97,7 @@ export default function AccountEditorScreen() {
         </ThemedView>
 
         <ThemedText type="small" themeColor="textSecondary">
-          余额是算出来的：期初余额 + 之后所有收支，不填就是从 0 开始记。
-          {existing ? `这个账户现在是 ${formatCurrency(existing.balance)}。` : ''}
+          账户只是给账单标一下「用什么付的」，记账时在这几个名字里选一个。
         </ThemedText>
 
         {isDuplicate ? (

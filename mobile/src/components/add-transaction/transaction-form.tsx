@@ -128,9 +128,9 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const blocker = !selectedCategoryId ? 'category' : !accountId ? 'account' : !(numericAmount > 0) ? 'amount' : null;
   const canSave = !blocker && !mutation.isPending;
   // 加上 `accounts &&`：账户还没查出来时 accountId 也是 null，但那是"还不知道"不是"一个都没有"。
-  // 不区分的话，本地库读完之前的那几毫秒会闪一句"资产页里新建一个"，
+  // 不区分的话，本地库读完之前的那几毫秒会闪一句"去账本里新建一个"，
   // 而用户根本不缺账户——默认账户是灌好的，他只需要再等一帧
-  const blockerHint = blocker === 'account' && accounts ? '先选一个账户——资产页里新建一个' : null;
+  const blockerHint = blocker === 'account' && accounts ? '先选一个账户——我的 → 账本 → 账户 里新建' : null;
 
   const handleSave = () => {
     if (!canSave || !selectedCategoryId || !accountId) return;
@@ -156,7 +156,7 @@ export function TransactionForm({ initial }: TransactionFormProps) {
     };
 
     // 记完/改完都回首页，而不是 router.back()。
-    // ＋号是全局动作（它不属于任何一个 tab），从资产页按的＋，back 会把人送回资产页，
+    // ＋号是全局动作（它不属于任何一个 tab），从统计页按的＋，back 会把人送回统计页，
     // 那笔刚记的账落在哪里完全看不见；编辑是从首页的详情弹层进来的，回首页也正是原路。
     // dismissTo 会一路关掉栈顶直到首页，首页不在历史里时退化成 replace，两种情况都落在首页。
     //

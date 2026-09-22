@@ -10,16 +10,7 @@ import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useCalendarViewData } from '@/hooks/use-calendar-view-data';
 import { useTheme } from '@/hooks/use-theme';
-import { formatDayKey } from '@/utils/date';
-
-/** 月份只认年和月，日子统一落在 1 号，避免 31 号往前翻掉进"2 月 31 日"这种坑 */
-function monthOf(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function shiftMonth(month: Date, delta: number) {
-  return new Date(month.getFullYear(), month.getMonth() + delta, 1);
-}
+import { formatDayKey, shiftMonth, startOfMonth } from '@/utils/date';
 
 /**
  * 消费日历：上面月历（每格显示当天消费），点一天在**同一页**下面展开当天明细。
@@ -32,7 +23,7 @@ function shiftMonth(month: Date, delta: number) {
 export default function CalendarScreen() {
   const theme = useTheme();
 
-  const [month, setMonth] = useState(() => monthOf(new Date()));
+  const [month, setMonth] = useState(() => startOfMonth(new Date()));
   // 进来先选中今天：不预选的话下半屏一开始是空的，还得教用户"点一下日期"。
   // 存 key 而不是 Date：Date 对象每次渲染都是新的引用，拿来做选中比较要么写 isSameDay 要么出 bug
   const [selectedKey, setSelectedKey] = useState<string | null>(() => formatDayKey(new Date()));
@@ -41,7 +32,7 @@ export default function CalendarScreen() {
   const data = useCalendarViewData(month, selectedKey);
 
   // 每次渲染重算，不用 useMemo：跨过零点（乃至跨月）回到 App 时"本月"得跟着变
-  const isCurrentMonth = month.getTime() === monthOf(new Date()).getTime();
+  const isCurrentMonth = month.getTime() === startOfMonth(new Date()).getTime();
 
   // 翻月时清掉选中：选中的是上个月的某天，留着它下面那张明细卡会跟日历对不上
   // （buildCalendarViewData 也会把跨月的 selection 判成 null，这里清掉是让状态本身也别留脏值）
@@ -52,7 +43,7 @@ export default function CalendarScreen() {
 
   const backToCurrentMonth = () => {
     const now = new Date();
-    setMonth(monthOf(now));
+    setMonth(startOfMonth(now));
     setSelectedKey(formatDayKey(now));
   };
 

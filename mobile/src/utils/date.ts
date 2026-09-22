@@ -28,10 +28,36 @@ export function formatClockTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+/**
+ * 把任意日期收敛成"那个月的 1 号"。
+ *
+ * 日子统一落在 1 号是有意的：`new Date(y, m + delta, 31)` 在只有 30 天的月份上会溢出到下个月
+ * （3月31日往前翻一个月 = "2月31日" = 3月3日），翻月就会跳过整整一个月。
+ *
+ * 原来这两个函数各自躺在 calendar.tsx 里，统计页也要按月翻之后提到这里——
+ * "哪天算这个月"这种规则全 App 只该有一处定义。
+ */
+export function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+/** 从某个月往前（负）或往后（正）翻几个月，结果同样落在 1 号 */
+export function shiftMonth(month: Date, delta: number): Date {
+  return new Date(month.getFullYear(), month.getMonth() + delta, 1);
+}
+
 /** 2026-09。给"这是哪个月"当 key 用——注意不能写成 toISOString().slice(0,7)，
  *  那在东八区每月 1 号的 00:00-08:00 之间会算成上个月，跟本文件顶上说的是同一个坑 */
 export function formatMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** formatMonthKey 的逆操作。路由参数只能是字符串，月份在页面之间传的就是 `2026-09` 这种 key。
+ *  解不出来（参数缺失或被改坏）时退回本月，而不是造出一个 Invalid Date 让整页算出 NaN */
+export function parseMonthKey(key: string | undefined): Date {
+  const match = /^(\d{4})-(\d{2})$/.exec(key ?? '');
+  if (!match) return startOfMonth(new Date());
+  return new Date(Number(match[1]), Number(match[2]) - 1, 1);
 }
 
 /** 2026-09-13。给"这是哪一天"当 key 用——同样不能写成 toISOString().slice(0,10)，

@@ -77,3 +77,14 @@ export function formatCompactAmount(value: number): string {
   if (abs > 0 && abs < 1) return '<1';
   return String(Math.round(abs));
 }
+
+/**
+ * 一条账单上的分类写成一行：「餐饮 · 早餐」。顶层分类没有父，就只有「餐饮」。
+ *
+ * 放在这里而不是各个 view-data hook 里各写一遍：首页、日历、分类下钻三处都要显示这个，
+ * 分隔符或者"没有父分类时怎么写"哪天要改，只该有一处。
+ */
+export function formatCategoryPath(parentName: string | null | undefined, name: string | null | undefined): string {
+  const leaf = name ?? '未分类';
+  return parentName ? `${parentName} · ${leaf}` : leaf;
+}

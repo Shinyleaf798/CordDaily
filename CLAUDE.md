@@ -70,7 +70,8 @@ mobile/                # TypeScript；Expo SDK 57 默认模板把 app/ 放在 sr
 │       ├── auth/            # 登录/注册共用
 │       ├── home/            # 首页专属，含 layouts/ 下的可切换布局
 │       ├── add-transaction/ # 记账页专属
-│       └── assets/          # 资产页专属
+│       ├── stats/           # 统计页专属
+│       └── account/         # 账户管理页专属
 
 web/
 ├── app/              # Next.js App Router 页面

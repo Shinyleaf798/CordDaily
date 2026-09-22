@@ -4,6 +4,7 @@ import type { MonthSummary, TransactionWithCategory } from '@/db/transactions';
 import { useBudgetStatus } from '@/hooks/use-budgets';
 import { useMonthSummary, useRecentTransactions } from '@/hooks/use-transactions';
 import { formatClockTime, formatDayGroupLabel, startOfDay } from '@/utils/date';
+import { formatCategoryPath } from '@/utils/format';
 
 export type HomeTransaction = TransactionListItemData & { date: Date };
 
@@ -92,7 +93,7 @@ export function buildHomeViewData(input: {
     // 统一由 CategoryIcon / parseCategoryIcon 回答，这里原样传过去
     icon: t.categoryIcon,
     title: t.title,
-    categoryLabel: t.categoryName ?? '未分类',
+    categoryLabel: formatCategoryPath(t.categoryParentName, t.categoryName),
     time: formatClockTime(new Date(t.date)),
     note: t.remarks ?? undefined,
     amount: t.amount,

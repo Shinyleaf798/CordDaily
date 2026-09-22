@@ -17,6 +17,17 @@ export type Account = {
    */
   type: AccountType;
   currency: string;
+  /**
+   * 遗留字段，现在恒为 0，界面上既不显示也不给填。
+   *
+   * 它唯一的用途是给「账户当前余额」一个起点，而余额本身已经整条拆掉了：
+   * 账户在这个 App 里只是「我用什么付的」这么一个标签，余额准不准无关紧要，
+   * 所以也就不需要转账、不需要对账，资产页整页没有非它不可的内容（见 DECISIONS.md）。
+   *
+   * 列没删的理由跟上面的 type 一样：它 NOT NULL + 有默认值，删它要整表重建，
+   * 而留着一个恒为 0 的列不碍事。后端 Prisma 和 account.service.js 里的余额计算也先留着——
+   * 电脑端是只读的，以后真要做资产视图时那套算法还是对的。
+   */
   openingBalance: number;
   icon: string | null;
   createdAt: string;
@@ -25,13 +36,14 @@ export type Account = {
 
 // 排序里带上 id 只是为了**确定性**：两个账户的 createdAt 撞到同一毫秒时（灌默认账户之后立刻手动建一个），
 // 光按 createdAt 排，SQLite 给的先后可以是任意的，列表每次刷新顺序都可能变。
-// 带 alias 参数是因为 listAccountBalances 要 JOIN，列名必须写成 a.createdAt。
-// 做成函数而不是两个常量：排序规则只有一处定义，改了不会漏掉其中一边
-const accountsOrder = (alias = '') => `ORDER BY ${alias}createdAt ASC, ${alias}id ASC`;
+//
+// 原来这里是个接 alias 参数的函数，因为 listAccountBalances 要 JOIN、列名得写成 a.createdAt。
+// 那条查询已经随余额一起删了，两个调用方都不带 alias，所以收回成一个常量。
+const ACCOUNTS_ORDER = 'ORDER BY createdAt ASC, id ASC';
 
 export async function listAccounts(): Promise<Account[]> {
   const db = await getDb();
-  return db.getAllAsync<Account>(`SELECT * FROM accounts ${accountsOrder()}`);
+  return db.getAllAsync<Account>(`SELECT * FROM accounts ${ACCOUNTS_ORDER}`);
 }
 
 // 「不选择任何账户」那一行的 id 记在本地设置里，不在 accounts 表上加 isDefault 列。
@@ -79,7 +91,7 @@ export async function getDefaultAccountId(): Promise<string | null> {
   if (noAccountId) return noAccountId;
 
   const db = await getDb();
-  const row = await db.getFirstAsync<{ id: string }>(`SELECT id FROM accounts ${accountsOrder()} LIMIT 1`);
+  const row = await db.getFirstAsync<{ id: string }>(`SELECT id FROM accounts ${ACCOUNTS_ORDER} LIMIT 1`);
   return row?.id ?? null;
 }
 
@@ -125,8 +137,9 @@ export async function countAccountTransactions(accountId: string): Promise<numbe
  * 跟着删掉的话，月度支出会凭空少一截，而他完全不会把这件事跟刚才那次删除联系起来。
  *
  * 转账行是直接删掉的：一笔转账的两端都必须存在，一端没了就不是转账了，
- * 把它改指到默认账户会变成"自己转给自己"，还会悄悄改掉余额。
- * （目前还没有任何地方能创建转账，这张表一直是空的，这段是为以后接上转账功能时不留坑。）
+ * 把它改指到默认账户会变成"自己转给自己"。
+ * （transfers 表一直是空的——没有任何地方能创建转账，而且账户降级成纯标签之后也不会再做，
+ *  见 DECISIONS.md。这段留着是因为表还在，万一以后又用上它不至于留个坑。）
  *
  * 整段包在一个事务里：中途失败不能留下"账单已经转走、账户还在"的半截状态。
  */
@@ -198,7 +211,7 @@ export async function createAccount(input: CreateAccountInput): Promise<Account>
  * 它是一个普通的账户行，不是 null——所以 accountId 可以继续是 NOT NULL，
  * 本地表、Prisma schema、后端校验和每一条聚合查询全都不用动。
  *
- * 为什么还是灌了「现金」：想分账户的人开箱就有一个真账户可用，不用先去资产页建一个。
+ * 为什么还是灌了「现金」：想分账户的人开箱就有一个真账户可用，不用先去账户页建一个。
  * 两个之间选哪个由"上次用的是哪个"决定（见 getLastUsedAccountId），所以只要选一次就定了。
  *
  * 两条的 seed 时机不一样，是故意的：
@@ -220,8 +233,7 @@ export async function seedDefaultAccounts(): Promise<void> {
     await setSetting(NO_ACCOUNT_KEY, account.id);
   }
 
-  // openingBalance 给 0：一上来就逼用户盘点钱包里有多少现金，是在记账之前先设一道门槛。
-  // 余额本来就是衍生值，想要准的人随时可以回资产页把期初改对
+  // openingBalance 走默认值 0：这个字段已经没有界面了（见类型定义上的说明）
   if (isFreshInstall) await createAccount({ name: '现金' });
 }
 
@@ -238,87 +250,5 @@ export async function updateAccount(input: UpdateAccountInput): Promise<void> {
     // 跟着 input 写的话，没传这两个字段的调用方会把它们默默重置掉
     `UPDATE accounts SET name = ?, openingBalance = ?, synced = 0 WHERE id = ?`,
     [input.name, input.openingBalance ?? 0, input.id],
-  );
-}
-
-export type AccountWithBalance = Account & { balance: number };
-
-/**
- * 一次把所有账户的余额都算出来。
- *
- * 资产页要的是每个账户的余额 + 每个分组的小计 + 全局的总资产/总负债，
- * 逐个账户调 getAccountBalance 的话是 N×4 条查询（那个函数内部有四条子查询），
- * 而且每一行自己发请求，小计还得等所有行都回来才能算。这里改成一条：
- * 三个 GROUP BY 子查询各自汇总一遍，再 LEFT JOIN 回账户表。
- *
- * 算法跟 getAccountBalance **必须**保持一致（也跟后端 account.service.js 一致）：
- * openingBalance + 收入 - 支出 + 转入 - 转出。两处口径一旦分叉，
- * 就会出现"这一行显示 100、小计里却按 90 算"这种没人查得出来的 bug。
- *
- * 跟统计口径不同，这里**不**跳过 excludeFromStats：那笔钱是真的离开了账户，
- * "不计入统计"说的是它不该占用预算额度，不是它没发生过。
- */
-export async function listAccountBalances(): Promise<AccountWithBalance[]> {
-  const db = await getDb();
-  return db.getAllAsync<AccountWithBalance>(
-    `SELECT a.*,
-            a.openingBalance
-              + COALESCE(t.income, 0)   - COALESCE(t.expense, 0)
-              + COALESCE(ti.total, 0)   - COALESCE(to_.total, 0) AS balance
-     FROM accounts a
-     LEFT JOIN (
-       SELECT accountId,
-              SUM(CASE WHEN type = 'INCOME'  THEN amountInBase ELSE 0 END) AS income,
-              SUM(CASE WHEN type = 'EXPENSE' THEN amountInBase ELSE 0 END) AS expense
-       FROM transactions GROUP BY accountId
-     ) t ON t.accountId = a.id
-     LEFT JOIN (SELECT toAccountId   AS id, SUM(amount) AS total FROM transfers GROUP BY toAccountId)   ti  ON ti.id  = a.id
-     LEFT JOIN (SELECT fromAccountId AS id, SUM(amount) AS total FROM transfers GROUP BY fromAccountId) to_ ON to_.id = a.id
-     ${accountsOrder('a.')}`,
-  );
-}
-
-/**
- * 单个账户的余额。**界面上已经没有调用方**——资产页统一走 listAccountBalances 一次算完。
- *
- * 留着是因为它是那条批量查询的**参照实现**：一个账户一个账户地算，四条子查询各管一件事，
- * 读起来就是「余额 = 期初 + 收 - 支 + 转入 - 转出」这句话本身，
- * 而 listAccountBalances 那条 JOIN 为了一次算完所有账户，把同一件事写成了三个 GROUP BY 子查询。
- * 两边必须给出同样的结果（写 listAccountBalances 时就是拿这个函数对跑验证的），
- * 以后改余额口径，改完也该拿这两个再对一次。
- *
- * 算法跟后端 account.service.js 保持一致。
- */
-export async function getAccountBalance(accountId: string): Promise<number> {
-  const db = await getDb();
-  const account = await db.getFirstAsync<{ openingBalance: number }>(
-    'SELECT openingBalance FROM accounts WHERE id = ?',
-    [accountId],
-  );
-  if (!account) return 0;
-
-  const [income, expense, transfersIn, transfersOut] = await Promise.all([
-    db.getFirstAsync<{ total: number | null }>(
-      `SELECT SUM(amountInBase) as total FROM transactions WHERE accountId = ? AND type = 'INCOME'`,
-      [accountId],
-    ),
-    db.getFirstAsync<{ total: number | null }>(
-      `SELECT SUM(amountInBase) as total FROM transactions WHERE accountId = ? AND type = 'EXPENSE'`,
-      [accountId],
-    ),
-    db.getFirstAsync<{ total: number | null }>('SELECT SUM(amount) as total FROM transfers WHERE toAccountId = ?', [
-      accountId,
-    ]),
-    db.getFirstAsync<{ total: number | null }>('SELECT SUM(amount) as total FROM transfers WHERE fromAccountId = ?', [
-      accountId,
-    ]),
-  ]);
-
-  return (
-    account.openingBalance +
-    (income?.total ?? 0) -
-    (expense?.total ?? 0) +
-    (transfersIn?.total ?? 0) -
-    (transfersOut?.total ?? 0)
   );
 }

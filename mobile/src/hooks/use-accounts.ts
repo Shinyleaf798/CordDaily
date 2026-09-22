@@ -6,7 +6,6 @@ import {
   deleteAccount,
   getDefaultAccountId,
   getLastUsedAccountId,
-  listAccountBalances,
   listAccounts,
   updateAccount,
 } from '@/db/accounts';
@@ -23,26 +22,12 @@ export function useAccounts() {
   });
 }
 
-/**
- * 一次拿到所有账户 + 各自的余额。资产页的分组小计和总资产都从这一份算。
- *
- * queryKey 挂在 `['accountBalance', ...]` 而不是 `['accounts', ...]` 下面，是**故意**的：
- * 余额会被记账改变，而 use-transactions 的 invalidateAll 里失效的正是 `['accountBalance']`。
- * 挂到 accounts 下面的话，记完一笔账资产页的数字不会变——那种 bug 很难联想到缓存 key 上。
- */
-export function useAccountBalances() {
-  return useQuery({ queryKey: ['accountBalance', 'all'], queryFn: listAccountBalances });
-}
-
 export function useUpdateAccount() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateAccount,
-    onSuccess: () => {
-      // 改了期初余额或名字，余额和列表都要重算
-      queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
-      queryClient.invalidateQueries({ queryKey: ['accountBalance'] });
-    },
+    // 账户只剩名字可改，失效账户列表就够了
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
   });
 }
 
@@ -50,11 +35,7 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateAccountInput) => createAccount(input),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
-      // 新账户带着期初余额进来，总资产会变——原先漏了这一条
-      queryClient.invalidateQueries({ queryKey: ['accountBalance'] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
   });
 }
 
@@ -68,21 +49,20 @@ export function useAccountTransactionCount(accountId: string | null | undefined)
 }
 
 // 删账户会连带把它名下的账单改指到默认账户，所以要失效的不止账户列表：
-// 每个账户的余额都要重算（钱挪到别的账户名下了），账单缓存里存着旧的 accountId，
-// 详情弹层显示的账户名也来自那份缓存
+// 账单缓存里存着旧的 accountId，详情弹层显示的账户名也来自那份缓存
 export function useDeleteAccount() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (accountId: string) => deleteAccount(accountId),
     onSuccess: () => {
-      for (const key of [ACCOUNTS_KEY, ['accountBalance'], ['transactions'], ['accountTransactionCount']]) {
+      for (const key of [ACCOUNTS_KEY, ['transactions'], ['accountTransactionCount']]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
     },
   });
 }
 
-/** 兜底账户（「不选择任何账户」）的 id。界面靠它判断哪一行不给删除按钮 */
+/** 兜底账户（「不选择任何账户」）的 id。账户编辑页靠它判断这一行给不给删除按钮 */
 export function useDefaultAccountId() {
   return useQuery({ queryKey: [...ACCOUNTS_KEY, 'default'], queryFn: getDefaultAccountId });
 }

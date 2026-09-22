@@ -8,13 +8,18 @@ import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-// 账本相关的四个二级页的集散地。这里只做转发，每一项自己都是独立路由，
+// 账本相关的三个二级页的集散地。这里只做转发，每一项自己都是独立路由，
 // 也可以从别处直接跳（比如记账页的「设置」格子直通 /categories）
+//
+// 「标签汇总」和「报销」两条挪走了：统计页上已经各有一个入口，
+// 同一个页面在两个地方各有一个通道，用户会以为那是两个不同的东西。
+//
+// 「账户」是从底部 tab 降下来的——它跟分类、标签是同一类东西（给交易贴标签的字典表），
+// 本来就该待在这个抽屉里（见 DECISIONS.md）。
 const ENTRIES = [
   { href: '/categories' as const, icon: 'grid-outline' as const, label: '分类管理', hint: '增删改分类和图标，记账页那个「设置」格子通到同一页' },
+  { href: '/accounts' as const, icon: 'card-outline' as const, label: '账户', hint: '记一笔账时用来选「我用什么付的」：现金、TNG、某张卡' },
   { href: '/set-budget' as const, icon: 'cash-outline' as const, label: '预算', hint: '设本月总预算，超支在本地实时计算' },
-  { href: '/tags' as const, icon: 'pricetags-outline' as const, label: '标签汇总', hint: '按旅行、装修这类跨分类的事件看花销' },
-  { href: '/reimbursements' as const, icon: 'cash-outline' as const, label: '报销', hint: '看现在垫了多少钱还没收回来' },
 ];
 
 export default function LedgerSettingsScreen() {

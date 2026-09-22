@@ -8,6 +8,8 @@ import {
   getTransaction,
   getPendingReimbursementTotal,
   getTagBreakdown,
+  listCategorySpending,
+  listCategoryTransactions,
   listReimbursements,
   listMonthTransactions,
   listRecentTransactions,
@@ -24,17 +26,17 @@ import { formatMonthKey } from '@/utils/date';
 // 数据源是本地 SQLite，不是网络请求；用 React Query 单纯是为了缓存和 mutation 状态管理（同 use-accounts）
 const TRANSACTIONS_KEY = ['transactions'];
 
-// 一笔交易会同时影响账单列表、月度汇总、标签汇总、报销清单和账户余额，
+// 一笔交易会同时影响账单列表、月度汇总、分类构成、标签汇总和报销清单，
 // 所以写入后统一把这几组缓存全部失效，而不是逐个挑——挑漏了就会出现"记了一笔但首页数字没变"
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   const keys = [
     TRANSACTIONS_KEY,
     ['monthSummary'],
     ['budgetStatus'],
+    ['categorySpending'],
     ['tagSummaries'],
     ['tagBreakdown'],
     ['reimbursements'],
-    ['accountBalance'],
   ];
   for (const key of keys) {
     queryClient.invalidateQueries({ queryKey: key });
@@ -82,7 +84,7 @@ export function useCreateTransaction() {
   });
 }
 
-// 改、复制、删都跟新增一样会牵动首页列表、月度汇总、预算、标签和账户余额，
+// 改、复制、删都跟新增一样会牵动首页列表、月度汇总、预算、分类构成和标签，
 // 所以统一走 invalidateAll，不逐个挑——挑漏了就是"改完数字没变"这类查不出来的 bug
 export function useUpdateTransaction() {
   const queryClient = useQueryClient();
@@ -105,6 +107,24 @@ export function useDeleteTransaction() {
   return useMutation({
     mutationFn: (id: string) => deleteTransaction(id),
     onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
+// 按月缓存，跟 useMonthTransactions 同一个路子：来回切月份时看过的月份直接命中缓存
+export function useCategorySpending(date?: Date) {
+  const monthKey = formatMonthKey(date ?? new Date());
+  return useQuery({
+    queryKey: ['categorySpending', monthKey],
+    queryFn: () => listCategorySpending(date),
+  });
+}
+
+/** 某个顶层分类（含子分类）在某个月的账单明细。分类下钻页用 */
+export function useCategoryTransactions(categoryId: string | null | undefined, date?: Date) {
+  return useQuery({
+    queryKey: [...TRANSACTIONS_KEY, 'category', categoryId, formatMonthKey(date ?? new Date())],
+    queryFn: () => listCategoryTransactions(categoryId!, date),
+    enabled: !!categoryId,
   });
 }
 

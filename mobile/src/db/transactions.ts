@@ -39,7 +39,23 @@ export type Transaction = Omit<TransactionRow, 'tags' | 'isReimbursable' | 'excl
 export type TransactionWithCategory = Transaction & {
   categoryName: string | null;
   categoryIcon: string | null;
+  /** 叶子分类的**父**分类名。顶层分类是 null。账单行显示成「餐饮 · 早餐」要用它 */
+  categoryParentName: string | null;
 };
+
+type TransactionRowWithCategory = TransactionRow & {
+  categoryName: string | null;
+  categoryIcon: string | null;
+  categoryParentName: string | null;
+};
+
+// 「一条账单行在界面上需要的分类信息」只定义一次：叶子分类的名字和图标 + 父分类的名字。
+// 原来这两段在五条查询里各抄了一遍，加父分类那一次要同时改五处，漏一处就是某个页面
+// 的行少半截分类路径——而那种 bug 只有翻到那个页面才看得见。
+const TX_CATEGORY_COLUMNS = 't.*, c.name AS categoryName, c.icon AS categoryIcon, p.name AS categoryParentName';
+const TX_CATEGORY_JOIN = `FROM transactions t
+     LEFT JOIN categories c ON c.id = t.categoryId
+     LEFT JOIN categories p ON p.id = c.parentId`;
 
 // 详情弹层要连账户名一起显示，比 TransactionWithCategory 多一个 JOIN
 export type TransactionDetail = TransactionWithCategory & {
@@ -132,12 +148,9 @@ export async function createTransaction(input: CreateTransactionInput): Promise<
 /** 单笔详情。带上分类名/图标和账户名，详情弹层一次查询就够，不用再各查一次 */
 export async function getTransaction(id: string): Promise<TransactionDetail | null> {
   const db = await getDb();
-  const row = await db.getFirstAsync<
-    TransactionRow & { categoryName: string | null; categoryIcon: string | null; accountName: string | null }
-  >(
-    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon, a.name AS accountName
-     FROM transactions t
-     LEFT JOIN categories c ON c.id = t.categoryId
+  const row = await db.getFirstAsync<TransactionRowWithCategory & { accountName: string | null }>(
+    `SELECT ${TX_CATEGORY_COLUMNS}, a.name AS accountName
+     ${TX_CATEGORY_JOIN}
      LEFT JOIN accounts a ON a.id = t.accountId
      WHERE t.id = ?`,
     [id],
@@ -243,10 +256,9 @@ export async function listRecentTransactions(days = 7): Promise<TransactionWithC
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  const rows = await db.getAllAsync<TransactionRow & { categoryName: string | null; categoryIcon: string | null }>(
-    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon
-     FROM transactions t
-     LEFT JOIN categories c ON c.id = t.categoryId
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
      WHERE t.date >= ?
      ORDER BY t.date DESC`,
     [since.toISOString()],
@@ -299,13 +311,91 @@ export async function listMonthTransactions(date = new Date()): Promise<Transact
   const db = await getDb();
   const [start, end] = monthRange(date);
 
-  const rows = await db.getAllAsync<TransactionRow & { categoryName: string | null; categoryIcon: string | null }>(
-    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon
-     FROM transactions t
-     LEFT JOIN categories c ON c.id = t.categoryId
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
      WHERE t.date >= ? AND t.date < ?
      ORDER BY t.date DESC`,
     [start, end],
+  );
+
+  return rows.map(mapRow);
+}
+
+export type CategorySpending = {
+  categoryId: string;
+  name: string;
+  icon: string | null;
+  /** 顶层分类为 null。派生层靠它把子分类的钱卷到父分类头上（见 use-stats-view-data） */
+  parentId: string | null;
+  parentName: string | null;
+  parentIcon: string | null;
+  total: number;
+  count: number;
+};
+
+/**
+ * 某个月按分类汇总的支出。统计页的主角，也是全 App **第一条**按分类聚合的查询。
+ *
+ * 只算支出：收入分类通常只有两三个（工资、外快），做成构成图就是三根条，
+ * 不如在顶部的卡片上写一行数（统计页正是这么做的）。
+ *
+ * GROUP BY 的是**叶子**分类，不是顶层分类——两层的合并放在派生层做，不在 SQL 里做。
+ * 理由是同一份数据要喂两个视图：主屏要「餐饮 486」，下钻页要「外卖 243 / 早餐 118」。
+ * 在 SQL 里卷起来的话，下钻页就得再写一条几乎一样的查询，两条的口径迟早分叉。
+ *
+ * 带 `excludeFromStats = 0`，跟 getMonthSummary / getBudgetStatus 口径一致：
+ * 「不计入统计」的那笔钱不占预算额度，也不该出现在构成图里。
+ */
+export async function listCategorySpending(date = new Date()): Promise<CategorySpending[]> {
+  const db = await getDb();
+  const [start, end] = monthRange(date);
+
+  return db.getAllAsync<CategorySpending>(
+    `SELECT t.categoryId          AS categoryId,
+            c.name                AS name,
+            c.icon                AS icon,
+            c.parentId            AS parentId,
+            p.name                AS parentName,
+            p.icon                AS parentIcon,
+            SUM(t.amountInBase)   AS total,
+            COUNT(*)              AS count
+     FROM transactions t
+     LEFT JOIN categories c ON c.id = t.categoryId
+     LEFT JOIN categories p ON p.id = c.parentId
+     WHERE t.type = 'EXPENSE' AND t.excludeFromStats = 0 AND t.date >= ? AND t.date < ?
+     GROUP BY t.categoryId
+     ORDER BY total DESC`,
+    [start, end],
+  );
+}
+
+/**
+ * 某个顶层分类**连同它所有子分类**在某个月的账单明细。分类下钻页的列表。
+ *
+ * `c.parentId = ?` 那一半是关键：点进「餐饮」要看到的是外卖、早餐、聚餐全部三种，
+ * 不是只有那些直接挂在「餐饮」自己名下、没选子分类的账。
+ *
+ * 传一个子分类的 id 进来也不会出错——它没有子分类，第二个条件命中不了任何行，
+ * 结果就是那个子分类自己的账。界面上目前只从顶层进，但这个函数不依赖那个前提。
+ *
+ * 跟 listRecentTransactions / listMonthTransactions 一样**不**过滤 excludeFromStats：
+ * 明细列表显示全部账单，过不过滤是上面那些汇总数字的事（口径说明见 buildCategoryDetailViewData）。
+ */
+export async function listCategoryTransactions(
+  categoryId: string,
+  date = new Date(),
+): Promise<TransactionWithCategory[]> {
+  const db = await getDb();
+  const [start, end] = monthRange(date);
+
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
+     WHERE (t.categoryId = ? OR c.parentId = ?)
+       AND t.date >= ? AND t.date < ?
+     ORDER BY t.date DESC`,
+    [categoryId, categoryId, start, end],
   );
 
   return rows.map(mapRow);
@@ -370,10 +460,9 @@ export async function getTagBreakdown(tag: string): Promise<TagCategoryBreakdown
 
 export async function listReimbursements(settled: boolean): Promise<TransactionWithCategory[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<TransactionRow & { categoryName: string | null; categoryIcon: string | null }>(
-    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon
-     FROM transactions t
-     LEFT JOIN categories c ON c.id = t.categoryId
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
      WHERE t.isReimbursable = 1 AND t.reimbursedAt IS ${settled ? 'NOT NULL' : 'NULL'}
      ORDER BY t.date DESC`,
   );

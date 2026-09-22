@@ -9,9 +9,12 @@ export type TransactionListItemData = {
   id: string;
   /** 原样传库里 categories.icon 的值：emoji / builtin:key / file:// 都由 CategoryIcon 认 */
   icon: string | null;
+  /** 主题（"为了什么事"）。用户没填时录入那边会拿店名或分类名顶上，所以它不会是空的 */
   title: string;
+  /** 「餐饮 · 早餐」，由 formatCategoryPath 拼好再传进来 */
   categoryLabel: string;
   time: string;
+  /** 备注（"具体买了啥"）。跟主题同一行显示，中间一个分隔点 */
   note?: string;
   amount: number;
   type: 'INCOME' | 'EXPENSE';
@@ -28,7 +31,15 @@ type TransactionListItemProps = TransactionListItemData & {
   onPress?: () => void;
 };
 
-// 单条交易行：首页两套布局和日历页的当天明细都复用这一个组件，只是喂给它的数据和底色不同
+// 单条交易行：首页两套布局、日历页的当天明细、分类下钻页都复用这一个组件，
+// 只是喂给它的数据和底色不同。
+//
+// 三行：「餐饮 · 早餐」/「04:55」/「吃早餐 · 3个汉堡」。
+// 分类路径在最上面而不是主题，是因为主题在这个 App 里可以不填——不填时录入那边
+// 会拿店名或分类名顶上，于是原来的排版（主题在上、分类在下）会出现
+// 「餐饮 / 早餐 · 04:45」这种上下两行说同一件事的行。
+// 分类是每笔账都一定有的，拿它当主行，行与行之间才是齐的；
+// 主题掉到第三行跟备注并排——那两个字段回答的都是"这一笔具体是什么"。
 //
 // 金额一律用正文色，收入也不再染绿。
 // 原来的说法是"支出占九成，全标红等于整屏都在报警，红绿留给收入这种例外"——
@@ -46,6 +57,11 @@ export function TransactionListItem({
   surface = 'card',
   onPress,
 }: TransactionListItemProps) {
+  // 主题没填时录入那边拿分类名顶上了，于是第一行「餐饮 · 早餐」和底下那行「餐饮」会重复一遍。
+  // 路径里的**每一段**都要算重复，不能只比整条路径和叶子：
+  // 分类是子分类「早餐」时，顶上去的可能是父分类名「餐饮」，只比叶子就漏掉了
+  const titleIsEcho = categoryLabel.split(' · ').concat(categoryLabel).includes(title);
+  const detail = [titleIsEcho ? null : title, note].filter(Boolean).join(' · ');
   const theme = useTheme();
   const onPage = surface === 'page';
 
@@ -66,11 +82,16 @@ export function TransactionListItem({
       </View>
 
       <View style={styles.middle}>
-        <ThemedText style={[styles.title, onPage && styles.titleOnPage]}>{title}</ThemedText>
+        <ThemedText style={[styles.title, onPage && styles.titleOnPage]}>{categoryLabel}</ThemedText>
+
         <ThemedText themeColor="textSecondary" style={styles.meta}>
-          {categoryLabel} · {time}
-          {note ? ` · ${note}` : ''}
+          {time}
         </ThemedText>
+        {detail ? (
+          <ThemedText themeColor="textSecondary" style={styles.detail} numberOfLines={2}>
+            {detail}
+          </ThemedText>
+        ) : null}
       </View>
 
       <ThemedText style={styles.amount}>{formatSignedAmount(amount, type)}</ThemedText>
@@ -106,8 +127,16 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '500',
   },
+  // 比时间大半号：这是"这笔到底是什么"，比几点钟更值得看
+  detail: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
   amount: {
-    fontSize: 15,
+    paddingTop: 5,
+    alignSelf: 'flex-start',
+    fontSize: 16,
     lineHeight: 21,
     fontWeight: '600',
   },

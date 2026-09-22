@@ -18,14 +18,14 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 const ICONS: Record<string, { filled: IoniconName; outline: IoniconName }> = {
   index: { filled: 'home', outline: 'home-outline' },
   calendar: { filled: 'calendar', outline: 'calendar-outline' },
-  assets: { filled: 'wallet', outline: 'wallet-outline' },
+  stats: { filled: 'stats-chart', outline: 'stats-chart-outline' },
   settings: { filled: 'person', outline: 'person-outline' },
 };
 
 const LABELS: Record<string, string> = {
   index: '首页',
   calendar: '日历',
-  assets: '资产',
+  stats: '统计',
   settings: '我的',
 };
 

@@ -2,6 +2,7 @@ import type { TransactionListItemData } from '@/components/transaction/transacti
 import type { TransactionWithCategory } from '@/db/transactions';
 import { useMonthTransactions } from '@/hooks/use-transactions';
 import { formatClockTime, formatDayGroupLabel, formatDayKey, isSameDay } from '@/utils/date';
+import { formatCategoryPath } from '@/utils/format';
 
 export type CalendarDay = {
   /** 2026-09-13，同时是选中状态存的值 */
@@ -98,7 +99,7 @@ export function buildCalendarViewData(input: {
       // icon 原样传，三种写法怎么渲染由 CategoryIcon 回答（同首页）
       icon: t.categoryIcon,
       title: t.title,
-      categoryLabel: t.categoryName ?? '未分类',
+      categoryLabel: formatCategoryPath(t.categoryParentName, t.categoryName),
       time: formatClockTime(date),
       note: t.remarks ?? undefined,
       amount: t.amount,

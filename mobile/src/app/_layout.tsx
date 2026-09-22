@@ -48,7 +48,7 @@ export default function RootLayout() {
         // 灌种子失败不该挡住启动：分类页仍然可以手动新建
       });
     seedDefaultAccounts().catch(() => {
-      // 同上：资产页可以手动新建账户
+      // 同上：账户页可以手动新建账户
     });
   }, [hydrateAuth, hydrateTheme, hydrateHomeLayout]);
 

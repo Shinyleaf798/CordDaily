@@ -2,20 +2,20 @@ import { Pressable, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import type { AccountWithBalance } from '@/db/accounts';
-import { formatCurrency } from '@/utils/format';
+import type { Account } from '@/db/accounts';
 
 type AccountRowProps = {
-  account: AccountWithBalance;
+  account: Account;
   onPress: () => void;
 };
 
 /**
- * 账户列表的一行：名字 + 余额。点一下编辑。
+ * 账户列表的一行：只有名字。点一下编辑。
  *
- * 余额还是显示的——期初余额这个字段存在的**全部意义**就是让这个数字有个起点，
- * 不显示的话那个输入框就成了填完再也看不到的东西。
- * 但这里不写「余额 / 净流水」之类的标签了：一行一个数，不需要再解释它是什么。
+ * 余额那一列拿掉了。它原本存在的理由是"期初余额这个字段得有个地方看得到"，
+ * 而期初余额本身的理由是"让余额有个起点"——整条链的前提是余额要准。
+ * 账户既然只是「我用什么付的」这么一个标签，这个前提就不成立了，整条链一起拆掉
+ * （期初余额的输入框也一并从 account-editor 移除了）。
  */
 export function AccountRow({ account, onPress }: AccountRowProps) {
   return (
@@ -24,7 +24,6 @@ export function AccountRow({ account, onPress }: AccountRowProps) {
         <ThemedText style={styles.name} numberOfLines={1}>
           {account.name}
         </ThemedText>
-        <ThemedText style={styles.balance}>{formatCurrency(account.balance)}</ThemedText>
       </ThemedView>
     </Pressable>
   );
@@ -34,22 +33,15 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
   },
-  // 名字占满中间：太长时压的是名字，不是金额
   name: {
     flex: 1,
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '500',
-  },
-  balance: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '600',
   },
 });
