@@ -34,6 +34,12 @@ export function formatMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** 2026-09-13。给"这是哪一天"当 key 用——同样不能写成 toISOString().slice(0,10)，
+ *  理由见本文件顶上：那切出来的是 UTC 日期，东八区凌晨记的账会被算到前一天 */
+export function formatDayKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /** 9月13日 */
 export function formatMonthDay(date: Date): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
@@ -69,4 +75,22 @@ export function formatDayLabel(date: Date, now: Date = new Date()): string {
   if (diff === 1) return '昨天';
   if (diff === -1) return '明天';
   return `${formatMonthDay(date)} ${WEEKDAY_LABELS[date.getDay()]}`;
+}
+
+/**
+ * 账单分组标题的主/副两行：今天 · 9月17日 周三 / 9月13日 · 周三。
+ *
+ * 今天、昨天这两天用相对说法当主标签、具体日期当副标签；再往前就直接报日期，星期退到副标签。
+ * 相对说法找得快，具体日期又不能丢——两个都放，靠字号分主次。
+ *
+ * 原先长在 use-home-view-data 里，日历页的"当天明细"要用同一套说法，所以挪到这里：
+ * 两份各自演化的话，同一天在首页叫"昨天"、在日历页叫"9月21日"，看起来像两个不同的东西。
+ */
+export function formatDayGroupLabel(date: Date, now: Date = new Date()): { label: string; subLabel: string } {
+  const diffDays = diffInDays(now, date);
+  const monthDay = formatMonthDay(date);
+  const weekday = WEEKDAY_LABELS[date.getDay()];
+  if (diffDays === 0) return { label: '今天', subLabel: `${monthDay} ${weekday}` };
+  if (diffDays === 1) return { label: '昨天', subLabel: `${monthDay} ${weekday}` };
+  return { label: monthDay, subLabel: weekday };
 }

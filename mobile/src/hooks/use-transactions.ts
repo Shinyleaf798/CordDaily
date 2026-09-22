@@ -9,6 +9,7 @@ import {
   getPendingReimbursementTotal,
   getTagBreakdown,
   listReimbursements,
+  listMonthTransactions,
   listRecentTransactions,
   listTagSummaries,
   setReimbursed,
@@ -44,6 +45,15 @@ export function useRecentTransactions(days = 7) {
   return useQuery({
     queryKey: [...TRANSACTIONS_KEY, 'recent', days],
     queryFn: () => listRecentTransactions(days),
+  });
+}
+
+// 日历页要的是某个月的全部明细（不是汇总数字），按月缓存：
+// 来回切月份时看过的月份直接命中缓存，不会每次都重新打库
+export function useMonthTransactions(date: Date) {
+  return useQuery({
+    queryKey: [...TRANSACTIONS_KEY, 'month', formatMonthKey(date)],
+    queryFn: () => listMonthTransactions(date),
   });
 }
 

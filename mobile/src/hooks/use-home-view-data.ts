@@ -3,7 +3,7 @@ import type { BudgetStatus } from '@/db/budgets';
 import type { MonthSummary, TransactionWithCategory } from '@/db/transactions';
 import { useBudgetStatus } from '@/hooks/use-budgets';
 import { useMonthSummary, useRecentTransactions } from '@/hooks/use-transactions';
-import { WEEKDAY_LABELS, diffInDays, formatClockTime, formatMonthDay, startOfDay } from '@/utils/date';
+import { formatClockTime, formatDayGroupLabel, startOfDay } from '@/utils/date';
 
 export type HomeTransaction = TransactionListItemData & { date: Date };
 
@@ -44,17 +44,6 @@ export type HomeViewData = {
 
   dayGroups: HomeDayGroup[];
 };
-
-// 今天/昨天这两天用相对说法当主标签、具体日期当副标签；再往前就直接报日期，星期退到副标签。
-// 相对说法找得快，具体日期又不能丢——两个都放，靠字号分主次
-function formatDateGroupLabel(date: Date, now: Date) {
-  const diffDays = diffInDays(now, date);
-  const monthDay = formatMonthDay(date);
-  const weekday = WEEKDAY_LABELS[date.getDay()];
-  if (diffDays === 0) return { label: '今天', subLabel: `${monthDay} ${weekday}` };
-  if (diffDays === 1) return { label: '昨天', subLabel: `${monthDay} ${weekday}` };
-  return { label: monthDay, subLabel: weekday };
-}
 
 /**
  * 首页所有派生数字都算在这里，布局组件只负责画。
@@ -124,7 +113,7 @@ export function buildHomeViewData(input: {
       return {
         key,
         date,
-        ...formatDateGroupLabel(date, now),
+        ...formatDayGroupLabel(date, now),
         items: groupItems,
         expense: groupItems.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0),
         income: groupItems.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0),

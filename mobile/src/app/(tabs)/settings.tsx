@@ -25,7 +25,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={{ flex: 1 }}>
       <ThemedView style={styles.screen}>
         <ScrollView contentContainerStyle={styles.content}>
-          <ThemedText type="title">我的</ThemedText>
+          <ThemedText type="pageTitle">我的</ThemedText>
 
           <View style={styles.grid}>
             {ENTRIES.map((entry) => (

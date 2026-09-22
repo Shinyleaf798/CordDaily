@@ -19,9 +19,7 @@ export function PaceLayout({ data, onSelectTransaction }: HomeLayoutProps) {
     <ScrollView contentContainerStyle={styles.content}>
       {/* 标题行右侧刻意留空，以后放搜索和图表入口；月份因此自己占一行 */}
       <View style={styles.headerRow}>
-        <ThemedText type="title" style={styles.greeting}>
-          首页
-        </ThemedText>
+        <ThemedText type="pageTitle">首页</ThemedText>
       </View>
 
       <View style={styles.monthRow}>
@@ -83,10 +81,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  greeting: {
-    fontSize: 28,
-    lineHeight: 34,
   },
   // 用一个 row 包着 chip，chip 才不会被拉满整行宽
   monthRow: {

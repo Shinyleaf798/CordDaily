@@ -28,10 +28,13 @@ type TransactionListItemProps = TransactionListItemData & {
   onPress?: () => void;
 };
 
-// 单条交易行：两套首页布局和以后的日历/账户详情页都复用这一个组件，只是喂给它的数据和底色不同
+// 单条交易行：首页两套布局和日历页的当天明细都复用这一个组件，只是喂给它的数据和底色不同
 //
-// 支出金额用普通文字色而不是红色：账本里九成以上是支出，全标红等于整屏都在报警，
-// 反而看不出哪条值得注意。红/绿留给"当天小计"和收入这种真正的例外。
+// 金额一律用正文色，收入也不再染绿。
+// 原来的说法是"支出占九成，全标红等于整屏都在报警，红绿留给收入这种例外"——
+// 前半句依然成立，但把例外单独染色带来的是另一个问题：一屏账单里零星几行绿字，
+// 眼睛会先被它们抓走，而它们恰恰是最不需要盯着看的那几笔。
+// 现在是进是出由 +/- 号说，颜色不再兼职当标签（当天小计那排的"收/支"也是同一个思路）。
 export function TransactionListItem({
   icon,
   title,
@@ -70,9 +73,7 @@ export function TransactionListItem({
         </ThemedText>
       </View>
 
-      <ThemedText style={[styles.amount, type === 'INCOME' && { color: theme.income }]}>
-        {formatSignedAmount(amount, type)}
-      </ThemedText>
+      <ThemedText style={styles.amount}>{formatSignedAmount(amount, type)}</ThemedText>
     </Row>
   );
 }

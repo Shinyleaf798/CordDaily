@@ -283,6 +283,34 @@ export async function getMonthSummary(date = new Date()): Promise<MonthSummary> 
   return { month: `${date.getMonth() + 1}月`, income, expense, balance: income - expense };
 }
 
+/**
+ * 某个月的全部交易，日历页一次取完。
+ *
+ * 只打一次库、在 JS 里分天，而不是写 `GROUP BY substr(date,1,10)` 让 SQLite 算每天小计：
+ * 库里存的是带时区的 ISO 字符串，按字符串切出来的是 UTC 日期，在东八区会把凌晨 8 点前的账
+ * 算到前一天去（utils/date.ts 顶上那个坑）。SQLite 的 date(..., 'localtime') 又依赖设备时区设置，
+ * 跟 App 其它地方用 getFullYear/getMonth/getDate 的口径不保证一致。
+ * 一个月几十到几百条，取回来在 JS 里分天的开销可以忽略，换来全 App 只有一套"哪天"的算法。
+ *
+ * 跟 listRecentTransactions 一样不过滤 excludeFromStats——明细要显示全部交易，
+ * 过不过滤是调用方算汇总时的事（见 buildCalendarViewData）。
+ */
+export async function listMonthTransactions(date = new Date()): Promise<TransactionWithCategory[]> {
+  const db = await getDb();
+  const [start, end] = monthRange(date);
+
+  const rows = await db.getAllAsync<TransactionRow & { categoryName: string | null; categoryIcon: string | null }>(
+    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon
+     FROM transactions t
+     LEFT JOIN categories c ON c.id = t.categoryId
+     WHERE t.date >= ? AND t.date < ?
+     ORDER BY t.date DESC`,
+    [start, end],
+  );
+
+  return rows.map(mapRow);
+}
+
 // ---- 标签：跟分类正交的第二个汇总维度 ----
 
 export type TagSummary = { tag: string; total: number; count: number };

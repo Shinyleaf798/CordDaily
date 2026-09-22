@@ -4,7 +4,7 @@ import { Fonts, ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type ThemedTextProps = TextProps & {
-  type?: 'default' | 'title' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
+  type?: 'default' | 'title' | 'pageTitle' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
   themeColor?: ThemeColor;
 };
 
@@ -17,6 +17,7 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
         { color: theme[themeColor ?? 'text'] },
         type === 'default' && styles.default,
         type === 'title' && styles.title,
+        type === 'pageTitle' && styles.pageTitle,
         type === 'small' && styles.small,
         type === 'smallBold' && styles.smallBold,
         type === 'subtitle' && styles.subtitle,
@@ -50,6 +51,14 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: 600,
     lineHeight: 52,
+  },
+  // 四个 tab 页顶上那个标题（首页/日历/资产/我的）统一用它。
+  // 原来各页自己写 fontSize: 28 覆盖 title 的 48，写漏的两页（资产/我的）就孤零零地大一圈——
+  // 与其复制第四遍，不如让"页面标题"本身成为一种字号
+  pageTitle: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: 600,
   },
   subtitle: {
     fontSize: 32,
