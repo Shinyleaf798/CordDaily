@@ -150,4 +150,36 @@ export const MIGRATIONS: string[][] = [
     `UPDATE categories SET icon = 'builtin:parttime' WHERE icon = '💼';`,
     `UPDATE categories SET icon = 'builtin:refund' WHERE icon = '💵';`,
   ],
+
+  // v6：曾经给账户加过「分组」（用户自建的账户分类）。这套东西在 v7 又整个去掉了，
+  // 这一组保持原样不动——已经跑过 v6 的设备 user_version 已经是 6，改它不会重跑；
+  // 而把它从数组里删掉会让 MIGRATIONS.length 退回 5，那台设备之后再加新迁移就会被
+  // `currentVersion >= MIGRATIONS.length` 判成已是最新而跳过。**版本号只能往前加，不能往回缩。**
+  // 代价只是全新安装会先建这张表、下一组再删掉，几毫秒的事。
+  [
+    `CREATE TABLE IF NOT EXISTS account_groups (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'OTHER' CHECK (type IN ('CASH', 'BANK', 'EWALLET', 'CREDIT_CARD', 'OTHER')),
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 0
+    );`,
+    `ALTER TABLE accounts ADD COLUMN groupId TEXT REFERENCES account_groups(id);`,
+  ],
+
+  // v7：账户分类整个去掉（见 DECISIONS.md）。账户存在的唯一目的是给一笔账贴上
+  // 「我用什么付的」——再给这些标签分一次类，在只有两三个账户时是纯仪式感。
+  //
+  // **两句的顺序不能反**：先删 accounts 上那个指向 account_groups 的外键列，再删表。
+  // 反过来先 DROP TABLE 的话，在开了 `PRAGMA foreign_keys` 的设备上会报
+  // FOREIGN KEY constraint failed（父表还被子表引用着）；就算绕过去删成功了，
+  // accounts 表定义里那句 `REFERENCES account_groups(id)` 还在、却指向一张不存在的表，
+  // 之后每一次插入账户都会失败。按这个顺序则两种外键设置下都干净（都实测过）。
+  //
+  // DROP COLUMN 需要 SQLite 3.35+（2021 年），Expo SDK 57 带的远高于这个版本。
+  [
+    `ALTER TABLE accounts DROP COLUMN groupId;`,
+    `DROP TABLE IF EXISTS account_groups;`,
+  ],
 ];

@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { TransactionDetail } from '@/db/transactions';
-import { useAccounts } from '@/hooks/use-accounts';
+import { useAccounts, useLastUsedAccountId } from '@/hooks/use-accounts';
 import { useCategories } from '@/hooks/use-categories';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/use-transactions';
 import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
@@ -60,6 +60,7 @@ export function TransactionForm({ initial }: TransactionFormProps) {
 
 
   const { data: accounts } = useAccounts();
+  const { data: lastUsedAccountId } = useLastUsedAccountId();
   const createTransaction = useCreateTransaction();
   const updateTransaction = useUpdateTransaction();
 
@@ -86,7 +87,13 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const isEditing = !!initial;
   const mutation = isEditing ? updateTransaction : createTransaction;
 
-  const accountId = pickedAccountId ?? accounts?.[0]?.id ?? null;
+  // 默认值按这个顺序退：手动选的 → 上次记账用的 → 列表第一个。
+  // （改账单时不用再单独兜一层：pickedAccountId 的初始值就是 initial.accountId）
+  //
+  // "上次用的"是这里的重点：两个默认账户（「不选择任何账户」和「现金」）之间，
+  // 用户只需要选一次，之后就一直沿用，不用每笔账都想一遍。
+  // 真要换的人点一下 chip 就换了，下一笔又会记住新的那个。
+  const accountId = pickedAccountId ?? lastUsedAccountId ?? accounts?.[0]?.id ?? null;
   const accountName = accounts?.find((a) => a.id === accountId)?.name ?? null;
 
   // 切收支类型时清掉已选分类：支出和收入是两套分类，留着上一套的 id 会指向一个网格里不存在的格子。
@@ -120,7 +127,10 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   // 用户会以为按钮坏了，根本想不到"我还没有账户"——这一条不说就真的没人能猜到
   const blocker = !selectedCategoryId ? 'category' : !accountId ? 'account' : !(numericAmount > 0) ? 'amount' : null;
   const canSave = !blocker && !mutation.isPending;
-  const blockerHint = blocker === 'account' ? '先选一个账户——资产页里新建一个' : null;
+  // 加上 `accounts &&`：账户还没查出来时 accountId 也是 null，但那是"还不知道"不是"一个都没有"。
+  // 不区分的话，本地库读完之前的那几毫秒会闪一句"资产页里新建一个"，
+  // 而用户根本不缺账户——默认账户是灌好的，他只需要再等一帧
+  const blockerHint = blocker === 'account' && accounts ? '先选一个账户——资产页里新建一个' : null;
 
   const handleSave = () => {
     if (!canSave || !selectedCategoryId || !accountId) return;

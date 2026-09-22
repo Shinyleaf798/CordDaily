@@ -1,143 +1,67 @@
-import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccountRow } from '@/components/assets/account-row';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
-import type { AccountType } from '@/db/accounts';
-import { useAccounts, useCreateAccount } from '@/hooks/use-accounts';
+import { useAccountBalances } from '@/hooks/use-accounts';
 import { useTheme } from '@/hooks/use-theme';
 
-const ACCOUNT_TYPES: AccountType[] = ['CASH', 'BANK', 'EWALLET', 'CREDIT_CARD', 'OTHER'];
-
+/**
+ * 资产页：一个平铺的账户列表，点一行改它，右上角加一个。
+ *
+ * 不分组、不汇总、不排序——账户在这个 App 里只有一个职责：
+ * 让一笔账能记下"我用什么付的"（现金、TNG、某张卡）。
+ * 这一页存在的意义仅仅是"把那几个名字管起来"，多一层结构都是空转。
+ *
+ * 数据只有一个来源（useAccountBalances），所以也没有单独的 view-data hook：
+ * 派生层是用来统一多个查询的口径的，只有一个查询时它只是多一跳。
+ */
 export default function AssetsScreen() {
   const theme = useTheme();
-  const { data: accounts, isLoading } = useAccounts();
-  const createAccount = useCreateAccount();
-
-  const [isAdding, setIsAdding] = useState(false);
-  const [name, setName] = useState('');
-  const [type, setType] = useState<AccountType>('CASH');
-  const [openingBalance, setOpeningBalance] = useState('');
-
-  const resetForm = () => {
-    setName('');
-    setType('CASH');
-    setOpeningBalance('');
-    setIsAdding(false);
-  };
-
-  const handleCreate = () => {
-    if (!name.trim()) return;
-    createAccount.mutate(
-      { name: name.trim(), type, openingBalance: Number(openingBalance) || 0 },
-      { onSuccess: resetForm },
-    );
-  };
+  const { data: accounts, isLoading } = useAccountBalances();
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <ThemedView style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <ThemedText type="title">资产</ThemedText>
-          <Pressable onPress={() => setIsAdding((v) => !v)}>
-            <ThemedText type="linkPrimary">{isAdding ? '取消' : '+ 新建账户'}</ThemedText>
+          <ThemedText type="pageTitle">资产</ThemedText>
+          <Pressable onPress={() => router.push('/account-editor')} hitSlop={8}>
+            <ThemedText type="linkPrimary">+ 新建账户</ThemedText>
           </Pressable>
         </View>
 
-        {isAdding && (
-          <ThemedView type="backgroundElement" style={styles.form}>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="账户名称"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.input, { color: theme.text }]}
+        {isLoading ? (
+          <ActivityIndicator color={theme.cardHighlight} style={styles.loading} />
+        ) : (
+          (accounts ?? []).map((account) => (
+            <AccountRow
+              key={account.id}
+              account={account}
+              onPress={() => router.push({ pathname: '/account-editor', params: { id: account.id } })}
             />
-            <View style={styles.typeRow}>
-              {ACCOUNT_TYPES.map((t) => (
-                <Pressable
-                  key={t}
-                  onPress={() => setType(t)}
-                  style={[styles.chip, { backgroundColor: t === type ? theme.backgroundSelected : theme.background }]}>
-                  <ThemedText type="small">{t}</ThemedText>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              value={openingBalance}
-              onChangeText={setOpeningBalance}
-              placeholder="期初余额（可选，默认0）"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="numeric"
-              style={[styles.input, { color: theme.text }]}
-            />
-            <Pressable onPress={handleCreate} disabled={!name.trim()} style={[styles.saveButton, { backgroundColor: theme.cardHighlight }]}>
-              <ThemedText style={{ color: theme.onCardHighlight, fontWeight: '600' }}>保存</ThemedText>
-            </Pressable>
-          </ThemedView>
+          ))
         )}
-
-        <FlatList
-          data={accounts ?? []}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <AccountRow account={item} />}
-          ItemSeparatorComponent={() => <View style={{ height: Spacing.two }} />}
-          contentContainerStyle={{ paddingTop: Spacing.three, paddingBottom: Spacing.six }}
-          ListEmptyComponent={
-            !isLoading ? (
-              <ThemedText type="default" themeColor="textSecondary">
-                还没有账户，点右上角新建一个吧。
-              </ThemedText>
-            ) : null
-          }
-        />
-      </ThemedView>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: Spacing.four,
+  content: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: 12,
+    paddingBottom: Spacing.six,
+    gap: Spacing.two,
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: Spacing.one,
   },
-  form: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: 12,
-    gap: Spacing.two,
-  },
-  input: {
-    height: 44,
-    borderRadius: 10,
-    paddingHorizontal: Spacing.two,
-    fontSize: 16,
-    backgroundColor: 'transparent',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#80808040',
-  },
-  typeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.one,
-  },
-  chip: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    borderRadius: 8,
-  },
-  saveButton: {
-    height: 44,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  loading: {
+    marginTop: Spacing.four,
   },
 });

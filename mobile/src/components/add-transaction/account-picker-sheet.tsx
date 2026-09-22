@@ -4,7 +4,6 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
-import { AccountTypeLabels } from '@/constants/account-types';
 import { Spacing } from '@/constants/theme';
 import type { Account } from '@/db/accounts';
 import { useTheme } from '@/hooks/use-theme';
@@ -52,8 +51,10 @@ export function AccountPickerSheet({ accounts, selectedId, onSelect, onDismiss }
                   ]}>
                   <View style={styles.rowText}>
                     <ThemedText type="default">{account.name}</ThemedText>
+                    {/* 原来这行是「银行卡 · MYR」。账户类型去掉之后它对每个账户都一样，
+                        币种也是单一的——一行对所有选项都相同的副标题不提供任何信息 */}
                     <ThemedText type="small" themeColor="textSecondary">
-                      {AccountTypeLabels[account.type]} · {account.currency}
+                      {account.currency}
                     </ThemedText>
                   </View>
                   {isSelected ? <Ionicons name="checkmark-circle" size={20} color={theme.cardHighlight} /> : null}

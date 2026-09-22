@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 import { ScreenTransitions } from '@/constants/screen-transitions';
 import { ThemeScheme } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { seedDefaultAccount } from '@/db/accounts';
+import { seedDefaultAccounts } from '@/db/accounts';
 import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
@@ -47,7 +47,7 @@ export default function RootLayout() {
       .catch(() => {
         // 灌种子失败不该挡住启动：分类页仍然可以手动新建
       });
-    seedDefaultAccount().catch(() => {
+    seedDefaultAccounts().catch(() => {
       // 同上：资产页可以手动新建账户
     });
   }, [hydrateAuth, hydrateTheme, hydrateHomeLayout]);
@@ -111,6 +111,13 @@ export default function RootLayout() {
               options={{ ...ScreenTransitions.push, title: '记一笔', headerTitleAlign: 'center' }}
             />
             <Stack.Screen name="set-budget" options={ScreenTransitions.dialog} />
+            {/* 新建/编辑账户跟记一笔同一类：进去做完事再出来，所以同一种 push 转场。
+                标题写在路由这一层（页面组件还没渲染的那几帧才不会退回路由名 "Account-editor"），
+                「创建/编辑」的区分由页面里那个提交按钮的文字交代 */}
+            <Stack.Screen
+              name="account-editor"
+              options={{ ...ScreenTransitions.push, title: '账户', headerTitleAlign: 'center' }}
+            />
             <Stack.Screen name="categories" options={{ ...ScreenTransitions.push, title: '分类管理' }} />
             {/* 跟记一笔、分类管理同一类，用同一个 push。以前空着看不出来是因为原生栈在 Android 上
                 会把 slide_from_right 回落成默认；JS 栈照字面执行，不写就分叉成两种动画。 */}
