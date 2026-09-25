@@ -31,6 +31,11 @@ const LABELS: Record<string, string> = {
 
 // 5 个底部按钮：4 个正常 tab + 中间凸起的圆形＋号按钮（跳去 /add 弹窗，不是真正的 tab）
 // 见 docs/PROJECT-PLAN.md 第6节手机端页面结构
+//
+// 底部安全区（系统导航栏那一条）由**这里**的 edges={['bottom']} 独家负责。
+// 四个 tab 页自己只能写 edges={['top','left','right']}——它们在这条 bar 上面，
+// 再各自留一次底部安全区的话，那段空白会以页面底色（background）画出来，
+// 变成 bar 上方凭空多一条黑边。
 export function CustomTabBar({ state, navigation }: TabBarProps) {
   const theme = useTheme();
   const routes = state.routes;

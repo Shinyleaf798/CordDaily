@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // 账本相关的三个二级页的集散地。这里只做转发，每一项自己都是独立路由，
@@ -52,7 +52,7 @@ export default function LedgerSettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { padding: Spacing.four, gap: Spacing.two },
+  content: { paddingHorizontal: ScreenPadding, paddingVertical: Spacing.four, gap: Spacing.two },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

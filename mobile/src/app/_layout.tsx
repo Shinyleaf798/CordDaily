@@ -118,7 +118,14 @@ export default function RootLayout() {
               name="account-editor"
               options={{ ...ScreenTransitions.push, title: '账户', headerTitleAlign: 'center' }}
             />
-            <Stack.Screen name="categories" options={{ ...ScreenTransitions.push, title: '分类管理' }} />
+            {/* 标题留空：这一页的 header 正中间放的是收支切换 tabs（见 categories.tsx），
+                写个「分类管理」在那儿会跟 tabs 抢同一个位置。
+                空串而不是干脆不写——不写的话组件还没渲染的那几帧会退回路由名 "Categories"
+                （同 add 那条注释说的那件事，只是这里宁可空着也不要一个会被顶掉的标题） */}
+            <Stack.Screen
+              name="categories"
+              options={{ ...ScreenTransitions.push, title: '', headerTitleAlign: 'center' }}
+            />
             {/* 跟记一笔、分类管理同一类，用同一个 push。以前空着看不出来是因为原生栈在 Android 上
                 会把 slide_from_right 回落成默认；JS 栈照字面执行，不写就分叉成两种动画。 */}
             <Stack.Screen name="tags" options={{ ...ScreenTransitions.push, title: '标签汇总' }} />

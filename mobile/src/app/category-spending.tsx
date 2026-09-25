@@ -10,7 +10,7 @@ import { TransactionDetailSheet } from '@/components/transaction/transaction-det
 import { TransactionListItem } from '@/components/transaction/transaction-list-item';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useCategoryDetailViewData } from '@/hooks/use-stats-view-data';
 import { useTheme } from '@/hooks/use-theme';
 import { parseMonthKey } from '@/utils/date';
@@ -134,7 +134,7 @@ export default function CategorySpendingScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: ScreenPadding,
     paddingTop: 12,
     paddingBottom: Spacing.six,
     gap: 10,
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   itemWrap: {
     paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingVertical: 7,
   },
   emptyCard: {
     borderRadius: 16,

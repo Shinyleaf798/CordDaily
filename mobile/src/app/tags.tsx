@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useTagBreakdown, useTagSummaries } from '@/hooks/use-transactions';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -87,7 +87,8 @@ function TagBreakdown({ tag, total }: { tag: string; total: number }) {
 
 const styles = StyleSheet.create({
   content: {
-    padding: Spacing.two,
+    paddingHorizontal: ScreenPadding,
+    paddingTop: Spacing.two,
     gap: Spacing.two,
     paddingBottom: Spacing.six,
   },

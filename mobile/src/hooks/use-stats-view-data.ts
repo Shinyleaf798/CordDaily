@@ -1,14 +1,18 @@
 import type { TransactionListItemData } from '@/components/transaction/transaction-list-item';
-import type { CategorySpending, MonthSummary, TagSummary, TransactionWithCategory } from '@/db/transactions';
+import type { CategorySpending, MonthlyExpense, MonthSummary, TagSummary, TransactionWithCategory } from '@/db/transactions';
 import {
   useCategorySpending,
   useCategoryTransactions,
+  useMonthlyExpense,
   useMonthSummary,
   usePendingReimbursementTotal,
   useTagSummaries,
 } from '@/hooks/use-transactions';
-import { formatClockTime, formatDayGroupLabel, shiftMonth, startOfDay, startOfMonth } from '@/utils/date';
+import { formatClockTime, formatDayGroupLabel, formatMonthKey, shiftMonth, startOfDay, startOfMonth } from '@/utils/date';
 import { formatCategoryPath } from '@/utils/format';
+
+/** 趋势图最多回看几个月。数据不够就只画有账的那几个月，见 buildStatsViewData */
+const TREND_MAX_MONTHS = 6;
 
 /** 主屏构成图最多列几行，超出的并进「其他」 */
 const TOP_CATEGORY_COUNT = 5;
@@ -29,6 +33,17 @@ export type CategorySlice = {
   isOther: boolean;
 };
 
+export type TrendBar = {
+  monthKey: string;
+  /** 柱子底下那行小字：9月 */
+  label: string;
+  total: number;
+  /** 相对最高那根的高度，0-100 */
+  relative: number;
+  /** 是不是当前正在看的那个月 */
+  isActive: boolean;
+};
+
 export type StatsViewData = {
   monthLabel: string;
   /** 当前看的是不是本月。不是的话界面上给一个「回到本月」的退路 */
@@ -47,6 +62,9 @@ export type StatsViewData = {
   /** 折叠进「其他」之前一共有几个分类，用来决定要不要显示「全部 ›」 */
   categoryCount: number;
 
+  /** 趋势图的柱子。一根都没有（一笔账都还没记）时是空数组，界面整段不画 */
+  trend: TrendBar[];
+
   tags: TagSummary[];
   tagCount: number;
 
@@ -54,6 +72,7 @@ export type StatsViewData = {
 };
 
 const OTHER_ID = '__other__';
+
 
 /**
  * 统计页所有派生数字都算在这里，组件只负责画——跟 buildHomeViewData 同一个路子。
@@ -69,10 +88,11 @@ export function buildStatsViewData(input: {
   summary?: MonthSummary;
   previousSummary?: MonthSummary;
   spending?: CategorySpending[];
+  monthly?: MonthlyExpense[];
   tags?: TagSummary[];
   pendingReimbursement?: number;
 }): StatsViewData {
-  const { now, month, summary, previousSummary, spending, tags, pendingReimbursement } = input;
+  const { now, month, summary, previousSummary, spending, monthly, tags, pendingReimbursement } = input;
 
   const expense = summary?.expense ?? 0;
   const previousExpense = previousSummary?.expense ?? 0;
@@ -132,6 +152,44 @@ export function buildStatsViewData(input: {
     );
   }
 
+  // 趋势图的横轴：**从最早有账的那个月开始**，到正在看的这个月为止，最多 6 根。
+  //
+  // 不固定画 6 根的理由很实际：这个账本才用了没多久，固定 6 根就是五根空柱 + 一根，
+  // 图里全是"没有数据"这个信息。只有这个月有账就只画一根，攒够月份它自己会长。
+  //
+  // 中间没账的月份**要留一根空位**（高度 0，只剩月份标签）：
+  // 七月和九月有账、八月没有的话，把八月抽掉会让两根柱子挨在一起，
+  // 看起来像是连续两个月——那是假的。空位本身就是信息。
+  const monthlyRows = monthly ?? [];
+  const trend: TrendBar[] = [];
+
+  if (monthlyRows.length > 0) {
+    const totals = new Map(monthlyRows.map((row) => [row.monthKey, row.total]));
+    const earliestKey = monthlyRows[0].monthKey;
+    // 往回数，数到最早有账的那个月为止（窗口本身已经被查询限制在 6 个月内）
+    let span = 1;
+    for (let i = 1; i < TREND_MAX_MONTHS; i += 1) {
+      const candidate = shiftMonth(month, -i);
+      // 月份 key 是 '2026-09' 这种定宽写法，直接比字符串大小就是比时间先后
+      if (formatMonthKey(candidate) < earliestKey) break;
+      span = i + 1;
+    }
+
+    const longest = Math.max(...monthlyRows.map((row) => row.total));
+    for (let i = span - 1; i >= 0; i -= 1) {
+      const barMonth = shiftMonth(month, -i);
+      const monthKey = formatMonthKey(barMonth);
+      const total = totals.get(monthKey) ?? 0;
+      trend.push({
+        monthKey,
+        label: `${barMonth.getMonth() + 1}月`,
+        total,
+        relative: longest > 0 ? (total / longest) * 100 : 0,
+        isActive: i === 0,
+      });
+    }
+  }
+
   const allTags = tags ?? [];
 
   return {
@@ -144,6 +202,7 @@ export function buildStatsViewData(input: {
     deltaPercentage,
     categories,
     categoryCount: sorted.length,
+    trend,
     tags: allTags.slice(0, TOP_TAG_COUNT),
     tagCount: allTags.length,
     pendingReimbursement: pendingReimbursement ?? 0,
@@ -166,10 +225,11 @@ export function useStatsViewData(month: Date): StatsViewData {
   const { data: summary } = useMonthSummary(month);
   const { data: previousSummary } = useMonthSummary(previousMonth);
   const { data: spending } = useCategorySpending(month);
+  const { data: monthly } = useMonthlyExpense(month, TREND_MAX_MONTHS);
   const { data: tags } = useTagSummaries();
   const { data: pendingReimbursement } = usePendingReimbursementTotal();
 
-  return buildStatsViewData({ now, month, summary, previousSummary, spending, tags, pendingReimbursement });
+  return buildStatsViewData({ now, month, summary, previousSummary, spending, monthly, tags, pendingReimbursement });
 }
 
 // ---- 分类下钻：点主屏构成图里的一行进来 ----

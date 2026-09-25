@@ -5,10 +5,12 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategoryBreakdown } from '@/components/stats/category-breakdown';
+import { MonthTrend } from '@/components/stats/month-trend';
 import { StatsSummaryCard } from '@/components/stats/stats-summary-card';
+import { PageHeader } from '@/components/ui/page-header';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useStatsViewData } from '@/hooks/use-stats-view-data';
 import { useTheme } from '@/hooks/use-theme';
 import { formatMonthKey, shiftMonth, startOfMonth } from '@/utils/date';
@@ -24,8 +26,6 @@ import { formatCurrency } from '@/utils/format';
  * 余额准不准无关紧要，所以那一页撑不起一个 tab，已经并进 我的 → 账本（见 DECISIONS.md）。
  *
  * 页面自己只管一件事：在看哪个月。数字全在 useStatsViewData 里算。
- * 近 6 个月趋势图还没做——项目才开始两周，那张图现在会画出五根空柱，
- * 等真有几个月历史了再补（见 DECISIONS.md）。
  */
 export default function StatsScreen() {
   const theme = useTheme();
@@ -36,9 +36,9 @@ export default function StatsScreen() {
     router.push({ pathname: '/category-spending', params: { id: categoryId, month: formatMonthKey(month) } });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ThemedText type="pageTitle">统计</ThemedText>
+        <PageHeader title="统计" />
 
         {/* 翻月的控件在卡片里，跟日历页同一个位置同一个样子 */}
         <StatsSummaryCard
@@ -51,6 +51,15 @@ export default function StatsScreen() {
           deltaPercentage={data.deltaPercentage}
           previousExpense={data.previousExpense}
         />
+
+        {/* 趋势图的柱子数跟着数据走：只有这个月有账就只画一根，攒够月份它自己会长到 6 根。
+            一笔账都没有时整段不画——一张空图比没有图更难看懂 */}
+        {data.trend.length > 0 ? (
+          <>
+            <SectionHeader title="月度趋势" />
+            <MonthTrend bars={data.trend} />
+          </>
+        ) : null}
 
         <SectionHeader title="支出构成" />
         <CategoryBreakdown categories={data.categories} onSelect={openCategory} />
@@ -134,10 +143,10 @@ function EmptyCard({ text }: { text: string }) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: ScreenPadding,
     paddingTop: 12,
     paddingBottom: Spacing.six,
-    gap: 10,
+    gap: 12,
   },
   sectionHeader: {
     flexDirection: 'row',

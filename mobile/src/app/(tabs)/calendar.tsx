@@ -5,9 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CalendarDayDetail } from '@/components/calendar/calendar-day-detail';
 import { CalendarMonthGrid } from '@/components/calendar/calendar-month-grid';
 import { CalendarSummaryHeader } from '@/components/calendar/calendar-summary-header';
+import { PageHeader } from '@/components/ui/page-header';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useCalendarViewData } from '@/hooks/use-calendar-view-data';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDayKey, shiftMonth, startOfMonth } from '@/utils/date';
@@ -48,9 +49,9 @@ export default function CalendarScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ThemedText type="pageTitle">日历</ThemedText>
+        <PageHeader title="日历" />
 
         <CalendarSummaryHeader
           monthLabel={data.monthLabel}
@@ -90,7 +91,7 @@ export default function CalendarScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: ScreenPadding,
     paddingTop: 12,
     paddingBottom: Spacing.six,
     gap: 12,

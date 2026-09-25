@@ -6,7 +6,7 @@ import { DialogActions, ModalDialog } from '@/components/ui/modal-dialog';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import {
   useAccounts,
   useAccountTransactionCount,
@@ -162,7 +162,8 @@ export default function AccountEditorScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: {
-    padding: Spacing.three,
+    paddingHorizontal: ScreenPadding,
+    paddingTop: Spacing.three,
     gap: 12,
     paddingBottom: Spacing.six,
   },

@@ -10,6 +10,7 @@ import {
   getTagBreakdown,
   listCategorySpending,
   listCategoryTransactions,
+  listMonthlyExpense,
   listReimbursements,
   listMonthTransactions,
   listRecentTransactions,
@@ -34,6 +35,7 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
     ['monthSummary'],
     ['budgetStatus'],
     ['categorySpending'],
+    ['monthlyExpense'],
     ['tagSummaries'],
     ['tagBreakdown'],
     ['reimbursements'],
@@ -116,6 +118,14 @@ export function useCategorySpending(date?: Date) {
   return useQuery({
     queryKey: ['categorySpending', monthKey],
     queryFn: () => listCategorySpending(date),
+  });
+}
+
+/** 趋势图：截止到 endMonth 的最近几个月，各月支出合计 */
+export function useMonthlyExpense(endMonth: Date, months = 6) {
+  return useQuery({
+    queryKey: ['monthlyExpense', formatMonthKey(endMonth), months],
+    queryFn: () => listMonthlyExpense(endMonth, months),
   });
 }
 

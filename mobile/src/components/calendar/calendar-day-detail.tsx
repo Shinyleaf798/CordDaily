@@ -76,6 +76,6 @@ const styles = StyleSheet.create({
   },
   itemWrap: {
     paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingVertical: 7,
   },
 });

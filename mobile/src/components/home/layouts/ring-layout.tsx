@@ -1,19 +1,41 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { EditBudgetLink, SetBudgetLink } from '@/components/home/set-budget-link';
 import { TransactionListItem } from '@/components/transaction/transaction-list-item';
+import { MonthChip } from '@/components/home/month-chip';
 import { CircularProgress } from '@/components/ui/circular-progress';
+import { PageHeader } from '@/components/ui/page-header';
 import { ThemedText } from '@/components/ui/themed-text';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import type { HomeLayoutProps } from '@/components/home/layouts/types';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
+
+/**
+ * 圆环直径 = 内容宽度 × 这个比例，上限 RING_MAX_SIZE。
+ *
+ * 不写死一个像素值：圆环是这一页的主角，它该占多大是**相对于页面**的一件事。
+ * 写死 188 的话，屏幕边距一变（这次就变了 8），比例就跟着悄悄漂移；
+ * 换台小屏手机它会顶满两边，换台大屏又缩成中间一小坨。
+ *
+ * 上限是给平板和折叠屏用的：内容宽度到了 600，圆环没必要真长到 370——
+ * 那时候它已经不是"一个能一眼看完的表盘"，而是一堵墙了。
+ */
+const RING_SIZE_RATIO = 0.55;
+const RING_MAX_SIZE = 260;
+// 环宽跟直径同比例缩放（原来是 14/188），否则环一放大就显得细得像根头发丝
+const RING_STROKE_RATIO = 14 / 188;
 
 // 布局 B「金环」：把"本月还能花多少"做成页面主角，月度收支退成一条三栏 pill，
 // 账单直接铺在页面底色上、只用细线分隔。信息比 A 少，但第一眼看到的就是最该看的那个数。
 export function RingLayout({ data, onSelectTransaction }: HomeLayoutProps) {
   const theme = useTheme();
+
+  // useWindowDimensions 而不是 Dimensions.get：转屏和分屏时它会触发重渲染，后者拿到的是启动时的快照
+  const { width } = useWindowDimensions();
+  const ringSize = Math.min(Math.round((width - ScreenPadding * 2) * RING_SIZE_RATIO), RING_MAX_SIZE);
+  const ringStroke = Math.round(ringSize * RING_STROKE_RATIO);
 
   // 超支之后环和中心数字都翻成支出色：还用强调色的话，一个负数配金色看着像还有额度
   const isOverspent = data.hasBudget && data.remaining < 0;
@@ -25,15 +47,19 @@ export function RingLayout({ data, onSelectTransaction }: HomeLayoutProps) {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       {/* 这一行右侧同样留给以后的搜索和图表入口 */}
-      <View style={styles.headerRow}>
-        <ThemedText style={[styles.monthLabel, { color: theme.cardHighlight }]}>{data.monthLabel}</ThemedText>
+      <PageHeader title="首页" />
+
+      {/* 这一页不用 gap 排版（每块自带 marginTop），所以这里自己报上跟标题的距离，
+          数值取 12——跟节奏条布局那边的 content.gap 一致 */}
+      <View style={styles.monthRow}>
+        <MonthChip label={data.monthLabel} />
       </View>
 
       <View style={styles.ringWrap}>
         <CircularProgress
           percentage={data.percentage}
-          size={188}
-          strokeWidth={14}
+          size={ringSize}
+          strokeWidth={ringStroke}
           color={ringColor}
           trackColor={theme.backgroundElement}>
           <View style={styles.ringCenter}>
@@ -143,21 +169,14 @@ export function RingLayout({ data, onSelectTransaction }: HomeLayoutProps) {
 }
 
 const styles = StyleSheet.create({
+  monthRow: {
+    marginTop: 12,
+  },
   content: {
-    paddingHorizontal: 20,
+    // 跟节奏条布局同一个数：切换布局时内容不该左右跳一下
+    paddingHorizontal: ScreenPadding,
     paddingTop: 12,
     paddingBottom: Spacing.six,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  monthLabel: {
-    fontSize: 13,
-    lineHeight: 24,
-    fontWeight: '600',
-    letterSpacing: 2,
   },
   ringWrap: {
     alignItems: 'center',

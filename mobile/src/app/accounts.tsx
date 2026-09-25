@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccountRow } from '@/components/account/account-row';
 import { ThemedText } from '@/components/ui/themed-text';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -57,7 +57,7 @@ export default function AccountsScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: ScreenPadding,
     paddingTop: 12,
     paddingBottom: Spacing.six,
     gap: Spacing.two,

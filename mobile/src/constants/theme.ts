@@ -113,5 +113,16 @@ export const Spacing = {
   six: 64,
 } as const;
 
+/**
+ * 页面内容距屏幕左右边缘的距离。全 App 只有这一个数，改它就等于改全部页面。
+ *
+ * 不复用 Spacing 里的某一档：Spacing 是**间距刻度**，同一档会同时被用作卡片内距、
+ * 行间距、图标间隙。把屏幕边距也挂在 Spacing.three 上，就意味着"想让页面窄一点"
+ * 这个念头没法单独表达——一动它，所有卡片内部也跟着缩。
+ *
+ * 只管左右。上下留白各页面不一样（列表页顶上 12，设置页 24），那是各页自己的事。
+ */
+export const ScreenPadding = 12;
+
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

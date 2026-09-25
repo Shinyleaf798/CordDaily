@@ -1,12 +1,14 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { BudgetProgressCard } from '@/components/home/budget-progress-card';
+import { MonthChip } from '@/components/home/month-chip';
 import { MonthSummaryCard } from '@/components/home/month-summary-card';
 import { TransactionDateGroupHeader } from '@/components/transaction/transaction-date-group-header';
 import { TransactionListItem } from '@/components/transaction/transaction-list-item';
+import { PageHeader } from '@/components/ui/page-header';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import type { HomeLayoutProps } from '@/components/home/layouts/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -18,15 +20,8 @@ export function PaceLayout({ data, onSelectTransaction }: HomeLayoutProps) {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       {/* 标题行右侧刻意留空，以后放搜索和图表入口；月份因此自己占一行 */}
-      <View style={styles.headerRow}>
-        <ThemedText type="pageTitle">首页</ThemedText>
-      </View>
-
-      <View style={styles.monthRow}>
-        <View style={[styles.monthChip, { backgroundColor: theme.backgroundElement }]}>
-          <ThemedText style={[styles.monthChipText, { color: theme.cardHighlight }]}>{data.monthLabel}</ThemedText>
-        </View>
-      </View>
+      <PageHeader title="首页" />
+      <MonthChip label={data.monthLabel} />
 
       <MonthSummaryCard income={data.income} expense={data.expense} balance={data.balance} />
       <BudgetProgressCard {...data} />
@@ -72,29 +67,12 @@ export function PaceLayout({ data, onSelectTransaction }: HomeLayoutProps) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: Spacing.three,
+    // 屏幕左右留白。比别的页（Spacing.three = 16）窄，是因为首页整页都是卡片：
+    // 卡片自己已经有 16~20 的内距，外面再留 16 就等于边上叠了两层空白
+    paddingHorizontal: ScreenPadding,
     paddingTop: 12,
     paddingBottom: Spacing.six,
     gap: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  // 用一个 row 包着 chip，chip 才不会被拉满整行宽
-  monthRow: {
-    flexDirection: 'row',
-  },
-  monthChip: {
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  monthChipText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
   },
   sectionTitle: {
     fontSize: 17,
@@ -113,6 +91,6 @@ const styles = StyleSheet.create({
   },
   itemWrap: {
     paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingVertical: 7,
   },
 });

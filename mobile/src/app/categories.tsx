@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
+import { Stack } from 'expo-router/js-stack';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,7 +12,7 @@ import { DialogActions, ModalDialog } from '@/components/ui/modal-dialog';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import type { Category, CategoryType } from '@/db/categories';
 import { useCategories, useCategoryUsage, useDeleteCategory } from '@/hooks/use-categories';
 import { useTheme } from '@/hooks/use-theme';
@@ -62,11 +63,11 @@ export default function CategoriesScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['bottom', 'left', 'right']}>
-      <ThemedView style={styles.container}>
-        <View style={styles.tabsRow}>
-          <TransactionTypeTabs value={type} onChange={setType} />
-        </View>
+      {/* 收支切换放在导航栏里，跟记账页一个位置——两页是同一件事（在两套分类之间切），
+          长在同一个地方就不用重新找。顺带把页面里那一行省下来给列表 */}
+      <Stack.Screen options={{ headerTitle: () => <TransactionTypeTabs value={type} onChange={setType} /> }} />
 
+      <ThemedView style={styles.container}>
         <ScrollView contentContainerStyle={styles.list}>
           {parents.map((parent) => {
             const children = childrenOf.get(parent.id) ?? [];
@@ -207,11 +208,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  tabsRow: {
-    paddingVertical: Spacing.three,
-  },
+  // tabs 搬进导航栏之后，列表顶上那段留白也归它自己管了
   list: {
-    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+    paddingHorizontal: ScreenPadding,
     paddingBottom: Spacing.five,
     gap: Spacing.two,
   },

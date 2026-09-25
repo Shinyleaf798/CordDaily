@@ -1,9 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Stack } from 'expo-router/js-stack';
 import { useEffect, useMemo, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Animated, Easing, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccountPickerSheet } from '@/components/add-transaction/account-picker-sheet';
 import { AmountKeypad } from '@/components/add-transaction/amount-keypad';
@@ -37,6 +36,7 @@ type TransactionFormProps = {
  */
 export function TransactionForm({ initial }: TransactionFormProps) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
   // 两个高度都实测，不按屏幕比例硬算——外壳的 55% 还要扣掉安全区，算出来的和实际差一截
   const [sheetHeight, setSheetHeight] = useState(0);
@@ -65,7 +65,23 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const updateTransaction = useUpdateTransaction();
 
   const [type, setType] = useState<TransactionTypeTab>(initial?.type ?? 'EXPENSE');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initial?.categoryId ?? null);
+
+  /**
+   * 已选分类**按收支类型各存一份**，而不是一个共用的 id。
+   *
+   * 支出和收入是两套分类，一个共用的 id 在切换之后会指向一个网格里不存在的格子，
+   * 所以原来的做法是切换时把它清掉——代价是切过去看一眼再切回来，选好的分类就没了。
+   * 分成两格之后这个问题自己消失：切换只是换一个格子读，两边的选择都留在原地，
+   * 而「收入那格里存着一个支出分类」这种状态从一开始就构造不出来。
+   *
+   * 编辑模式下只有 initial.type 那一格有值，另一格是 null——那笔账本来就只属于一种类型。
+   */
+  const [categoryByType, setCategoryByType] = useState<Record<TransactionTypeTab, string | null>>(() => ({
+    EXPENSE: initial?.type === 'EXPENSE' ? initial.categoryId : null,
+    INCOME: initial?.type === 'INCOME' ? initial.categoryId : null,
+  }));
+  const selectedCategoryId = categoryByType[type];
+  const selectCategory = (id: string) => setCategoryByType((prev) => ({ ...prev, [type]: id }));
   // null 表示"没手动选过"，落回账户列表第一个。存 null 而不是在 effect 里 setState：
   // 后者要多渲染一轮，还是 eslint 的 react-hooks/set-state-in-effect 要拦的写法
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(initial?.accountId ?? null);
@@ -96,13 +112,6 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const accountId = pickedAccountId ?? lastUsedAccountId ?? accounts?.[0]?.id ?? null;
   const accountName = accounts?.find((a) => a.id === accountId)?.name ?? null;
 
-  // 切收支类型时清掉已选分类：支出和收入是两套分类，留着上一套的 id 会指向一个网格里不存在的格子。
-  // 写在切换回调里而不是 effect 里，同样是为了不多渲染一轮
-  const handleTypeChange = (next: TransactionTypeTab) => {
-    setType(next);
-    setSelectedCategoryId(null);
-  };
-
   // 勾上报销时顺带打开"不计入统计"：这笔钱之后会回来，算进消费统计会让当月分类金额虚高，
   // 而且收回时记一笔收入也抵消不掉支出分类的数字。仍然允许用户手动再关掉，所以只在打开的那一刻联动
   const handleReimbursableChange = (value: boolean) => {
@@ -122,11 +131,33 @@ export function TransactionForm({ initial }: TransactionFormProps) {
 
   const numericAmount = Number(amount);
 
-  // 判断和提示是两件事：三个条件都拦着保存，但只有一个值得写出来。
-  // "没选分类""金额是 0"抬眼就看见，写出来是废话；而账户列表为空时（accountId 恒为 null）
-  // 用户会以为按钮坏了，根本想不到"我还没有账户"——这一条不说就真的没人能猜到
-  const blocker = !selectedCategoryId ? 'category' : !accountId ? 'account' : !(numericAmount > 0) ? 'amount' : null;
+  // 保存的硬门槛：**选了分类**、**填了主题**、**金额大于 0**。
+  // 其余字段（备注、店名、地点、标签）空着也能存——记账一旦要求填满才让存，
+  // 人就会在"懒得填"的时候干脆不记，那才是真正的损失。
+  //
+  // 金额留在门槛里：一笔 0 块的账在账本里没有意义，
+  // 存下来之后它还会进每一条统计（笔数 +1、金额 +0），把日均和构成图的分母悄悄冲淡。
+  //
+  // 账户不是用户要做的选择（默认账户是灌好的，见 db/accounts.ts 的 seed），
+  // 它留在这里纯粹是**数据层的硬约束**：transactions.accountId 是 NOT NULL，
+  // 一个账户都没有时插不进去。排在金额前面是因为只有它有话可说（见下面的提示），
+  // 两个条件同时不满足时该让能解释的那个赢。
+  const blocker = !selectedCategoryId
+    ? 'category'
+    : !topic.trim()
+      ? 'topic'
+      : !accountId
+        ? 'account'
+        : !(numericAmount > 0)
+          ? 'amount'
+          : null;
   const canSave = !blocker && !mutation.isPending;
+
+  // 判断和提示是两件事：四个条件都拦着保存，但只有一个值得写出来。
+  // "没选分类""没填主题""金额是 0"都是抬眼就看见的空位，写出来是废话；
+  // 而账户列表为空时（accountId 恒为 null）用户会以为按钮坏了，
+  // 根本想不到"我还没有账户"——这一条不说就真的没人能猜到。
+  //
   // 加上 `accounts &&`：账户还没查出来时 accountId 也是 null，但那是"还不知道"不是"一个都没有"。
   // 不区分的话，本地库读完之前的那几毫秒会闪一句"去账本里新建一个"，
   // 而用户根本不缺账户——默认账户是灌好的，他只需要再等一帧
@@ -138,8 +169,10 @@ export function TransactionForm({ initial }: TransactionFormProps) {
     const category = categories.find((c) => c.id === selectedCategoryId);
 
     const payload = {
-      // title 在 schema 里是 NOT NULL，但主题是可选的（随手买瓶水不会有"为了什么事"），
-      // 所以按 主题 > 店名 > 分类名 兜底，保证列表主行永远有东西显示
+      // 主题现在是必填的（canSave 拦着），所以这里的兜底链走不到了——留着是因为
+      // title 在 schema 里是 NOT NULL，这一行是它最后一道保险。
+      // 老账单里仍然存着当初从店名或分类名兜底来的 title，
+      // 账单行的"主题只是分类名的回声就不显示"那段判断因此还得留着（见 transaction-list-item）
       title: topic.trim() || merchant.trim() || category?.name || '',
       merchant,
       location,
@@ -174,16 +207,25 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   return (
     // 自己铺主题底色，不靠导航器的默认背景——那个是 react-navigation 的 light/dark 两档，
     // 跟这个 App 的三套色板对不上，浅色主题下就是一片白
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['bottom', 'left', 'right']}>
+    //
+    // edges 里没有 bottom：底部安全区归下面那块面板自己补（跟 ModalSheet 一个做法）。
+    // 交给 SafeAreaView 的话，那条安全区是**外壳的**，铺的是页面底色（黑），
+    // 于是屏幕最底下会出现一条黑带把键盘面板托着——这台手机的按键就在屏幕上，那条带子一直看得见
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['left', 'right']}>
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: () => <TransactionTypeTabs value={type} onChange={handleTypeChange} />,
-          headerLeft: () => (
-            <Pressable onPress={() => router.back()} hitSlop={12}>
-              <Ionicons name="close" size={24} color={theme.text} />
-            </Pressable>
-          ),
+          // 切换只换 type，不清任何东西——分类按收支类型各存一份（见 categoryByType），
+          // 金额、主题、备注这些本来就跟收支类型无关
+          headerTitle: () => <TransactionTypeTabs value={type} onChange={setType} />,
+          // 返回键不自己画，交给导航器的默认那个。
+          //
+          // 原来这里是个自定义的叉号（Pressable + Ionicons）。换成箭头之后要跟分类管理页
+          // 长得一样，而那一页根本没写 headerLeft——用的就是默认返回键。
+          // 与其去抄它的尺寸和边距（那些数字来自 react-navigation 内部，改版就对不上了），
+          // 不如两边都用同一个东西：一致是**构造出来的**，不是对出来的。
+          //
+          // 行为也没变：默认返回键做的就是 goBack()，跟原来那个 router.back() 是同一件事。
         }}
       />
 
@@ -192,7 +234,7 @@ export function TransactionForm({ initial }: TransactionFormProps) {
           <CategoryGrid
             categories={categories}
             selectedId={selectedCategoryId}
-            onSelect={setSelectedCategoryId}
+            onSelect={selectCategory}
             // 带上当前收支类型，进去就停在对应那一组，不用再切一次。
             // 新建的分类由 useCreateCategory 失效缓存后自动出现在这个网格里，回来不用手动刷新
             onSettingsPress={() => router.push({ pathname: '/categories', params: { type } })}
@@ -205,7 +247,7 @@ export function TransactionForm({ initial }: TransactionFormProps) {
       <ThemedView
         type="backgroundElement"
         onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
-        style={styles.bottomSheet}>
+        style={[styles.bottomSheet, { paddingBottom: insets.bottom }]}>
         {/* 键盘弹出时这一块滑到键盘顶边。位移量是算出来的而不是直接用键盘高度：
             它本来就离屏幕底边有 (外壳高 - 自己高) 那么远，只需要补上不够的那一截，
             直接按键盘高度位移会冲过头。差值 <= 0 就说明本来就在键盘上方，不用动。
@@ -333,6 +375,8 @@ const styles = StyleSheet.create({
   // 主题那一行到键盘底部固定占屏幕的 55%，上面的分类网格拿剩下的 45%。
   // 写百分比而不是像素：换台屏幕更长的手机，两边的比例不会跟着变形。
   // 键盘自己是 flex: 1，所以这个数一改，键位跟着缩放，不用再调它内部的高度。
+  // 高度不含底部安全区：安全区是额外加在下面的 paddingBottom，
+  // 所以键盘那 55% 不会被导航栏吃掉一截
   bottomSheet: {
     height: '55%',
     borderTopLeftRadius: 20,

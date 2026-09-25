@@ -94,6 +94,9 @@ export function CategoryGrid({ categories, selectedId, onSelect, onSettingsPress
         label={selectedChild ? parent.name + '·' + selectedChild.name : parent.name}
         selected={parent.id === selectedId || selectedChild !== null}
         hasChildren={children.length > 0}
+        // 有子分类的那一格：点下去**只开面板，先不选中**。
+        // 选中要等用户做出"不细分"这个表态——也就是点面板外面把它关掉（见 ModalBackdrop）。
+        // 点一下就选中的话，光是"想看看餐饮底下有什么"也会改掉当前选中的分类。
         onPress={() => (children.length > 0 ? openPanel(parent.id, index) : onSelect(parent.id))}
       />
     );
@@ -119,7 +122,6 @@ export function CategoryGrid({ categories, selectedId, onSelect, onSettingsPress
       {anchor && expanded ? (
         <SubcategoryPanel
           anchor={anchor}
-          parent={expanded}
           options={childrenOf.get(expanded.id) ?? []}
           selectedId={selectedId}
           onSelect={(id) => {
@@ -135,7 +137,6 @@ export function CategoryGrid({ categories, selectedId, onSelect, onSettingsPress
 
 type SubcategoryPanelProps = {
   anchor: PanelAnchor;
-  parent: CategoryGridItem;
   options: CategoryGridItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -150,18 +151,21 @@ type SubcategoryPanelProps = {
  * 背景铺一层淡遮罩（跟首页详情层同一个 ModalBackdrop）：面板本身没有底色以外的边界，
  * 不压一点的话它跟底下的网格分不开。点遮罩 = 选中这个一级分类，不是什么都不选——
  * 「点开餐饮，看了一圈没有合适的子项」的结论就是"那就记餐饮"，让它白点一下不合理。
+ * 这也是有子分类的一级分类**唯一**的选中途径（格子那一下只开面板）。
  */
-function SubcategoryPanel({ anchor, parent, options, selectedId, onSelect, onDismiss }: SubcategoryPanelProps) {
+function SubcategoryPanel({ anchor, options, selectedId, onSelect, onDismiss }: SubcategoryPanelProps) {
   const theme = useTheme();
 
-  // 第一格放父分类自己：否则有子分类的一级分类永远选不中，
-  // 而"就想记一笔餐饮、懒得细分到晚餐"是个正常需求
-  const entries = [parent, ...options];
+  // 面板里**只列子分类**，不再把父分类自己放第一格。
+  // 那一格原本是为了让"有子分类的一级分类"也选得中，而现在点开面板就已经选中它了，
+  // 留着就成了一个「选我自己」的按钮——跟刚才那一下点击是同一个结果，多一次要理解的东西。
+  const entries = options;
 
   return (
     <ModalHost visible animation="fade" onRequestClose={onDismiss}>
-      {/* 点面板外面 = 选中这个一级分类。铺满整屏，用户不用精确点到某个空隙 */}
-      <ModalBackdrop onPress={() => onSelect(parent.id)} />
+      {/* 点面板外面 = 选中这个一级分类。铺满整屏，用户不用精确点到某个空隙。
+          父分类的 id 直接从 anchor 上取——面板本来就是靠它定位的，不用再多传一个 prop */}
+      <ModalBackdrop onPress={() => onSelect(anchor.parentId)} />
 
       <View style={[styles.panelWrap, { top: anchor.top, left: anchor.left, width: anchor.width }]}>
         <View style={[styles.arrow, { left: anchor.arrowLeft, borderBottomColor: theme.backgroundElement }]} />
@@ -199,7 +203,11 @@ function IconCell({ icon, label, selected, hasChildren, onPress }: IconCellProps
   return (
     <Pressable onPress={onPress} style={styles.item}>
       <View style={styles.iconSlot}>
-        {selected ? <View style={[styles.circle, { backgroundColor: theme.backgroundSelected }]} /> : null}
+        {/* 选中圈从中性灰换成主题强调色的淡染：原来它跟右下角那颗「可展开」的点同色，
+            两个意思不同的东西长得一样。opacity 就是深浅的旋钮，越大越深 */}
+        {selected ? (
+          <View style={[styles.circle, { backgroundColor: theme.cardHighlight, opacity: 0.28 }]} />
+        ) : null}
         {icon}
         {/* 右下角那颗点：告诉用户这一格点下去是展开、不是直接选中。
             没有它，"有的格子点了会弹面板、有的不会"就变成要靠记忆的规则 */}

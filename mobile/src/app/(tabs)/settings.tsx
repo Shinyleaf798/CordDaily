@@ -4,8 +4,9 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ui/themed-text';
+import { PageHeader } from '@/components/ui/page-header';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // 四个入口都是「有地址、不回传值」，所以是路由而不是弹层——可以直接跳、该出现在返回栈里
@@ -22,10 +23,10 @@ export default function SettingsScreen() {
   const theme = useTheme();
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ThemedView style={styles.screen}>
         <ScrollView contentContainerStyle={styles.content}>
-          <ThemedText type="pageTitle">我的</ThemedText>
+          <PageHeader title="我的" />
 
           <View style={styles.grid}>
             {ENTRIES.map((entry) => (
@@ -47,7 +48,8 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { padding: Spacing.four, gap: Spacing.four },
+  // paddingTop 和 gap 跟其余三个 tab 页取同一组数，标题条才不会在切 tab 时上下跳
+  content: { paddingHorizontal: ScreenPadding, paddingTop: 12, paddingBottom: Spacing.four, gap: 12 },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { HomeLayoutHints, HomeLayoutLabels, HomeLayoutNames } from '@/constants/home-layout';
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
 
@@ -49,7 +49,7 @@ export default function HomeLayoutSettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { padding: Spacing.four, gap: Spacing.two },
+  content: { paddingHorizontal: ScreenPadding, paddingVertical: Spacing.four, gap: Spacing.two },
   // 选中态用描边表示，跟主题页保持一致
   row: {
     flexDirection: 'row',

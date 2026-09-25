@@ -322,6 +322,42 @@ export async function listMonthTransactions(date = new Date()): Promise<Transact
   return rows.map(mapRow);
 }
 
+export type MonthlyExpense = { monthKey: string; total: number };
+
+/**
+ * 最近 `months` 个月里**有支出的那些月**，各自的合计。趋势图用。
+ *
+ * 只返回查得到的月份，不补零——「这个窗口里从哪个月开始画」是界面的事，
+ * 数据层不该替它决定要画几根柱子（派生层见 buildStatsViewData 的 trend）。
+ *
+ * 不写 `GROUP BY substr(date, 1, 7)`：库里存的是带时区的 ISO 字符串，
+ * 按字符串切出来的是 UTC 年月，东八区每月 1 号凌晨 8 点前记的账会被算到上个月去
+ * （utils/date.ts 顶上那个坑，listMonthTransactions 也是为此在 JS 里分的组）。
+ * 所以这里只取两列、在 JS 里按本地时区归月——几个月的支出笔数量级很小，开销可以忽略。
+ */
+export async function listMonthlyExpense(endMonth: Date, months = 6): Promise<MonthlyExpense[]> {
+  const db = await getDb();
+  const start = new Date(endMonth.getFullYear(), endMonth.getMonth() - (months - 1), 1);
+  const end = new Date(endMonth.getFullYear(), endMonth.getMonth() + 1, 1);
+
+  const rows = await db.getAllAsync<{ date: string; amountInBase: number }>(
+    `SELECT date, amountInBase FROM transactions
+     WHERE type = 'EXPENSE' AND excludeFromStats = 0 AND date >= ? AND date < ?`,
+    [start.toISOString(), end.toISOString()],
+  );
+
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const d = new Date(row.date);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    totals.set(key, (totals.get(key) ?? 0) + row.amountInBase);
+  }
+
+  return [...totals.entries()]
+    .map(([monthKey, total]) => ({ monthKey, total }))
+    .sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+}
+
 export type CategorySpending = {
   categoryId: string;
   name: string;

@@ -2,7 +2,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CategoryIcon } from '@/components/category/category-icon';
 import { ThemedText } from '@/components/ui/themed-text';
-import { useTheme } from '@/hooks/use-theme';
 import { formatSignedAmount } from '@/utils/format';
 
 export type TransactionListItemData = {
@@ -22,9 +21,8 @@ export type TransactionListItemData = {
 
 type TransactionListItemProps = TransactionListItemData & {
   /**
-   * 这一行铺在什么底色上，决定图标块用哪一级底色——图标块必须比它下面那层深一级才看得见。
-   * 'card'：行在卡片（backgroundElement）里，图标用 backgroundSelected，方角圆片
-   * 'page'：行直接铺在页面底色（background）上，图标用 backgroundElement，圆形
+   * 这一行铺在什么底色上。图标不再垫底圈之后，它只剩一个作用：
+   * 'page'（直接铺在页面底色上、没有卡片托着）时把标题压到 500，让整屏不那么吵。
    */
   surface?: 'card' | 'page';
   /** 点这一行做什么。不传就是纯展示，连按下的反馈都没有 */
@@ -62,7 +60,6 @@ export function TransactionListItem({
   // 分类是子分类「早餐」时，顶上去的可能是父分类名「餐饮」，只比叶子就漏掉了
   const titleIsEcho = categoryLabel.split(' · ').concat(categoryLabel).includes(title);
   const detail = [titleIsEcho ? null : title, note].filter(Boolean).join(' · ');
-  const theme = useTheme();
   const onPage = surface === 'page';
 
   // 不可点时退回 View，而不是给 Pressable 传 disabled：
@@ -71,14 +68,11 @@ export function TransactionListItem({
 
   return (
     <Row style={styles.row} onPress={onPress}>
-      <View
-        style={[
-          styles.iconWrap,
-          onPage
-            ? { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.backgroundElement }
-            : { width: 38, height: 38, borderRadius: 12, backgroundColor: theme.backgroundSelected },
-        ]}>
-        <CategoryIcon icon={icon} size={19} />
+      {/* 图标不垫底圈了，直接画在卡片上，尺寸放到 28——
+          底圈原本是为了把图标从底色里托出来，但分类图标本身（emoji 或彩色小图）
+          已经够显眼，多一层灰圈只是把它框小了 */}
+      <View style={styles.iconWrap}>
+        <CategoryIcon icon={icon} size={28} />
       </View>
 
       <View style={styles.middle}>
@@ -105,7 +99,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  // 固定宽度而不是让图标自己撑：一列账单的文字才会左边对齐，
+  // 不会因为某个 emoji 宽一点就整行往右挪
   iconWrap: {
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },

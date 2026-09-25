@@ -20,6 +20,9 @@ const ROWS = [
   ['.', '0'],
 ] as const;
 
+/** 小数点后能输入几位。跟 utils/format 里 formatAmount 的 toFixed(2) 是同一个口径 */
+const MAX_DECIMALS = 2;
+
 // 数字键盘，自己管键位解释逻辑（点几次小数点、退格怎么删），只通过 value/onChange 跟外部同步当前金额字符串，
 // 不知道也不关心这个金额最终要存进哪张表——纯 UI 组件。
 // 高度不自己定，完全听外面给的（记账页把它塞进一个 55% 屏高的面板里）
@@ -36,6 +39,14 @@ export function AmountKeypad({ value, onChange, onSave, saveDisabled }: AmountKe
       onChange(`${value}.`);
       return;
     }
+
+    // 小数点后最多两位。RM 的最小单位是分，第三位往后没有对应的钱；
+    // 而且真让它输进去，存下来之后各处显示都走 formatAmount 的 toFixed(2)，
+    // 数字会在用户不知情的情况下被四舍五入掉——按键时就不让它进来，比事后改掉它诚实。
+    // 第三位直接忽略（按下去没反应），不做截断或进位：那两种都会改到已经敲好的数字。
+    const decimals = value.split('.')[1];
+    if (decimals !== undefined && decimals.length >= MAX_DECIMALS) return;
+
     onChange(value === '0' ? key : `${value}${key}`);
   };
 

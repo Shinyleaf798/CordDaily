@@ -1,13 +1,13 @@
 import { StyleSheet } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { ScreenPadding, Spacing } from '@/constants/theme';
 
 // login.tsx 和 register.tsx 是两个独立页面（而不是同一页面里切换的两种 mode），共享同一套视觉样式
 export const authScreenStyles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: ScreenPadding,
     gap: Spacing.three,
   },
   title: {

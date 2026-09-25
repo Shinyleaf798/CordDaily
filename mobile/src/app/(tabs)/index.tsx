@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
       {layoutName === 'ring' ? (
         <RingLayout data={data} onSelectTransaction={setSelectedId} />
       ) : (

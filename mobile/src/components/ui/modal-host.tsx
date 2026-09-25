@@ -33,6 +33,11 @@ export function ModalHost({ visible, onRequestClose, animation = 'fade', childre
       transparent
       animationType={animation}
       statusBarTranslucent
+      // 两个 translucent 都要开，Modal 这层窗口才会延伸到状态栏和导航栏底下。
+      // 不开底下这个，弹层里读到的 insets.bottom 是 0——ModalSheet 以为自己已经贴到屏幕底了，
+      // 于是导航栏那条（这台手机的按键就在屏幕上）露的是系统的黑，跟弹层断成两截。
+      // navigationBarTranslucent 依赖 statusBarTranslucent 为 true，两个是一对
+      navigationBarTranslucent
       onRequestClose={onRequestClose}>
       {children}
     </Modal>

@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Colors, Spacing, ThemeLabels, ThemeNames } from '@/constants/theme';
+import { Colors, ScreenPadding, Spacing, ThemeLabels, ThemeNames } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useThemeStore } from '@/store/theme.store';
 
@@ -48,7 +48,7 @@ export default function ThemeSettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { padding: Spacing.four, gap: Spacing.two },
+  content: { paddingHorizontal: ScreenPadding, paddingVertical: Spacing.four, gap: Spacing.two },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
