@@ -100,7 +100,8 @@ export async function getDefaultAccountId(): Promise<string | null> {
  *
  * 不另存一个"上次选择"的设置，直接从最后一条**记录**（createdAt 最新，不是交易日期最新）反查：
  * 那本来就是"上一次的选择"，不会跟真实情况走散，也不用在保存成功后再写一次库。
- * 跟 getLastCategoryForMerchant（记住上次在这家店选的分类）是同一个路子。
+ * 跟补全建议顺带带回 categoryId（记住上次用这个主题/店名时选的分类，见 transactions.ts
+ * 的 suggestFieldValues）是同一个路子。
  *
  * JOIN 一下 accounts 是保险：只取还存在的账户，免得返回一个已经被删掉的 id
  * （删除时账单会被转走，所以正常查不出悬空的，但这条查询的结果会被直接当成选中值）。

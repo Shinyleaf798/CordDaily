@@ -12,17 +12,30 @@ export type Category = {
   icon: string | null;
   type: CategoryType;
   parentId: string | null;
+  /** 同一层（同收支类型、同一个父）内部的先后。只有一级分类拖得动，见 reorderCategories */
+  sortOrder: number;
+  /** SQLite 没有布尔，1 = 启用、0 = 停用。停用的分类不出现在记账页，但历史账单照常显示 */
+  isActive: number;
   synced: number;
 };
 
+/**
+ * 排序口径全 App 只有这一句，所有读分类的地方都拼它。
+ *
+ * rowid 是兜底：sortOrder 撞车时（迁移编号之前建的、或者两台设备各自拖过）
+ * 至少还有一个稳定的第二键，否则同值行的顺序每次查询都可能不一样，
+ * 列表会"自己动"——用户会以为是拖动没保存。
+ */
+const ORDER_BY = 'ORDER BY sortOrder ASC, rowid ASC';
+
 export async function listCategories(): Promise<Category[]> {
   const db = await getDb();
-  return db.getAllAsync<Category>('SELECT * FROM categories ORDER BY rowid ASC');
+  return db.getAllAsync<Category>(`SELECT * FROM categories ${ORDER_BY}`);
 }
 
 export async function listCategoriesByType(type: CategoryType): Promise<Category[]> {
   const db = await getDb();
-  return db.getAllAsync<Category>('SELECT * FROM categories WHERE type = ? ORDER BY rowid ASC', [type]);
+  return db.getAllAsync<Category>(`SELECT * FROM categories WHERE type = ? ${ORDER_BY}`, [type]);
 }
 
 const DEFAULT_CATEGORIES: { name: string; icon: string; type: CategoryType }[] = [
@@ -48,18 +61,22 @@ const DEFAULT_CATEGORIES: { name: string; icon: string; type: CategoryType }[] =
 // 首次启动灌入默认分类。id 必须是真 UUID：后端 transaction 的 zod 校验要求 categoryId 是 uuid 格式，
 // 用 'cat-food' 这种可读字符串当 id 的话，同步时整批交易会被后端打回。
 // 不写成 SQL migration 是因为迁移语句里生成不了 UUID，只能在代码里 Crypto.randomUUID()。
+//
+// sortOrder 按**每种收支类型各自**从 0 开始数，不是数组下标：两种类型是两个独立的列表，
+// 用下标的话收入那组会从 9 起跳，虽然顺序仍然对，但之后每次读都得先减掉一个偏移量才好理解。
 export async function seedDefaultCategories(): Promise<void> {
   const db = await getDb();
   const existing = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');
   if ((existing?.count ?? 0) > 0) return;
 
+  const nextOrder: Record<CategoryType, number> = { EXPENSE: 0, INCOME: 0 };
   for (const category of DEFAULT_CATEGORIES) {
-    await db.runAsync(`INSERT INTO categories (id, name, icon, type, parentId, synced) VALUES (?, ?, ?, ?, NULL, 0)`, [
-      Crypto.randomUUID(),
-      category.name,
-      category.icon,
-      category.type,
-    ]);
+    await db.runAsync(
+      `INSERT INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
+       VALUES (?, ?, ?, ?, NULL, ?, 1, 0)`,
+      [Crypto.randomUUID(), category.name, category.icon, category.type, nextOrder[category.type]],
+    );
+    nextOrder[category.type] += 1;
   }
 }
 
@@ -126,23 +143,66 @@ export async function seedDefaultSubcategories(): Promise<void> {
     // 用户把那个一级分类改名或删了就跳过，不自作主张建一个回来
     if (!parent) continue;
 
+    let order = 0;
     for (const child of group.children) {
       const exists = await db.getFirstAsync<{ id: string }>(
         'SELECT id FROM categories WHERE name = ? AND parentId = ?',
         [child.name, parent.id],
       );
+      // 已经有同名子分类就跳过，但序号照样往前走——留出它占的那个位置，
+      // 免得后面几个挤到已存在的那一条前面去
+      order += 1;
       if (exists) continue;
-      await db.runAsync('INSERT INTO categories (id, name, icon, type, parentId, synced) VALUES (?, ?, ?, ?, ?, 0)', [
-        Crypto.randomUUID(),
-        child.name,
-        child.icon,
-        'EXPENSE',
-        parent.id,
-      ]);
+      await db.runAsync(
+        `INSERT INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 0)`,
+        [Crypto.randomUUID(), child.name, child.icon, 'EXPENSE', parent.id, order - 1],
+      );
     }
   }
 
   await db.runAsync('INSERT OR REPLACE INTO app_settings ("key", "value") VALUES (?, ?)', [SUBCATEGORY_SEED_KEY, '1']);
+}
+
+const TIP_DISMISSED_KEY = 'categoriesTipDismissed';
+
+/**
+ * 管理页顶上那条提示关掉了没有。
+ *
+ * 存进 app_settings 而不是组件 state：它教的是「长按拖动」和「点 ⋯ 有更多操作」——
+ * 两个看不见的操作。关掉它是一句"我知道了"，每次进页面又冒出来就等于没关。
+ * 跟预算一样，这是本机偏好，不进服务器。
+ */
+export async function isCategoryTipDismissed(): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT "value" FROM app_settings WHERE "key" = ?', [
+    TIP_DISMISSED_KEY,
+  ]);
+  return !!row;
+}
+
+export async function dismissCategoryTip(): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('INSERT OR REPLACE INTO app_settings ("key", "value") VALUES (?, ?)', [TIP_DISMISSED_KEY, '1']);
+}
+
+/**
+ * 新建的分类排在同一层的最后。
+ *
+ * `IFNULL(parentId, '')` 两边都套：SQL 里 `NULL = NULL` 不成立，直接 `parentId = ?`
+ * 传 null 会一条都匹配不上，于是每个新建的一级分类都拿到 0，全挤在最前面。
+ */
+async function nextSortOrder(
+  db: Awaited<ReturnType<typeof getDb>>,
+  type: CategoryType,
+  parentId: string | null,
+): Promise<number> {
+  const row = await db.getFirstAsync<{ next: number }>(
+    `SELECT IFNULL(MAX(sortOrder), -1) + 1 AS next FROM categories
+     WHERE type = ? AND IFNULL(parentId, '') = IFNULL(?, '')`,
+    [type, parentId],
+  );
+  return row?.next ?? 0;
 }
 
 export async function createCategory(input: {
@@ -152,18 +212,31 @@ export async function createCategory(input: {
   parentId?: string | null;
 }): Promise<Category> {
   const db = await getDb();
+  const parentId = input.parentId ?? null;
   const category: Category = {
     id: Crypto.randomUUID(),
     name: input.name,
     type: input.type,
     icon: input.icon ?? null,
-    parentId: input.parentId ?? null,
+    parentId,
+    sortOrder: await nextSortOrder(db, input.type, parentId),
+    isActive: 1,
     synced: 0,
   };
 
   await db.runAsync(
-    `INSERT INTO categories (id, name, icon, type, parentId, synced) VALUES (?, ?, ?, ?, ?, ?)`,
-    [category.id, category.name, category.icon, category.type, category.parentId, category.synced],
+    `INSERT INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      category.id,
+      category.name,
+      category.icon,
+      category.type,
+      category.parentId,
+      category.sortOrder,
+      category.isActive,
+      category.synced,
+    ],
   );
 
   return category;
@@ -176,6 +249,89 @@ export async function updateCategory(input: { id: string; name: string; icon: st
     input.name,
     input.icon,
     input.id,
+  ]);
+}
+
+/**
+ * 停用 / 启用一个分类。
+ *
+ * 只写它自己这一行，**不级联到子分类**：一个子分类在记账页只能从父分类点进去，
+ * 父停用了它自然就没有入口了——这件事在读的时候算得出来（见 isPickable），
+ * 没必要写进库。写进去的话，父分类一停一启就要改一批行，
+ * 而且再也分不清某个子分类当初是被连坐的、还是用户自己停的。
+ */
+export async function setCategoryActive(id: string, isActive: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE categories SET isActive = ?, synced = 0 WHERE id = ?', [isActive ? 1 : 0, id]);
+}
+
+/**
+ * 记账页的分类网格该不该显示它：自己启用着，而且（如果有父）父也启用着。
+ *
+ * 放在 db 层而不是组件里，是因为这条规则同时决定"网格里有什么"和"管理页哪些算已停用"，
+ * 两边必须是同一句话。
+ */
+export function isPickable(category: Category, byId: Map<string, Category>): boolean {
+  if (!category.isActive) return false;
+  if (!category.parentId) return true;
+  const parent = byId.get(category.parentId);
+  // 父不在（数据坏了或还没查出来）就当它在：宁可多显示一个，也不要让用户的分类凭空消失
+  return parent ? !!parent.isActive : true;
+}
+
+/**
+ * 把一组分类按给定顺序重新编号。调用方传的是**拖完之后完整的 id 顺序**，
+ * 不是"把第 3 个挪到第 5 个"这种指令——后者要在这里重演一遍位移逻辑，
+ * 而那套逻辑界面上已经算过一次了，两份很快会对不上。
+ *
+ * 整组包在一个事务里：中途失败会让一半行是新号、一半是旧号，列表顺序当场错乱。
+ */
+export async function reorderCategories(orderedIds: string[]): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (let index = 0; index < orderedIds.length; index++) {
+      await db.runAsync('UPDATE categories SET sortOrder = ?, synced = 0 WHERE id = ?', [index, orderedIds[index]]);
+    }
+  });
+}
+
+/**
+ * 换一个父分类：`parentId = null` 是升成一级，传 id 是挂到那个一级分类下面。
+ *
+ * 三条前提在这里挡住，不靠界面自觉：
+ * 1. 只有两层——自己底下还挂着子分类就不能再变成别人的子分类，否则出现三层
+ * 2. 目标父必须是同收支类型的一级分类（后端 assertOwnedParent 是同一条规则）
+ * 3. 不能挂到自己身上
+ */
+export async function moveCategory(id: string, parentId: string | null): Promise<void> {
+  const db = await getDb();
+  const category = await db.getFirstAsync<Category>('SELECT * FROM categories WHERE id = ?', [id]);
+  if (!category) throw new Error('分类不存在');
+  if ((category.parentId ?? null) === parentId) return;
+
+  if (parentId) {
+    if (parentId === id) throw new Error('不能把一个分类挂到它自己下面');
+
+    const children = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM categories WHERE parentId = ?',
+      [id],
+    );
+    if ((children?.count ?? 0) > 0) {
+      throw new Error(`它下面还有 ${children!.count} 个子分类，分类只支持两层`);
+    }
+
+    const parent = await db.getFirstAsync<Category>('SELECT * FROM categories WHERE id = ?', [parentId]);
+    if (!parent) throw new Error('目标分类不存在');
+    if (parent.parentId) throw new Error('只能挂在一级分类下面');
+    if (parent.type !== category.type) throw new Error('收入分类和支出分类不能混在一起');
+  }
+
+  // 落到新那一层的末尾。留着旧的 sortOrder 会让它插在新同伴中间某个说不清的位置
+  const sortOrder = await nextSortOrder(db, category.type, parentId);
+  await db.runAsync('UPDATE categories SET parentId = ?, sortOrder = ?, synced = 0 WHERE id = ?', [
+    parentId,
+    sortOrder,
+    id,
   ]);
 }
 

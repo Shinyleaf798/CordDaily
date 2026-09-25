@@ -56,6 +56,14 @@ model Category {
   parent   Category?  @relation("SubCategory", fields: [parentId], references: [id])
   children Category[] @relation("SubCategory")
 
+  /// 在记账页分类网格里的先后。同一层（同一个 parentId）内部比较，手机端拖动排序时改它。
+  /// 目前只有一级分类拖得动，子分类一律跟着创建顺序——列给全了，以后想开子分类排序不用再迁移
+  sortOrder Int @default(0)
+
+  /// false = 停用。分类被账单引用着就删不掉（下面那两个关系是默认的 Restrict），
+  /// 停用是它唯一的出路：从记账页的网格里收起来，历史账单和统计一个字都不变
+  isActive Boolean @default(true)
+
   transactions          Transaction[]
   recurringTransactions RecurringTransaction[]
 }

@@ -19,6 +19,7 @@ const CHART_HEIGHT = 72;
  *
  * 颜色只有两档：正在看的那个月用强调色，其余退成灰。强调的是「哪根是现在」，
  * 不是「哪根最高」——按高低上色等于让颜色重复柱子已经说过的话，而且翻个月就全变一遍。
+ * 每根柱子上都标着金额，所以颜色是「我在看哪个月」唯一的线索，不能省。
  *
  * 柱子有几根由派生层决定（见 buildStatsViewData 的 trend）：从最早有账的那个月画起，
  * 最多 6 根。中间没账的月份留一根空位，只剩月份标签——把它抽掉会让两个不相邻的月份
@@ -32,13 +33,14 @@ export function MonthTrend({ bars }: MonthTrendProps) {
       <View style={styles.plot}>
         {bars.map((bar) => (
           <View key={bar.monthKey} style={styles.column}>
-            {/* 金额只标在正在看的那根上：每根都标数字就成了一张竖着排的表格，
-                柱子本身的高低反而没人看了 */}
+            {/* 每根柱子都标金额。柱子的高低回答"哪个月多"，数字回答"到底多少"——
+                只标一根的话，想知道上个月花了多少就得退回去翻一次月。
+                颜色仍然只有两档，正在看的那个月用强调色，所以"现在是哪根"照样一眼认得出 */}
             <ThemedText
               themeColor={bar.isActive ? undefined : 'textSecondary'}
               style={[styles.value, bar.isActive && { color: theme.cardHighlight }]}
               numberOfLines={1}>
-              {bar.isActive ? formatCompactAmount(bar.total) : ' '}
+              {formatCompactAmount(bar.total)}
             </ThemedText>
 
             <View style={styles.barSlot}>

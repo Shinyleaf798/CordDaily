@@ -20,6 +20,7 @@ import {
   updateTransaction,
   type CreateTransactionInput,
   type SuggestionField,
+  type TransactionType,
   type UpdateTransactionInput,
 } from '@/db/transactions';
 import { formatMonthKey } from '@/utils/date';
@@ -170,10 +171,16 @@ export function useSetReimbursed() {
 }
 
 // 店名/地点的历史补全。enabled 关掉输入框没聚焦时的查询，避免每敲一个字都打一次库
-export function useFieldSuggestions(field: SuggestionField, keyword: string, enabled = true) {
+export function useFieldSuggestions(
+  field: SuggestionField,
+  keyword: string,
+  type: TransactionType,
+  enabled = true,
+) {
   return useQuery({
-    queryKey: ['fieldSuggestions', field, keyword.trim()],
-    queryFn: () => suggestFieldValues(field, keyword),
+    // type 要进 key：同一个关键词在支出和收入下是两套结果，共用一个 key 会互相串
+    queryKey: ['fieldSuggestions', field, type, keyword.trim()],
+    queryFn: () => suggestFieldValues(field, keyword, type),
     enabled,
     staleTime: 60_000,
   });

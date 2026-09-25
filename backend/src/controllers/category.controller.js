@@ -7,6 +7,11 @@ const createSchema = z.object({
   icon: z.string().optional(),
   type: z.enum(["INCOME", "EXPENSE"]),
   parentId: z.string().uuid().optional(),
+  // 排序和启用状态都由手机端算好再推上来：排序是用户在手机上拖出来的结果，
+  // 停用与否也是手机本地判断的（CLAUDE.md 核心原则#1，本地是唯一录入源头）。
+  // 两个都 optional 且有库级默认值，老版本 App 不带这两个字段也能照常建分类
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
 });
 
 const updateSchema = createSchema.partial();

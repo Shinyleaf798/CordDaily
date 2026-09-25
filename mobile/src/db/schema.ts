@@ -182,4 +182,27 @@ export const MIGRATIONS: string[][] = [
     `ALTER TABLE accounts DROP COLUMN groupId;`,
     `DROP TABLE IF EXISTS account_groups;`,
   ],
+
+  // v8：分类加「排列顺序」和「是否启用」两列（见 docs/PROJECT-PLAN.md 的关键取舍）。
+  //
+  // 第三句给已有分类编号。不编的话所有行都是默认的 0，ORDER BY sortOrder 退化成
+  // 一堆并列第一，拖动排序没有起点——用户拖完第一下，剩下那些仍然是 0 的行会乱跳。
+  // 相关子查询数的是「同一组里排在我前面的行数」：同一组 = 同收支类型、同一个父
+  // （IFNULL 把 NULL 折成空串，因为 SQL 里 NULL = NULL 不成立，一级分类之间会互相判不等）。
+  [
+    `ALTER TABLE categories ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0;`,
+    `ALTER TABLE categories ADD COLUMN isActive INTEGER NOT NULL DEFAULT 1;`,
+    `UPDATE categories SET sortOrder = (
+       SELECT COUNT(*) FROM categories AS earlier
+       WHERE earlier.rowid < categories.rowid
+         AND earlier.type = categories.type
+         AND IFNULL(earlier.parentId, '') = IFNULL(categories.parentId, '')
+     );`,
+  ],
+
+  // v9：主题也加入历史补全（原来只有店名和地点）。索引的用途跟 v2 给 merchant/location
+  // 建的那两个一样：补全查询要 GROUP BY 这一列再按出现次数排序，有索引就不用每次全表扫。
+  [
+    `CREATE INDEX IF NOT EXISTS idx_transactions_title ON transactions(title);`,
+  ],
 ];

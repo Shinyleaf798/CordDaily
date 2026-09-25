@@ -1,10 +1,12 @@
 import prisma from "../config/prisma.js";
 import { ApiError } from "../utils/response.js";
 
+// 按手机端排出来的顺序返回，电脑端画出来的分类次序才跟手机上看到的一样。
+// sortOrder 同值时用名字兜底：老数据整批是 0，没有第二个键的话顺序全凭数据库心情
 export async function list(userId) {
   return prisma.category.findMany({
     where: { userId },
-    orderBy: { name: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 }
 

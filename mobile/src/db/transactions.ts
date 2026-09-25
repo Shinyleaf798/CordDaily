@@ -525,46 +525,61 @@ export async function setReimbursed(id: string, reimbursed: boolean): Promise<vo
   ]);
 }
 
-// ---- 店名/地点的历史补全 ----
+// ---- 主题/店名/地点的历史补全 ----
 
 // 店名和地点故意反规范化存在 transactions 表上，没有独立的 merchants 表：
 // 建表会多出一个同步端点和"商家必须先于交易插入"的顺序依赖，而复用价值（输入补全 + 按商家统计）
 // 靠这里的 GROUP BY 查询就能拿到。等到商家自己需要属性（默认分类、logo）再考虑拆表。
-export type SuggestionField = 'merchant' | 'location';
+//
+// 主题（title）也在里面。判断标准是"这个字段会不会被反复输入同样的值"：
+// 午餐、打车、买菜这类主题一个月能记十几次，跟店名一样值得补全；
+// 备注（remarks）不在里面，它记的是"这一笔具体买了啥"，每笔都不一样，
+// 给它补全只会在输入时反复弹出一堆用不上的东西。
+export type SuggestionField = 'title' | 'merchant' | 'location';
 
-// 按历史出现次数排序给补全建议：你常去的那几家会排在最前面。
-// 字段名不能用 ? 绑定，所以用联合类型在类型层面锁死只能传这两个值，不接受外部拼进来的字符串。
-export async function suggestFieldValues(field: SuggestionField, keyword: string, limit = 5): Promise<string[]> {
+export type FieldSuggestion = {
+  value: string;
+  /**
+   * 上一次用这个值记账时选的分类。点一条历史就顺带把分类也选上——
+   * 「在这家店买的东西属于哪一类」「写『加油』时记的是哪一类」这些答案上次已经给过了，
+   * 没道理每次都重问一遍。这是把店名做成独立字段（而不是塞进备注自由文本）最主要的实际回报。
+   */
+  categoryId: string | null;
+};
+
+/**
+ * 按历史出现次数排序给补全建议：你常写的那几个排在最前面。
+ *
+ * 字段名不能用 ? 绑定，所以用联合类型在类型层面锁死只能传这几个值，不接受外部拼进来的字符串。
+ *
+ * **按收支类型过滤**：记支出时不该弹出收入的历史；更要紧的是跟着回来的 categoryId——
+ * 拿一个收入分类去选中支出的网格，那一格根本不存在。
+ *
+ * `categoryId` 是个**裸列**（既不在 GROUP BY 里，也没套聚合函数）。这在标准 SQL 里非法，
+ * 但 SQLite 有一条明确的特例：查询里正好只有一个 min()/max() 聚合时，裸列取的是
+ * **命中那个极值的那一行**的值。所以配上 MAX(date)，拿到的就是"最近一次用这个值时选的分类"。
+ * COUNT(*) 不影响这条规则（它既不是 min 也不是 max）。
+ */
+export async function suggestFieldValues(
+  field: SuggestionField,
+  keyword: string,
+  type: TransactionType,
+  limit = 5,
+): Promise<FieldSuggestion[]> {
   const db = await getDb();
   const trimmed = keyword.trim();
 
-  const rows = await db.getAllAsync<{ value: string }>(
-    `SELECT ${field} AS value, COUNT(*) AS uses
+  return db.getAllAsync<FieldSuggestion>(
+    `SELECT ${field} AS value, categoryId, COUNT(*) AS uses, MAX(date) AS lastUsed
      FROM transactions
-     WHERE ${field} IS NOT NULL AND ${field} != ''
+     WHERE type = ?
+       AND ${field} IS NOT NULL AND ${field} != ''
        AND (? = '' OR ${field} LIKE ? ESCAPE '\\')
      GROUP BY value COLLATE NOCASE
-     ORDER BY uses DESC, MAX(date) DESC
+     ORDER BY uses DESC, lastUsed DESC
      LIMIT ?`,
-    [trimmed, `%${escapeLike(trimmed)}%`, limit],
+    [type, trimmed, `%${escapeLike(trimmed)}%`, limit],
   );
-
-  return rows.map((row) => row.value);
-}
-
-// 记住"上次在这家店选的是哪个分类"，下次输入同样的店名就能自动选中分类。
-// 这是把店名做成独立字段（而不是塞进备注自由文本）最主要的实际回报。
-export async function getLastCategoryForMerchant(merchant: string): Promise<string | null> {
-  const trimmed = merchant.trim();
-  if (!trimmed) return null;
-
-  const db = await getDb();
-  const row = await db.getFirstAsync<{ categoryId: string }>(
-    `SELECT categoryId FROM transactions WHERE merchant = ? COLLATE NOCASE ORDER BY date DESC LIMIT 1`,
-    [trimmed],
-  );
-
-  return row?.categoryId ?? null;
 }
 
 // LIKE 里 % 和 _ 是通配符，用户真输入这两个字符时要转义，否则搜"100%"会匹配到所有记录

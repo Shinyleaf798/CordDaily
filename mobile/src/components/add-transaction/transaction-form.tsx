@@ -7,19 +7,28 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AccountPickerSheet } from '@/components/add-transaction/account-picker-sheet';
 import { AmountKeypad } from '@/components/add-transaction/amount-keypad';
 import { CategoryGrid, type CategoryGridItem } from '@/components/add-transaction/category-grid';
-import { TransactionNoteFields } from '@/components/add-transaction/transaction-note-fields';
+import { SuggestionPopup, type SuggestionCategory } from '@/components/add-transaction/suggestion-popup';
+import { TransactionNoteFields, type FieldAnchor } from '@/components/add-transaction/transaction-note-fields';
 import { TransactionOptionsRow } from '@/components/add-transaction/transaction-options-row';
 import { TransactionTypeTabs, type TransactionTypeTab } from '@/components/transaction/transaction-type-tabs';
 import { DateTimePickerSheet } from '@/components/ui/datetime-picker-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { Spacing } from '@/constants/theme';
-import type { TransactionDetail } from '@/db/transactions';
+import { isPickable } from '@/db/categories';
+import type { SuggestionField, TransactionDetail } from '@/db/transactions';
 import { useAccounts, useLastUsedAccountId } from '@/hooks/use-accounts';
 import { useCategories } from '@/hooks/use-categories';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/use-transactions';
 import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
 import { useTheme } from '@/hooks/use-theme';
+
+/**
+ * 输入块（noteFields）的上内距。样式和补全浮层的定位公式共用同一个数——
+ * 浮层要按"某一行距输入块顶边多远"来钉位置，而行的 onLayout 量的是相对**内容容器**的偏移，
+ * 中间正好差这一层内距。写成两个数迟早会走散。
+ */
+const NOTE_FIELDS_PADDING_TOP = Spacing.three;
 
 type TransactionFormProps = {
   /** 传了就是编辑那一笔，不传是记新的一笔 */
@@ -42,6 +51,32 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const [sheetHeight, setSheetHeight] = useState(0);
   const [noteFieldsHeight, setNoteFieldsHeight] = useState(0);
 
+  // 正在填哪个文字字段。历史补全的浮层归这一层渲染，不归 TransactionNoteFields：
+  // 浮层要盖在输入块**上方**，而 Android 上画到父容器外面的东西收不到触摸，
+  // 所以它必须是整页根节点的直接子节点（见下面的 suggestionLayer）
+  const [focusedField, setFocusedField] = useState<SuggestionField | null>(null);
+  /**
+   * 每个字段"最近一次从浮层里选中的值"。它等于该字段当前的输入时，浮层不显示。
+   *
+   * **按字段分开存**，不是一个共用的值：主题选过「123」之后，
+   * 不该顺带把恰好也填着「123」的店名那一栏的浮层一起压住。
+   *
+   * 也**不在切换字段时清空**。清了的话，点别处再点回这个输入框，浮层又弹一次——
+   * 而用户刚刚已经从里面选过了，这一栏的事已经办完。只有输入内容真的变了
+   * （删掉一个字、或者接着往下打），它才跟记下的值对不上，浮层才重新出现。
+   */
+  const [pickedValues, setPickedValues] = useState<Partial<Record<SuggestionField, string>>>({});
+
+  // 每个字段那一行在输入块里的位置。浮层按它钉到对应输入框的上方
+  const [fieldAnchors, setFieldAnchors] = useState<Partial<Record<SuggestionField, FieldAnchor>>>({});
+  // 值没变就不改 state：onLayout 在每次重排后都会再报一遍，照单全收会白白多渲染几轮
+  const handleFieldAnchor = (field: SuggestionField, anchor: FieldAnchor) =>
+    setFieldAnchors((prev) => {
+      const current = prev[field];
+      if (current && current.x === anchor.x && current.y === anchor.y) return prev;
+      return { ...prev, [field]: anchor };
+    });
+
   // 输入块底边离屏幕底边本来就有这么远，键盘只要没盖过这个距离就不用动它
   const restingGap = Math.max(0, sheetHeight - noteFieldsHeight);
   const targetLift = Math.max(0, keyboardHeight - restingGap);
@@ -57,7 +92,6 @@ export function TransactionForm({ initial }: TransactionFormProps) {
       useNativeDriver: true,
     }).start();
   }, [lift, targetLift]);
-
 
   const { data: accounts } = useAccounts();
   const { data: lastUsedAccountId } = useLastUsedAccountId();
@@ -122,14 +156,56 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const { data: categoryRows } = useCategories(type);
   // parentId 一起传进去，网格自己分一级二级——表单不需要知道分类有几层，
   // 它只关心最后选中的那一个 id（选了子分类就是子分类的 id）
-  const categories: CategoryGridItem[] = (categoryRows ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    icon: c.icon,
-    parentId: c.parentId,
-  }));
+  //
+  // 停用的分类不进网格。过滤放在这里而不是查询里：管理页要看见它们（见 use-categories 的说明）。
+  // 「子分类跟着父一起藏」这条规则统一在 db 层的 isPickable 里，两边引同一句话。
+  //
+  // 例外是**当前选中的那一个**：编辑一笔老账单时，它的分类可能早就被停用了，
+  // 滤掉的话网格里没有一格是亮的，看起来像"这笔账没有分类"，保存时还会因为
+  // 下面那句 categories.find 找不到而丢掉标题兜底。连它的父一起留着，子分类才点得进去
+  const categories: CategoryGridItem[] = useMemo(() => {
+    const all = categoryRows ?? [];
+    const byId = new Map(all.map((c) => [c.id, c]));
+    const selected = selectedCategoryId ? byId.get(selectedCategoryId) : undefined;
+    return all
+      .filter((c) => isPickable(c, byId) || c.id === selected?.id || c.id === selected?.parentId)
+      .map((c) => ({ id: c.id, name: c.name, icon: c.icon, parentId: c.parentId }));
+  }, [categoryRows, selectedCategoryId]);
 
   const numericAmount = Number(amount);
+
+  // 每个可补全字段的当前值和写回口。集中成一张表，浮层按 focusedField 取一行就行，
+  // 不用在渲染处写一串三元表达式；以后再加一个可补全的字段也只改这里
+  const suggestionBindings: Record<SuggestionField, { keyword: string; setValue: (value: string) => void }> = {
+    title: { keyword: topic, setValue: setTopic },
+    merchant: { keyword: merchant, setValue: setMerchant },
+    location: { keyword: location, setValue: setLocation },
+  };
+
+  /**
+   * 点一条历史：把文字填上，**顺带把它上次用的那个分类也选上**。
+   *
+   * 分类一律覆盖当前选择，不是"只在没选时才填"。理由是这一下点击本身就是一次明确的表态——
+   * 用户挑的是「上次那笔『加油』」这件完整的事，不只是那两个字；
+   * 只填文字不换分类，反而要他再去网格里对一次，那这条历史就只省了打字。
+   *
+   * 分类不在当前网格里（被删了、或者不是这个收支类型）就只填文字：
+   * selectCategory 一个不存在的 id 会让网格一格都不亮，比不选更糟。
+   */
+  const pickSuggestion = (field: SuggestionField, value: string, categoryId: string | null) => {
+    suggestionBindings[field].setValue(value);
+    if (categoryId && categories.some((c) => c.id === categoryId)) selectCategory(categoryId);
+    // 选完就把浮层收起来：这一下点击已经是一个完整的决定，列表留在屏幕上只会挡着分类网格。
+    // 记的是"刚选中的那个值"而不是直接关掉——输入框还聚焦着，onFocus 不会再触发一次，
+    // 单纯关掉的话用户接着往下打字浮层也回不来了。记下值，内容一变它自己就又出现
+    setPickedValues((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // 历史条目左边那一格要显示的分类。分类列表这一层已经查过了，不让浮层再查一遍
+  const resolveSuggestionCategory = (id: string): SuggestionCategory | null => {
+    const found = categories.find((c) => c.id === id);
+    return found ? { name: found.name, icon: found.icon } : null;
+  };
 
   // 保存的硬门槛：**选了分类**、**填了主题**、**金额大于 0**。
   // 其余字段（备注、店名、地点、标签）空着也能存——记账一旦要求填满才让存，
@@ -272,6 +348,8 @@ export function TransactionForm({ initial }: TransactionFormProps) {
             location={location}
             onLocationChange={setLocation}
             amount={numericAmount}
+            onFocusedFieldChange={setFocusedField}
+            onFieldAnchorChange={handleFieldAnchor}
           />
         </Animated.View>
 
@@ -308,6 +386,40 @@ export function TransactionForm({ initial }: TransactionFormProps) {
         </ThemedView>
       </ThemedView>
 
+      {/* 历史补全浮层。位置全靠两个已经量好的数：
+          `bottom: sheetHeight` 把它的下边缘钉在底部面板的顶边（也就是输入块的顶边），
+          再套上跟输入块同一个 `liftY`，键盘弹起时两者一起往上滑，浮层永远贴着输入框。
+
+          放在整棵树的最后：这样它天然画在底部面板之上，不需要给任何人加 zIndex
+          （Android 上一旦有子视图带 zIndex，父容器就会切到自定义绘制顺序，
+          那份缓存出错过一次，见 categories.tsx 的 styles.lifted）。
+
+          box-none：浮层这一层是满屏宽的透明条，不拦截它自己没画东西的地方的点击 */}
+      {focusedField && suggestionBindings[focusedField].keyword !== pickedValues[focusedField] ? (
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            styles.suggestionLayer,
+            {
+              // 从屏幕底边往上量：输入块顶边在 sheetHeight 处，往下走一层内距再走到那一行，
+              // 剩下的就是浮层下边缘该在的高度。于是浮层正好坐在这一行的顶上
+              bottom: sheetHeight - NOTE_FIELDS_PADDING_TOP - (fieldAnchors[focusedField]?.y ?? 0),
+              // 左内距就是那个输入框的左边缘：浮层的左边跟输入框的左边对齐，
+              // 而不是一律贴着屏幕左侧
+              paddingLeft: fieldAnchors[focusedField]?.x ?? Spacing.two,
+              transform: [{ translateY: liftY }],
+            },
+          ]}>
+          <SuggestionPopup
+            field={focusedField}
+            keyword={suggestionBindings[focusedField].keyword}
+            type={type}
+            resolveCategory={resolveSuggestionCategory}
+            onPick={pickSuggestion}
+          />
+        </Animated.View>
+      ) : null}
+
       {openSheet === 'date' ? (
         <DateTimePickerSheet
           value={date}
@@ -335,6 +447,35 @@ export function TransactionForm({ initial }: TransactionFormProps) {
 }
 
 const styles = StyleSheet.create({
+  // 满屏宽的一条，下边缘由调用处钉在输入块顶边，内容从那里往上长。
+  // 左右内距跟输入块里的一致，浮层的边跟输入框的边对齐
+  /**
+   * 补全浮层那一层。下边缘由调用处钉在**当前那个输入框所在行**的顶边，内容从那里往上长。
+   *
+   * `top: 0` 要写：只给 bottom 的话这一层的高度由内容撑出来，浮层高过可用空间时会长到
+   * 根视图外面去，顶上那截就没了（Android 上还连带着点不到）。钉住上边缘之后这一层是个
+   * 从内容区顶端到锚点的**有界盒子**，配 justifyContent: 'flex-end' 让浮层贴着盒子底边、
+   * 往上长；空间不够时它被压在盒子里，而不是溢出去被裁掉。
+   *
+   * 浮层自己的宽度由内容决定，不铺满整行；左边缘对齐当前那个输入框的左边缘
+   * （左内距是动态的，见上面的 paddingLeft）。右边留一点内距，兜住特别长的历史。
+   */
+  suggestionLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
+    paddingRight: Spacing.two,
+    paddingBottom: Spacing.two,
+    // 比输入块那层（noteFields 的 zIndex: 2）高。
+    // 光靠"排在最后一个兄弟"在 Android 上不够：只要有人声明了 zIndex，
+    // 父容器就切到自定义绘制顺序，文档顺序说了不算，浮层会被输入块盖住上半截。
+    // 这个值是**静态**的（挂上/卸下，不来回改），不会重演分类页那个
+    // "动态改 zIndex 导致某些行永远不再绘制"的坑
+    zIndex: 3,
+  },
   scrollContent: {
     paddingHorizontal: Spacing.two,
     paddingTop: Spacing.two,
@@ -354,7 +495,7 @@ const styles = StyleSheet.create({
   noteFields: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: Spacing.three,
+    paddingTop: NOTE_FIELDS_PADDING_TOP,
     paddingBottom: Spacing.two,
     zIndex: 2,
   },
