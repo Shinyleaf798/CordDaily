@@ -205,4 +205,19 @@ export const MIGRATIONS: string[][] = [
   [
     `CREATE INDEX IF NOT EXISTS idx_transactions_title ON transactions(title);`,
   ],
+
+  // 曾经有过一组 v10：把老设备上那批**随机生成**的内置分类 / 内置账户 id 改成
+  // `constants/default-categories.ts` 里的常量（一百多条从常量数组生成的 UPDATE）。
+  //
+  // 整组删掉了，因为项目还在开发期，库可以随时清空——那组语句唯一的用户就是"已经装过 App 的设备"，
+  // 而这里没有那样的设备。清一次数据、重装，seed 直接按常量灌，效果一样，代码少一百多行。
+  //
+  // 删它是**对上面 v6 那条「版本号只能往前加」的一次有意违反**：那条规矩保护的是
+  // 已经跑过该版本的设备，而 v10 从没在任何设备上跑过（写完当天就删了）。
+  // 发布之后不再有这种自由——到时候只能追加 v11，哪怕它做的事跟 v10 一样。
+  //
+  // 顺带记一个当时踩到的坑，值得留着：改主键的 UPDATE **不能**把定位条件写成
+  // `WHERE id = (SELECT ... AND id <> 常量 ORDER BY rowid LIMIT 1)`。同名两行时，
+  // 第一行改成常量 id 之后子查询重新求值会指向第二行，第二行也被改成同一个 id，撞主键。
+  // 要写成 `rowid = (SELECT MIN(rowid) ...)`——它的结果不随这次 UPDATE 改变。
 ];

@@ -7,12 +7,16 @@ import { ScreenPadding, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore } from '@/store/auth.store';
 
-// 账号和登出。放在「其他」而不是首页顶部，是因为这两样都不是日常要看的东西——
-// 邮箱一年确认一次，登出更少
-export default function OtherSettingsScreen() {
+/**
+ * 账号和登出。原来这是「我的 → 其他」那一页；改版之后「其他」那一格没了，
+ * 这一页从页头的头像和「其他」组的「账号」两处都能进来。
+ *
+ * 内容一个字没变——邮箱一年确认一次，登出更少，它本来就该待在二级页。
+ */
+export default function AccountSettingsScreen() {
   const theme = useTheme();
-  const user = useAuthStore((s) => s.user);
-  const clearSession = useAuthStore((s) => s.clearSession);
+  const user = useAuthStore((state) => state.user);
+  const clearSession = useAuthStore((state) => state.clearSession);
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['bottom', 'left', 'right']}>
@@ -28,6 +32,8 @@ export default function OtherSettingsScreen() {
             </ThemedText>
           </View>
 
+          {/* 登出前不提醒"还有 N 笔没备份"：这个 App 的账在本地库里，登出不会清库，
+              再登回来账还在。真正该提醒的地方是备份卡，它一直在首页上挂着 */}
           <Pressable onPress={() => clearSession()} style={[styles.logoutButton, { borderColor: theme.expense }]}>
             <ThemedText type="default" style={{ color: theme.expense }}>
               退出登录

@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 
-import { builtinIconRef } from '@/constants/category-icons';
+import { DEFAULT_CATEGORIES } from '@/constants/default-categories';
 
 import { getDb } from './client';
 
@@ -38,29 +38,13 @@ export async function listCategoriesByType(type: CategoryType): Promise<Category
   return db.getAllAsync<Category>(`SELECT * FROM categories WHERE type = ? ${ORDER_BY}`, [type]);
 }
 
-const DEFAULT_CATEGORIES: { name: string; icon: string; type: CategoryType }[] = [
-  { name: '餐饮', icon: builtinIconRef('food'), type: 'EXPENSE' },
-  { name: '购物', icon: builtinIconRef('shopping'), type: 'EXPENSE' },
-  { name: '交通', icon: builtinIconRef('transport'), type: 'EXPENSE' },
-  { name: '日常', icon: builtinIconRef('daily'), type: 'EXPENSE' },
-  { name: '娱乐', icon: builtinIconRef('entertainment'), type: 'EXPENSE' },
-  { name: '医疗', icon: builtinIconRef('medical'), type: 'EXPENSE' },
-  { name: '学习', icon: builtinIconRef('study'), type: 'EXPENSE' },
-  { name: '社交', icon: builtinIconRef('social'), type: 'EXPENSE' },
-  { name: '其他', icon: builtinIconRef('other'), type: 'EXPENSE' },
-  { name: '工资', icon: builtinIconRef('salary'), type: 'INCOME' },
-  { name: '奖金', icon: builtinIconRef('bonus'), type: 'INCOME' },
-  { name: '兼职', icon: builtinIconRef('parttime'), type: 'INCOME' },
-  { name: '其他收入', icon: builtinIconRef('refund'), type: 'INCOME' },
-];
-
 // 默认分类的 icon 存的是 `builtin:food` 这种引用，不是 emoji：
 // 图片以后放进 assets/categories/ 并在 constants/category-icons.ts 登记，老数据不用改一行就能开始显示新图。
 // 图还没放的阶段由 parseCategoryIcon 落回每个 key 的兜底 emoji，观感跟原来一样。
 //
-// 首次启动灌入默认分类。id 必须是真 UUID：后端 transaction 的 zod 校验要求 categoryId 是 uuid 格式，
-// 用 'cat-food' 这种可读字符串当 id 的话，同步时整批交易会被后端打回。
-// 不写成 SQL migration 是因为迁移语句里生成不了 UUID，只能在代码里 Crypto.randomUUID()。
+// 首次启动灌入默认分类。**id 取自常量表**（`constants/default-categories.ts`），不是现场生成——
+// 每台设备上的「餐饮」是同一个 id，重装后恢复备份时那些账单的 categoryId 不用改写就能对上。
+// 原来这里是 Crypto.randomUUID()，那正是"重装后账单全变空白行"的根源，见 DECISIONS.md。
 //
 // sortOrder 按**每种收支类型各自**从 0 开始数，不是数组下标：两种类型是两个独立的列表，
 // 用下标的话收入那组会从 9 起跳，虽然顺序仍然对，但之后每次读都得先减掉一个偏移量才好理解。
@@ -74,51 +58,14 @@ export async function seedDefaultCategories(): Promise<void> {
     await db.runAsync(
       `INSERT INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
        VALUES (?, ?, ?, ?, NULL, ?, 1, 0)`,
-      [Crypto.randomUUID(), category.name, category.icon, category.type, nextOrder[category.type]],
+      [category.id, category.name, category.icon, category.type, nextOrder[category.type]],
     );
     nextOrder[category.type] += 1;
   }
 }
 
-// 每个一级分类下面的默认二级分类。图标沿用父的 key——真要给「早餐」单独画个图标，
-// 得先往 assets/categories/ 放图，那是另一件事
-const DEFAULT_SUBCATEGORIES: { parent: string; children: { name: string; icon: string }[] }[] = [
-  {
-    parent: '餐饮',
-    children: [
-      { name: '早餐', icon: builtinIconRef('food') },
-      { name: '午餐', icon: builtinIconRef('food') },
-      { name: '晚餐', icon: builtinIconRef('food') },
-      { name: '外卖', icon: builtinIconRef('food') },
-      { name: '饮料', icon: builtinIconRef('food') },
-    ],
-  },
-  {
-    parent: '交通',
-    children: [
-      { name: '打车', icon: builtinIconRef('transport') },
-      { name: '公交', icon: builtinIconRef('transport') },
-      { name: '加油', icon: builtinIconRef('transport') },
-      { name: '停车', icon: builtinIconRef('transport') },
-    ],
-  },
-  {
-    parent: '购物',
-    children: [
-      { name: '服饰', icon: builtinIconRef('shopping') },
-      { name: '日用品', icon: builtinIconRef('daily') },
-      { name: '数码', icon: builtinIconRef('shopping') },
-    ],
-  },
-  {
-    parent: '娱乐',
-    children: [
-      { name: '电影', icon: builtinIconRef('entertainment') },
-      { name: '游戏', icon: builtinIconRef('entertainment') },
-      { name: '旅行', icon: builtinIconRef('travel') },
-    ],
-  },
-];
+// 默认二级分类跟着一级分类一起挂在 constants/default-categories.ts 的 children 上。
+// 图标沿用父的 key——真要给「早餐」单独画个图标，得先往 assets/categories/ 放图，那是另一件事
 
 const SUBCATEGORY_SEED_KEY = 'seededDefaultSubcategories';
 
@@ -134,29 +81,29 @@ export async function seedDefaultSubcategories(): Promise<void> {
   ]);
   if (seeded) return;
 
-  for (const group of DEFAULT_SUBCATEGORIES) {
-    // 按名字找父：默认分类的 id 是每台设备各自 randomUUID 生成的，写不进常量表
-    const parent = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM categories WHERE name = ? AND parentId IS NULL AND type = ?',
-      [group.parent, 'EXPENSE'],
-    );
-    // 用户把那个一级分类改名或删了就跳过，不自作主张建一个回来
+  for (const group of DEFAULT_CATEGORIES) {
+    if (!group.children?.length) continue;
+
+    // 按 id 找父，不再按名字：父的 id 现在是常量（见 constants/default-categories.ts），
+    // 所以用户把「餐饮」改成「吃饭」之后，子分类照样能挂对地方——按名字找的话会整组跳过
+    const parent = await db.getFirstAsync<{ id: string }>('SELECT id FROM categories WHERE id = ?', [group.id]);
+    // 用户把那个一级分类删了就跳过，不自作主张建一个回来
     if (!parent) continue;
 
     let order = 0;
     for (const child of group.children) {
       const exists = await db.getFirstAsync<{ id: string }>(
-        'SELECT id FROM categories WHERE name = ? AND parentId = ?',
-        [child.name, parent.id],
+        'SELECT id FROM categories WHERE id = ? OR (name = ? AND parentId = ?)',
+        [child.id, child.name, parent.id],
       );
-      // 已经有同名子分类就跳过，但序号照样往前走——留出它占的那个位置，
+      // 已经有（同 id 或同名）子分类就跳过，但序号照样往前走——留出它占的那个位置，
       // 免得后面几个挤到已存在的那一条前面去
       order += 1;
       if (exists) continue;
       await db.runAsync(
         `INSERT INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
          VALUES (?, ?, ?, ?, ?, ?, 1, 0)`,
-        [Crypto.randomUUID(), child.name, child.icon, 'EXPENSE', parent.id, order - 1],
+        [child.id, child.name, child.icon, group.type, parent.id, order - 1],
       );
     }
   }

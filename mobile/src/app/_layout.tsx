@@ -10,6 +10,7 @@ import { ThemeScheme } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { seedDefaultAccounts } from '@/db/accounts';
 import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories';
+import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
 import { useThemeStore } from '@/store/theme.store';
@@ -57,6 +58,15 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [isHydrated]);
+
+  // 自动同步就挂在这里：App 打开时检查一次「上次备份过去多久了」，够了就把没备份的推上去。
+  // 不跑后台任务——跟周期交易的补生成同一个时机（CLAUDE.md 原则#1/#4）。
+  //
+  // 要等 user 有值：没登录时推了也是 401。里面自己吞掉所有失败（记进 lastSyncError），
+  // 所以这里不用 catch——拦住启动是不能接受的。
+  useEffect(() => {
+    if (isHydrated && user) void maybeAutoSync();
+  }, [isHydrated, user]);
 
   // 根视图底色：整棵 React 树后面那块原生窗口，启动图收掉到首屏之间、透明屏底下会露出来。
   // 它在 Android 上默认是白的，黑色主题下不设就闪一下刺眼的白。
@@ -133,14 +143,18 @@ export default function RootLayout() {
               name="reimbursements"
               options={{ ...ScreenTransitions.push, title: '报销' }}
             />
-            {/* 「我的」下面的四个二级页，跟其它二级页同一种转场和同一套标题规则 */}
-            <Stack.Screen name="settings/ledger" options={{ ...ScreenTransitions.push, title: '账本' }} />
+            {/* 「我的」下面的二级页，跟其它二级页同一种转场和同一套标题规则。
+                原来的 settings/ledger 和 settings/other 删掉了：那两页各自只是转发几条，
+                现在「我的」页的功能网格直通目的地（见 components/settings/feature-grid.tsx） */}
             <Stack.Screen
               name="settings/home-layout"
               options={{ ...ScreenTransitions.push, title: '首页布局' }}
             />
             <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
-            <Stack.Screen name="settings/other" options={{ ...ScreenTransitions.push, title: '其他' }} />
+            <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
+            <Stack.Screen name="settings/auto-sync" options={{ ...ScreenTransitions.push, title: '自动同步' }} />
+            <Stack.Screen name="settings/restore" options={{ ...ScreenTransitions.push, title: '恢复数据' }} />
+            <Stack.Screen name="settings/about" options={{ ...ScreenTransitions.push, title: '关于' }} />
           </Stack.Protected>
           <Stack.Protected guard={!user}>
             <Stack.Screen name="login" options={ScreenTransitions.crossFade} />

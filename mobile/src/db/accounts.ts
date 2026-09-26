@@ -1,5 +1,7 @@
 import * as Crypto from 'expo-crypto';
 
+import { DEFAULT_ACCOUNTS } from '@/constants/default-categories';
+
 import { getDb } from './client';
 
 export type AccountType = 'CASH' | 'BANK' | 'EWALLET' | 'CREDIT_CARD' | 'OTHER';
@@ -46,34 +48,23 @@ export async function listAccounts(): Promise<Account[]> {
   return db.getAllAsync<Account>(`SELECT * FROM accounts ${ACCOUNTS_ORDER}`);
 }
 
-// 「不选择任何账户」那一行的 id 记在本地设置里，不在 accounts 表上加 isDefault 列。
-//
-// 为什么不写死一个固定 id（那样迁移老用户只要一条纯 SQL）：account.id 是**全局**主键，
-// 所有用户的数据最终会进同一张服务器表，写死的话两个用户一同步就撞 id。
-// 记在 app_settings 里则天然是本机的事——这张表本来就不进服务器（见 budgets.ts 的说明）。
-const NO_ACCOUNT_KEY = 'noAccountId';
-
-async function getSetting(key: string): Promise<string | null> {
-  const db = await getDb();
-  const row = await db.getFirstAsync<{ value: string }>('SELECT "value" FROM app_settings WHERE "key" = ?', [key]);
-  return row?.value ?? null;
-}
-
-async function setSetting(key: string, value: string): Promise<void> {
-  const db = await getDb();
-  await db.runAsync('INSERT OR REPLACE INTO app_settings ("key", "value") VALUES (?, ?)', [key, value]);
-}
-
-/** 「不选择任何账户」那一行的 id。还没灌过（老库第一次启动到这个版本之前）时是 null。
- *  只在本文件内部用：getDefaultAccountId 和 seedDefaultAccounts */
+/**
+ * 「不选择任何账户」那一行的 id。这一行还没灌过时是 null。
+ *
+ * 以前这个 id 是随机生成、记在 `app_settings.noAccountId` 里的——那时不敢写死，
+ * 理由是「account.id 是全局主键，两个用户一同步就撞」。服务器改成 `@@id([userId, id])`
+ * 之后这个顾虑没有了，于是它跟内置分类一样变成了常量：**重装恢复时所有账单的
+ * accountId 不用改写就能对上**。那个设置键连同两个本地 getSetting/setSetting 一起删了
+ * （通用的读写在 db/settings.ts）。
+ *
+ * 仍然要查一次库而不是直接返回常量：行可能压根还没灌（首次启动、seed 之前）。
+ * 不查的话，下面所有拿它当兜底的逻辑会指向一个不存在的行。
+ */
 async function getNoAccountId(): Promise<string | null> {
-  const id = await getSetting(NO_ACCOUNT_KEY);
-  if (!id) return null;
-
-  // 设置里记着 id、行却不在了：理论上不会发生（它删不掉），但真发生时得当作"还没有"，
-  // 否则下面所有拿它当兜底的逻辑都会指向一个空行
   const db = await getDb();
-  const row = await db.getFirstAsync<{ id: string }>('SELECT id FROM accounts WHERE id = ?', [id]);
+  const row = await db.getFirstAsync<{ id: string }>('SELECT id FROM accounts WHERE id = ?', [
+    DEFAULT_ACCOUNTS.noAccount.id,
+  ]);
   return row?.id ?? null;
 }
 
@@ -174,12 +165,14 @@ export type CreateAccountInput = {
   name: string;
   currency?: string;
   openingBalance?: number;
+  /** 只给两个内置账户用：它们的 id 是常量。用户手动建的账户一律现场生成 */
+  id?: string;
 };
 
 export async function createAccount(input: CreateAccountInput): Promise<Account> {
   const db = await getDb();
   const account: Account = {
-    id: Crypto.randomUUID(),
+    id: input.id ?? Crypto.randomUUID(),
     name: input.name,
     type: 'OTHER',
     currency: input.currency ?? 'MYR',
@@ -220,7 +213,8 @@ export async function createAccount(input: CreateAccountInput): Promise<Account>
  * - 「现金」只在**全新安装**时灌一次。老用户可能已经把它删了，不该每次启动又长回来
  *   （分类那边踩过同样的问题，解法一样，见 categories.ts 的 seed 标记）
  *
- * id 要 UUID（核心原则#2），SQL 迁移里生成不了，所以放在代码里而不是写成 migration。
+ * 两个 id 都取自 `DEFAULT_ACCOUNTS` 常量，跟内置分类同一个道理：每台设备一样，
+ * 重装恢复时账单的 accountId 不用改写就能对上。
  */
 export async function seedDefaultAccounts(): Promise<void> {
   const db = await getDb();
@@ -229,13 +223,10 @@ export async function seedDefaultAccounts(): Promise<void> {
   const existing = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM accounts');
   const isFreshInstall = (existing?.count ?? 0) === 0;
 
-  if (!(await getNoAccountId())) {
-    const account = await createAccount({ name: '不选择任何账户' });
-    await setSetting(NO_ACCOUNT_KEY, account.id);
-  }
+  if (!(await getNoAccountId())) await createAccount(DEFAULT_ACCOUNTS.noAccount);
 
   // openingBalance 走默认值 0：这个字段已经没有界面了（见类型定义上的说明）
-  if (isFreshInstall) await createAccount({ name: '现金' });
+  if (isFreshInstall) await createAccount(DEFAULT_ACCOUNTS.cash);
 }
 
 /**

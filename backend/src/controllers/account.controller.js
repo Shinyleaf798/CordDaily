@@ -3,6 +3,8 @@ import * as accountService from "../services/account.service.js";
 import { ok } from "../utils/response.js";
 
 const createSchema = z.object({
+  // 跟分类同一个问题：原来没有 id，服务器自己生成，手机推上来的账单会指向一个不存在的账户
+  id: z.string().uuid(),
   name: z.string().min(1),
   type: z.enum(["CASH", "BANK", "EWALLET", "CREDIT_CARD", "OTHER"]),
   currency: z.string().default("MYR"),
@@ -10,7 +12,7 @@ const createSchema = z.object({
   icon: z.string().optional(),
 });
 
-const updateSchema = createSchema.partial();
+const updateSchema = createSchema.omit({ id: true }).partial();
 
 export async function list(req, res, next) {
   try {

@@ -8,18 +8,25 @@ export async function list(userId) {
   });
 }
 
-export async function create(userId, data) {
-  return prisma.account.create({ data: { ...data, userId } });
+// 手机端建账户时 id 就定了（CLAUDE.md 原则#2），这里按 (userId, id) upsert 而不是 create：
+// 同一批数据重推一次不能变成两行，而两个内置账户（「不选择任何账户」「现金」）的 id
+// 是所有用户共用的常量，所以主键必须带上 userId 才不会互相撞。
+export async function create(userId, { id, ...data }) {
+  return prisma.account.upsert({
+    where: { userId_id: { userId, id } },
+    create: { ...data, id, userId },
+    update: data,
+  });
 }
 
 export async function update(userId, id, data) {
   await assertOwned(userId, id);
-  return prisma.account.update({ where: { id }, data });
+  return prisma.account.update({ where: { userId_id: { userId, id } }, data });
 }
 
 export async function remove(userId, id) {
   await assertOwned(userId, id);
-  await prisma.account.delete({ where: { id } });
+  await prisma.account.delete({ where: { userId_id: { userId, id } } });
 }
 
 // 余额是衍生值：openingBalance + 收支净额 + 转入 - 转出，从不在数据库里缓存，见 CLAUDE.md 核心架构原则 #6

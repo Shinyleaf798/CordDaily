@@ -3,6 +3,10 @@ import * as categoryService from "../services/category.service.js";
 import { ok } from "../utils/response.js";
 
 const createSchema = z.object({
+  // id 由手机端生成（CLAUDE.md 原则#2）。这里原来没有这个字段，服务器用 @default(uuid())
+  // 自己生了一个——那意味着手机上那个 categoryId 在服务器上根本不存在，
+  // 同步账单时整批会被外键打回。交易、转账、周期规则三个接口一直是收 id 的，只有这里漏了
+  id: z.string().uuid(),
   name: z.string().min(1),
   icon: z.string().optional(),
   type: z.enum(["INCOME", "EXPENSE"]),
@@ -14,7 +18,8 @@ const createSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const updateSchema = createSchema.partial();
+// 改一条分类时 id 不能变：它是同步幂等的依据
+const updateSchema = createSchema.omit({ id: true }).partial();
 
 export async function list(req, res, next) {
   try {

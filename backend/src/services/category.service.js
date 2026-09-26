@@ -10,11 +10,17 @@ export async function list(userId) {
   });
 }
 
-export async function create(userId, data) {
+// 跟账户同一个道理：id 由手机端生成，13 个内置分类的 id 更是全用户共用的常量，
+// 所以主键是 (userId, id)，而且这里是 upsert——重推一次只会把那一行更新成最新的样子
+export async function create(userId, { id, ...data }) {
   if (data.parentId) {
     await assertOwnedParent(userId, data.parentId);
   }
-  return prisma.category.create({ data: { ...data, userId } });
+  return prisma.category.upsert({
+    where: { userId_id: { userId, id } },
+    create: { ...data, id, userId },
+    update: data,
+  });
 }
 
 export async function update(userId, id, data) {
@@ -25,12 +31,12 @@ export async function update(userId, id, data) {
     }
     await assertOwnedParent(userId, data.parentId);
   }
-  return prisma.category.update({ where: { id }, data });
+  return prisma.category.update({ where: { userId_id: { userId, id } }, data });
 }
 
 export async function remove(userId, id) {
   await assertOwned(userId, id);
-  await prisma.category.delete({ where: { id } });
+  await prisma.category.delete({ where: { userId_id: { userId, id } } });
 }
 
 async function assertOwned(userId, id) {

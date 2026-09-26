@@ -44,8 +44,14 @@ model User {
   transfers             Transfer[]
 }
 
+/// 主键是 `(userId, id)` 而不是全局唯一的 `id`：13 个内置分类的 UUID 写死在手机端的
+/// `constants/default-categories.ts` 里，**每个用户都会有同一批 id**（那是"重装后恢复备份
+/// 不用改写 categoryId"的地基，见 CLAUDE.md 原则#2）。全局主键装不下第二个用户的那 13 行。
+///
+/// 于是所有指向分类的外键都得带上 userId 一起指。`Transaction` / `RecurringTransaction`
+/// 本来就有 userId，不用加列。
 model Category {
-  id     String          @id @default(uuid())
+  id     String
   name   String
   icon   String?
   type   TransactionType
@@ -53,8 +59,10 @@ model Category {
   user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   parentId String?
-  parent   Category?  @relation("SubCategory", fields: [parentId], references: [id])
+  parent   Category?  @relation("SubCategory", fields: [userId, parentId], references: [userId, id])
   children Category[] @relation("SubCategory")
+
+  @@id([userId, id])
 
   /// 在记账页分类网格里的先后。同一层（同一个 parentId）内部比较，手机端拖动排序时改它。
   /// 目前只有一级分类拖得动，子分类一律跟着创建顺序——列给全了，以后想开子分类排序不用再迁移
@@ -68,8 +76,10 @@ model Category {
   recurringTransactions RecurringTransaction[]
 }
 
+/// 主键跟 Category 同理：两个内置账户（「不选择任何账户」和「现金」）的 id 也是常量，
+/// 所有用户共用同一对 UUID
 model Account {
-  id             String      @id @default(uuid())
+  id             String
   name           String
   type           AccountType
   currency       String      @default("MYR")
@@ -78,6 +88,8 @@ model Account {
   userId         String
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt      DateTime    @default(now())
+
+  @@id([userId, id])
 
   transactions          Transaction[]
   recurringTransactions RecurringTransaction[]
@@ -107,10 +119,11 @@ model Transaction {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  // 分类和账户的外键都带上 userId：那两张表的主键是 (userId, id) 复合键（见 Category 上的说明）
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
+  category   Category @relation(fields: [userId, categoryId], references: [userId, id])
   accountId  String
-  account    Account  @relation(fields: [accountId], references: [id])
+  account    Account  @relation(fields: [userId, accountId], references: [userId, id])
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -144,9 +157,9 @@ model RecurringTransaction {
   createdAt    DateTime           @default(now())
 
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
+  category   Category @relation(fields: [userId, categoryId], references: [userId, id])
   accountId  String
-  account    Account  @relation(fields: [accountId], references: [id])
+  account    Account  @relation(fields: [userId, accountId], references: [userId, id])
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -159,9 +172,9 @@ model Transfer {
   date          DateTime
   note          String?
   fromAccountId String
-  fromAccount   Account  @relation("FromAccount", fields: [fromAccountId], references: [id])
+  fromAccount   Account  @relation("FromAccount", fields: [userId, fromAccountId], references: [userId, id])
   toAccountId   String
-  toAccount     Account  @relation("ToAccount", fields: [toAccountId], references: [id])
+  toAccount     Account  @relation("ToAccount", fields: [userId, toAccountId], references: [userId, id])
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())

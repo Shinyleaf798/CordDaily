@@ -7,13 +7,35 @@ let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 // 单例：整个 App 生命周期内只开一次库、只跑一次迁移
 export function getDb() {
   if (!dbPromise) {
-    dbPromise = SQLite.openDatabaseAsync('corddaily.db').then(async (db) => {
+    dbPromise = SQLite.openDatabaseAsync(DATABASE_NAME).then(async (db) => {
       await db.execAsync(`PRAGMA journal_mode = WAL;`);
       await migrate(db);
       return db;
     });
   }
   return dbPromise;
+}
+
+const DATABASE_NAME = 'corddaily.db';
+
+/**
+ * **只给开发期用**：把整个本地库删掉重建。
+ *
+ * 为什么需要它：这个项目在开发期不为历史数据写迁移（改了结构就清库，见 DECISIONS.md），
+ * 而 App 跑在 Expo Go 里——清数据得去系统设置里清 Expo Go 的存储，那会把所有
+ * Expo 项目的数据连同 SecureStore 里的登录凭证一起抹掉，每次都要重新登录。
+ * 这个函数只删这一个库文件，登录状态不受影响。
+ *
+ * 先关连接再删：文件还开着时删，WAL 那两个附属文件（-wal / -shm）可能留下来，
+ * 下次打开会拿到一个"半个旧库"。关掉之后把单例也清空，下一次 getDb() 会重新建库跑迁移。
+ */
+export async function resetLocalDatabase(): Promise<void> {
+  if (dbPromise) {
+    const db = await dbPromise;
+    await db.closeAsync();
+    dbPromise = null;
+  }
+  await SQLite.deleteDatabaseAsync(DATABASE_NAME);
 }
 
 // 用 SQLite 内置的 user_version 记录本地库跑到第几版（Expo 官方推荐的迁移写法）。
