@@ -73,23 +73,37 @@ async function getSchemaVersion(): Promise<number> {
 
 export type LocalStats = {
   transactions: number;
-  /** 还没备份过的笔数（`synced = 0`）。没有自动同步兜底的时候，这个数是用户唯一的安全绳 */
+  /** 还没备份过的**账单**笔数（`synced = 0`）。卡上那个「未备份」显示的是它——
+   *  跟旁边的「本地账单」同一个口径，两个数才能放在一起读 */
   unsynced: number;
+  /** 连分类、账户、转账、周期规则一起算的待推送条数。备份确认层说「要上传 N 条记录」用它 */
+  unsyncedTotal: number;
   /** 最早一笔账的日期，用来算「记账第 N 天」。一笔都没有时是 null，那一行就不显示 */
   firstTransactionDate: string | null;
 };
 
 export async function getLocalStats(): Promise<LocalStats> {
   const db = await getDb();
-  const row = await db.getFirstAsync<{ total: number; unsynced: number; firstDate: string | null }>(
+  const row = await db.getFirstAsync<{
+    total: number;
+    unsynced: number;
+    firstDate: string | null;
+    unsyncedTotal: number;
+  }>(
     `SELECT COUNT(*) AS total,
             SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) AS unsynced,
-            MIN(date) AS firstDate
+            MIN(date) AS firstDate,
+            (SELECT COUNT(*) FROM transactions WHERE synced = 0)
+          + (SELECT COUNT(*) FROM categories WHERE synced = 0)
+          + (SELECT COUNT(*) FROM accounts WHERE synced = 0)
+          + (SELECT COUNT(*) FROM transfers WHERE synced = 0)
+          + (SELECT COUNT(*) FROM recurring_transactions WHERE synced = 0) AS unsyncedTotal
        FROM transactions`,
   );
   return {
     transactions: row?.total ?? 0,
     unsynced: row?.unsynced ?? 0,
+    unsyncedTotal: row?.unsyncedTotal ?? 0,
     firstTransactionDate: row?.firstDate ?? null,
   };
 }

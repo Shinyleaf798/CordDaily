@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchCloudSummary } from '@/api/sync';
 import { applyImport, getLocalStats, type BackupRange, type ImportPlan } from '@/db/backup';
+import { listPendingDeletions } from '@/db/deletions';
 import { pushUnsynced } from '@/db/sync';
 import { exportToFile, type ExportFormat } from '@/db/backup-file';
 import { getAutoSyncPeriod, getBackupState, setAutoSyncPeriod, type AutoSyncPeriod } from '@/db/settings';
@@ -54,14 +55,20 @@ export function useApplyImport() {
 export function usePushToCloud() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: pushUnsynced,
+    mutationFn: ({ withDeletions }: { withDeletions?: boolean } = {}) => pushUnsynced(withDeletions ?? true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['localStats'] });
       queryClient.invalidateQueries({ queryKey: ['backupState'] });
+      queryClient.invalidateQueries({ queryKey: ['pendingDeletions'] });
     },
     // 失败也要刷：失败原因记在 app_settings 里，那一行要能立刻显示出来
     onError: () => queryClient.invalidateQueries({ queryKey: ['backupState'] }),
   });
+}
+
+/** 等着在云端删掉的那些。备份确认层要把它们逐条列出来——删除不可逆，得先让人看见 */
+export function usePendingDeletions() {
+  return useQuery({ queryKey: ['pendingDeletions'], queryFn: listPendingDeletions });
 }
 
 /** 云端有没有这个账号的数据。只在恢复那一屏用，所以不跟着「我的」页一起常驻请求 */

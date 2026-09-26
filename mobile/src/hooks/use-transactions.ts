@@ -40,6 +40,10 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
     ['tagSummaries'],
     ['tagBreakdown'],
     ['reimbursements'],
+    // 「我的」页那张备份卡上的三个数（本地账单 / 未备份 / 上次备份）也是交易的衍生值。
+    // 漏了它的表现特别隐蔽：那一页是 tab，删完账单回来它**没有重新挂载**，
+    // 于是一直显示删除前的数字，看起来像"删除没生效"
+    ['localStats'],
   ];
   for (const key of keys) {
     queryClient.invalidateQueries({ queryKey: key });

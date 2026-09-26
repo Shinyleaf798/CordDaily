@@ -1,16 +1,20 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BackupCard } from '@/components/settings/backup-card';
-import { BackupSheet } from '@/components/settings/backup-sheet';
+import { CloudBackupSheet } from '@/components/settings/cloud-backup-sheet';
+import { RestoreSheet } from '@/components/settings/restore-sheet';
+import { ExportSheet } from '@/components/settings/export-sheet';
 import { FeatureGrid } from '@/components/settings/feature-grid';
 import { ProfileHeader } from '@/components/settings/profile-header';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { PageHeader } from '@/components/ui/page-header';
 import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenPadding, Spacing } from '@/constants/theme';
+import { fetchCloudBundle } from '@/api/sync';
+import { parseBundle, type BackupBundle } from '@/db/backup';
+import { pickBackupFile } from '@/db/backup-file';
 import { AutoSyncPeriodLabels } from '@/db/settings';
 import { useAutoSyncPeriod, useBackupState, useLocalStats } from '@/hooks/use-backup';
 import { useAuthStore } from '@/store/auth.store';
@@ -28,18 +32,45 @@ import { useAuthStore } from '@/store/auth.store';
  * 备份卡放在网格**下面**而不是上面：它紧挨着「数据」那一组，
  * 状态（三个数字）和它的两个二级入口连成一段，读起来是一件事。
  */
+type RestoreSource = { label: string; load: () => Promise<BackupBundle> };
+
 export default function SettingsScreen() {
   const user = useAuthStore((state) => state.user);
   const { data: stats } = useLocalStats();
   const { data: backupState } = useBackupState();
   const { data: autoSyncPeriod } = useAutoSyncPeriod();
 
-  // 备份弹层从两个地方打开：卡上的「备份」按钮（从选目的地那步开始），
-  // 和「账单导入导出」那一行（直接落到文件那步——那一行说的就是文件）
-  const [backupStep, setBackupStep] = useState<'destination' | 'file' | null>(null);
+  // 云端备份和导出文件是**两个入口**，不是一个弹层里的两步：
+  // 每次备份都先答一道"去云端还是导成文件"的选择题太烦，而那道题的答案几乎永远是云端
+  const [sheet, setSheet] = useState<'backup' | 'export' | null>(null);
 
-  // 云端还没接通（后端要先补收 id 的接口和 /sync/bundle），所以「上次备份」现在只有文件那条
-  const lastBackupAt = backupState?.lastCloudBackupAt ?? backupState?.lastFileBackupAt ?? null;
+  // 恢复层两个来源共用一个组件，区别只有"怎么拿到 bundle"，所以状态里直接存那个取数函数
+  const [restoreSource, setRestoreSource] = useState<RestoreSource | null>(null);
+
+  /**
+   * 「从文件恢复」**先弹系统选择器，选完了才开恢复层**。
+   *
+   * 反过来（先开界面、再在它上面弹选择器）的话，点一下会连着出现两层，
+   * 用户得穿过一个还是空的恢复页才回到正题。取消选择就什么都不发生——那是正常操作，不是错误。
+   */
+  const handleFileRestore = async () => {
+    try {
+      const picked = await pickBackupFile();
+      if (!picked) return;
+      setRestoreSource({ label: picked.name, load: () => parseBundle(picked.text) });
+    } catch (error) {
+      // 选择器自己出问题（极少）：把这条错误交给恢复层去显示，不在这一页另做一套错误 UI
+      const message = (error as Error).message;
+      setRestoreSource({ label: '文件', load: () => Promise.reject(new Error(message)) });
+    }
+  };
+
+  // 「上次备份」取两条通道里**更近**的那一次：用户问的是"我的账上次出门是什么时候"，
+  // 不关心它是去了云端还是变成一个文件
+  const lastBackupAt = [backupState?.lastCloudBackupAt, backupState?.lastFileBackupAt]
+    .filter((value): value is string => !!value)
+    .sort()
+    .at(-1) ?? null;
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -59,8 +90,8 @@ export default function SettingsScreen() {
             transactions={stats?.transactions ?? 0}
             unsynced={stats?.unsynced ?? 0}
             lastBackupAt={lastBackupAt}
-            onBackup={() => setBackupStep('destination')}
-            onRestore={() => router.push('/settings/restore')}
+            onBackup={() => setSheet('backup')}
+            onRestore={() => setRestoreSource({ label: '云端', load: fetchCloudBundle })}
           />
 
           <SettingsSection label="数据">
@@ -71,11 +102,21 @@ export default function SettingsScreen() {
               value={AutoSyncPeriodLabels[autoSyncPeriod ?? 'off']}
               href="/settings/auto-sync"
             />
+            {/* 导出成文件从「备份」里拆出来单独站一行。恢复不在这里再开一个门——
+                它就是卡上那个「恢复」，同一个页面开两扇门会被当成两个功能 */}
             <SettingsRow
-              icon="swap-horizontal-outline"
-              label="账单导入导出"
-              hint="CSV 给 Excel 看，或从备份文件恢复"
-              onPress={() => setBackupStep('file')}
+              icon="download-outline"
+              label="导出成文件"
+              hint="完整备份 .json，或给 Excel 看的 .csv"
+              onPress={() => setSheet('export')}
+            />
+            {/* 文件进、文件出并排站：卡上那两个按钮都只管云端，
+                跟文件打交道的两件事在这里成对出现 */}
+            <SettingsRow
+              icon="folder-open-outline"
+              label="从文件恢复"
+              hint="读之前导出的 .json 备份"
+              onPress={handleFileRestore}
             />
           </SettingsSection>
 
@@ -93,14 +134,20 @@ export default function SettingsScreen() {
         </ScrollView>
       </ThemedView>
 
-      {backupStep ? (
-        <BackupSheet
-          initialStep={backupStep}
-          transactions={stats?.transactions ?? 0}
-          unsynced={stats?.unsynced ?? 0}
-          onDismiss={() => setBackupStep(null)}
+      {/* 卡上那两个按钮用**同一种交互**：都是底部弹层，形状也一样——
+          读一下、把将要发生的事逐条列出来、按一个确认。
+          文件那两条在「数据」组里：导出是弹层，从文件恢复是路由（要弹系统文件选择器） */}
+      {sheet === 'backup' ? (
+        <CloudBackupSheet unsynced={stats?.unsyncedTotal ?? 0} onDismiss={() => setSheet(null)} />
+      ) : null}
+      {restoreSource ? (
+        <RestoreSheet
+          sourceLabel={restoreSource.label}
+          load={restoreSource.load}
+          onDismiss={() => setRestoreSource(null)}
         />
       ) : null}
+      {sheet === 'export' ? <ExportSheet onDismiss={() => setSheet(null)} /> : null}
     </SafeAreaView>
   );
 }

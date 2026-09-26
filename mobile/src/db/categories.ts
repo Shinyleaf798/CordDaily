@@ -3,6 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { DEFAULT_CATEGORIES } from '@/constants/default-categories';
 
 import { getDb } from './client';
+import { recordDeletion } from './deletions';
 
 export type CategoryType = 'INCOME' | 'EXPENSE';
 
@@ -316,5 +317,7 @@ export async function deleteCategory(id: string): Promise<void> {
   if ((children?.count ?? 0) > 0) {
     throw new Error(`还有 ${children!.count} 个子分类挂在它下面`);
   }
+  const row = await db.getFirstAsync<{ name: string }>('SELECT name FROM categories WHERE id = ?', [id]);
+  if (row) await recordDeletion('category', id, row.name);
   await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
 }

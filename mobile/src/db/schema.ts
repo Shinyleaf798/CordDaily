@@ -206,6 +206,33 @@ export const MIGRATIONS: string[][] = [
     `CREATE INDEX IF NOT EXISTS idx_transactions_title ON transactions(title);`,
   ],
 
+  // v10：占位，什么都不做。
+  //
+  // 这个位置上曾经有一组「把随机 id 改成常量」的语句（下面那段注释讲了它为什么被删）。
+  // 不能直接把数组缩短：删它的时候，开发机上的 App 已经跑过一次那一组，
+  // `user_version` 已经是 10 了；数组回到 9 的话，那台设备会被
+  // `currentVersion >= MIGRATIONS.length` 判成"已是最新"，**之后新加的每一组都不会再跑**。
+  // 留一个空组把版本号占住，后面追加的才落在 11 上，两种设备的终点才一致。
+  [],
+
+  // v11：删除墓碑。
+  //
+  // 在这之前，删掉一行就是真的删掉了——本地再也不知道"服务器上还留着一条"。
+  // 于是本地删了账单、点了备份，云端那条还在（用户报的就是这个）。
+  //
+  // 只有**已经推上去过**（synced = 1）的行才需要留墓碑：从没出门的记录，服务器压根没有它。
+  // `label` 是删的时候顺手存下来的标题/名字，只为了备份确认弹层里能列出"要删哪几条"——
+  // 行都没了，事后拼不出这个字符串。
+  [
+    `CREATE TABLE IF NOT EXISTS deleted_records (
+      kind TEXT NOT NULL CHECK (kind IN ('transaction', 'category', 'account')),
+      id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      deletedAt TEXT NOT NULL,
+      PRIMARY KEY (kind, id)
+    );`,
+  ],
+
   // 曾经有过一组 v10：把老设备上那批**随机生成**的内置分类 / 内置账户 id 改成
   // `constants/default-categories.ts` 里的常量（一百多条从常量数组生成的 UPDATE）。
   //

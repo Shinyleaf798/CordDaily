@@ -45,7 +45,7 @@ export default function AutoSyncSettingsScreen() {
 
   const handlePushNow = () => {
     setError(null);
-    pushToCloud.mutate(undefined, { onError: (pushError) => setError(describeError(pushError)) });
+    pushToCloud.mutate({}, { onError: (pushError) => setError(describeError(pushError)) });
   };
 
   return (

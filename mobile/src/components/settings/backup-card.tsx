@@ -48,7 +48,7 @@ export function BackupCard({ transactions, unsynced, lastBackupAt, onBackup, onR
         <Pressable onPress={onBackup} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
           <Ionicons name="arrow-up-circle-outline" size={18} color={theme.onCardHighlight} />
           <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-            备份
+            备份到云端
           </ThemedText>
         </Pressable>
         <Pressable onPress={onRestore} style={[styles.button, styles.ghost, { borderColor: theme.backgroundSelected }]}>
@@ -57,8 +57,10 @@ export function BackupCard({ transactions, unsynced, lastBackupAt, onBackup, onR
         </Pressable>
       </View>
 
+      {/* 说清楚这两个按钮的去处都是云端，以及文件那条在哪儿——
+          不写的话用户会在这张卡上找"导入文件"，找不到就以为功能没做 */}
       <ThemedText type="small" themeColor="textSecondary">
-        备份自带分类和账户，恢复后不会多出重复分类。
+        这两个按钮都走云端。要用文件，看下面「数据」里的导出和恢复。
       </ThemedText>
     </View>
   );

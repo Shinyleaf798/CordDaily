@@ -153,7 +153,6 @@ export default function RootLayout() {
             <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
             <Stack.Screen name="settings/auto-sync" options={{ ...ScreenTransitions.push, title: '自动同步' }} />
-            <Stack.Screen name="settings/restore" options={{ ...ScreenTransitions.push, title: '恢复数据' }} />
             <Stack.Screen name="settings/about" options={{ ...ScreenTransitions.push, title: '关于' }} />
           </Stack.Protected>
           <Stack.Protected guard={!user}>

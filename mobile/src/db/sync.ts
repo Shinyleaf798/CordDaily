@@ -1,4 +1,5 @@
 import {
+  deleteRemote,
   pushAccount,
   pushCategory,
   pushRecurring,
@@ -7,6 +8,7 @@ import {
 } from '@/api/sync';
 
 import { getDb } from './client';
+import { clearDeletion, countPendingDeletions, listPendingDeletions } from './deletions';
 import {
   AutoSyncPeriodDays,
   getAutoSyncPeriod,
@@ -33,6 +35,8 @@ export type PushResult = {
   transactions: number;
   transfers: number;
   recurring: number;
+  /** 这次在云端删掉了几条。用户没勾"同时删除"时是 0，墓碑原样留着 */
+  deletions: number;
 };
 
 /** 后端的 zod 用的是 `.optional()`，它**不接受 null**——本地那些可空列必须先把 null 摘掉 */
@@ -59,9 +63,31 @@ export async function countUnsynced(): Promise<number> {
   return row?.total ?? 0;
 }
 
-export async function pushUnsynced(): Promise<PushResult> {
+/**
+ * @param withDeletions 要不要把本地删掉的那些也在云端删掉。默认 true——
+ *   "备份"的通常含义是让云端跟本地一致。用户在确认弹层里取消勾选时传 false，
+ *   那些墓碑会**留着**等下一次：不勾等于"这次先别动云端"，不是放弃。
+ */
+export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   const db = await getDb();
-  const result: PushResult = { categories: 0, accounts: 0, transactions: 0, transfers: 0, recurring: 0 };
+  const result: PushResult = {
+    categories: 0,
+    accounts: 0,
+    transactions: 0,
+    transfers: 0,
+    recurring: 0,
+    deletions: 0,
+  };
+
+  // 删除走在最前面：本地删掉的分类可能正被云端某条老账单引用着，
+  // 而 listPendingDeletions 已经把账单排在分类和账户前面了（外键顺序）
+  if (withDeletions) {
+    for (const deletion of await listPendingDeletions()) {
+      await deleteRemote(deletion.kind, deletion.id);
+      await clearDeletion(deletion.kind, deletion.id);
+      result.deletions += 1;
+    }
+  }
 
   // 父在前、子在后：子分类的 parentId 指向父，父还没到服务器的话那一条会被打回
   const categories = await db.getAllAsync<Record<string, unknown>>(
@@ -174,7 +200,8 @@ export async function maybeAutoSync(): Promise<void> {
     if (elapsedDays < AutoSyncPeriodDays[period]) return;
   }
 
-  if ((await countUnsynced()) === 0) return;
+  // 删除也算"有东西要推"：只删过账、没记过账的那一天，云端同样该跟上
+  if ((await countUnsynced()) === 0 && (await countPendingDeletions()) === 0) return;
 
   try {
     await pushUnsynced();

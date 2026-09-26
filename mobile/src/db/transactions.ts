@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 
 import { getDb } from './client';
+import { recordDeletion } from './deletions';
 
 export type TransactionType = 'INCOME' | 'EXPENSE';
 
@@ -246,6 +247,9 @@ export async function duplicateTransaction(id: string): Promise<Transaction> {
  */
 export async function deleteTransaction(id: string): Promise<void> {
   const db = await getDb();
+  // 先立碑再删：立碑要读这一行的 synced 和标题，删完就都没了（见 db/deletions.ts）
+  const row = await db.getFirstAsync<{ title: string }>('SELECT title FROM transactions WHERE id = ?', [id]);
+  if (row) await recordDeletion('transaction', id, row.title);
   await db.runAsync('DELETE FROM transactions WHERE id = ?', [id]);
 }
 

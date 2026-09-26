@@ -53,3 +53,20 @@ export async function pushTransfers(transfers: Record<string, unknown>[]): Promi
 export async function pushRecurring(rule: Record<string, unknown>): Promise<void> {
   await apiClient.post('/recurring-transactions', rule);
 }
+
+/**
+ * 在云端删掉一条。本地删除留下的墓碑（见 db/deletions.ts）靠它兑现。
+ *
+ * **404 当成成功**：服务器上本来就没有这一条（推送前就删了、或者上次删成功但墓碑没撤掉），
+ * 那"让它不存在"这个目标已经达到了。当成失败的话，那块碑会永远撤不掉，
+ * 每次备份都在同一条上重试。
+ */
+export async function deleteRemote(kind: 'transaction' | 'category' | 'account', id: string): Promise<void> {
+  const path = { transaction: 'transactions', category: 'categories', account: 'accounts' }[kind];
+  try {
+    await apiClient.delete(`/${path}/${id}`);
+  } catch (error) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status !== 404) throw error;
+  }
+}

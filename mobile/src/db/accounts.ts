@@ -3,6 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { DEFAULT_ACCOUNTS } from '@/constants/default-categories';
 
 import { getDb } from './client';
+import { recordDeletion } from './deletions';
 
 export type AccountType = 'CASH' | 'BANK' | 'EWALLET' | 'CREDIT_CARD' | 'OTHER';
 
@@ -145,6 +146,10 @@ export async function deleteAccount(accountId: string): Promise<{ movedTransacti
 
   const movedTransactions = await countAccountTransactions(accountId);
   const now = new Date().toISOString();
+
+  // 立碑放在事务外面、删除之前：它要读这一行的 synced 和名字
+  const row = await db.getFirstAsync<{ name: string }>('SELECT name FROM accounts WHERE id = ?', [accountId]);
+  if (row) await recordDeletion('account', accountId, row.name);
 
   await db.withTransactionAsync(async () => {
     // synced 置 0：这些账单跟服务器上那份已经不一样了（换了账户），下次同步要重新推
