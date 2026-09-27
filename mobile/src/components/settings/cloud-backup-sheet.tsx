@@ -6,15 +6,28 @@ import { ModalHost } from '@/components/ui/modal-host';
 import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
+import { type PendingCounts } from '@/db/backup';
 import { describeError } from '@/db/sync';
 import { usePendingDeletions, usePushToCloud } from '@/hooks/use-backup';
 import { useTheme } from '@/hooks/use-theme';
 
 type CloudBackupSheetProps = {
-  /** 待推送的**全部**记录数（账单 + 分类 + 账户 + 转账 + 周期规则），不只是账单 */
-  unsynced: number;
+  /** 待推送的记录，按种类分开（内置分类和账户不在里面，见 db/backup.ts 的 PendingCounts） */
+  pending: PendingCounts;
+  /** 内置分类和账户里还没上过云端的条数。**不显示这个数**，只用来决定那句脚注要不要出现 */
+  builtins: number;
   onDismiss: () => void;
 };
+
+// 只列有东西的那几行：一个全零的清单除了占地方什么都不说。
+// 标签不写「我建的分类」——自带的那批由底下的脚注交代，清单里不用再自辩一次
+const KIND_ORDER: { key: keyof PendingCounts; label: string }[] = [
+  { key: 'transactions', label: '账单' },
+  { key: 'categories', label: '分类' },
+  { key: 'accounts', label: '账户' },
+  { key: 'transfers', label: '转账' },
+  { key: 'recurring', label: '周期规则' },
+];
 
 /**
  * 点「备份到云端」之后的确认层。
@@ -29,8 +42,15 @@ type CloudBackupSheetProps = {
  * 这里不再问"去云端还是导成文件"。两者被拆成了两个入口：这个按钮只管云端，
  * 导出成文件在「数据」组里单独一行——每次备份都先做一道选择题太烦，
  * 而那道题的答案几乎永远是云端。
+ *
+ * 清单**逐种类列**（账单 / 分类 / 账户 / …），只列非零的，加起来正好是卡上那个「未备份」。
+ *
+ * **App 自带的那批分类和账户不进清单，只在最底下用一句话交代**。它们不是用户能决定要不要传的
+ * 东西——云端得先有这一行，账单的外键才落得下——给它一个数字，就是请人去核对一个他管不着的数。
+ * 曾经它们是混在总数里的：空账本点进来看到"要上传的记录 30 条"，而卡上写着"全部已备份"。
+ * 但也不能只字不提，不然用户以后翻云端会发现多出一堆自己没建过的分类。
  */
-export function CloudBackupSheet({ unsynced, onDismiss }: CloudBackupSheetProps) {
+export function CloudBackupSheet({ pending, builtins, onDismiss }: CloudBackupSheetProps) {
   const theme = useTheme();
   const sheet = useSheetTransition(onDismiss, 0.75);
   const { data: deletions = [] } = usePendingDeletions();
@@ -38,7 +58,8 @@ export function CloudBackupSheet({ unsynced, onDismiss }: CloudBackupSheetProps)
   const [error, setError] = useState<string | null>(null);
 
   const pushToCloud = usePushToCloud();
-  const nothingToDo = unsynced === 0 && deletions.length === 0;
+  const lines = KIND_ORDER.filter((kind) => pending[kind.key] > 0);
+  const nothingToDo = lines.length === 0 && deletions.length === 0;
 
   const handleConfirm = () => {
     setError(null);
@@ -55,13 +76,27 @@ export function CloudBackupSheet({ unsynced, onDismiss }: CloudBackupSheetProps)
     <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
       <ModalSheet title="备份到云端" transition={sheet}>
         <ScrollView contentContainerStyle={styles.body}>
+          {/* 清单里只有用户自己的东西，这几行加起来就是卡上那个「未备份」 */}
           <View style={[styles.card, { backgroundColor: theme.background }]}>
-            <View style={styles.line}>
-              <ThemedText type="default">要上传的记录</ThemedText>
-              <ThemedText type="default" themeColor="textSecondary">
-                {unsynced} 条
-              </ThemedText>
-            </View>
+            {lines.length ? (
+              lines.map((kind) => (
+                <View key={kind.key} style={styles.line}>
+                  <ThemedText type="default">要上传的{kind.label}</ThemedText>
+                  <ThemedText type="default" themeColor="textSecondary">
+                    {pending[kind.key]} 条
+                  </ThemedText>
+                </View>
+              ))
+            ) : (
+              // 没东西要传时也得有一行，不然卡片是空的。说「账单」不说「记录」——
+              // 用户来这儿想的就是账单，"记录"是我们的词
+              <View style={styles.line}>
+                <ThemedText type="default">要上传的账单</ThemedText>
+                <ThemedText type="default" themeColor="textSecondary">
+                  0 条
+                </ThemedText>
+              </View>
+            )}
             <View style={styles.line}>
               <ThemedText type="default">要从云端删掉的</ThemedText>
               <ThemedText type="default" themeColor={deletions.length ? 'expense' : 'textSecondary'}>
@@ -129,6 +164,16 @@ export function CloudBackupSheet({ unsynced, onDismiss }: CloudBackupSheetProps)
               </ThemedText>
             )}
           </Pressable>
+
+          {/* 骨架只在这里交代一句，**不给数字**：它不是用户能决定要不要传的东西，
+              给个数字就等于请人去核对一个他管不着的数（那 30 条正是这一版要消灭的困惑）。
+              但也不能只字不提——不然以后翻云端会发现多出一堆自己没建过的分类。
+              `builtins > 0` 才显示：推完一次之后它们就在云端了，这句话也就不再成立 */}
+          {builtins > 0 && !nothingToDo ? (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.footnote}>
+              App 自带的分类和账户也会跟着一起上去——云端要先有它们，才认得出每笔账记在哪。
+            </ThemedText>
+          ) : null}
         </ScrollView>
       </ModalSheet>
     </ModalHost>
@@ -141,6 +186,8 @@ const styles = StyleSheet.create({
   body: { gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   grow: { flex: 1 },
   card: { borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
+  // 脚注往里收一点：它不是清单的一行，是整张弹层的注脚
+  footnote: { paddingHorizontal: Spacing.one, paddingBottom: Spacing.two },
   line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.three, borderRadius: 12 },
   rowText: { flex: 1, gap: 2 },

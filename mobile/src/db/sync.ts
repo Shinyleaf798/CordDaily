@@ -7,6 +7,7 @@ import {
   pushTransfers,
 } from '@/api/sync';
 
+import { getLocalStats } from './backup';
 import { getDb } from './client';
 import { clearDeletion, countPendingDeletions, listPendingDeletions } from './deletions';
 import {
@@ -51,18 +52,6 @@ async function markSynced(table: string, ids: string[]): Promise<void> {
   await db.runAsync(`UPDATE ${table} SET synced = 1 WHERE id IN (${placeholders})`, ids);
 }
 
-export async function countUnsynced(): Promise<number> {
-  const db = await getDb();
-  const row = await db.getFirstAsync<{ total: number }>(
-    `SELECT (SELECT COUNT(*) FROM transactions WHERE synced = 0)
-          + (SELECT COUNT(*) FROM categories WHERE synced = 0)
-          + (SELECT COUNT(*) FROM accounts WHERE synced = 0)
-          + (SELECT COUNT(*) FROM transfers WHERE synced = 0)
-          + (SELECT COUNT(*) FROM recurring_transactions WHERE synced = 0) AS total`,
-  );
-  return row?.total ?? 0;
-}
-
 /**
  * @param withDeletions 要不要把本地删掉的那些也在云端删掉。默认 true——
  *   "备份"的通常含义是让云端跟本地一致。用户在确认弹层里取消勾选时传 false，
@@ -89,7 +78,11 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     }
   }
 
-  // 父在前、子在后：子分类的 parentId 指向父，父还没到服务器的话那一条会被打回
+  // 父在前、子在后：子分类的 parentId 指向父，父还没到服务器的话那一条会被打回。
+  //
+  // 这里**不筛掉内置分类**，尽管 getLocalStats 不把它们算进「未备份」：
+  // 服务器上 Category 是 `@@id([userId, id])`，每个用户都得有自己那一行，
+  // 账单的外键才落得下。它们是骨架，跟着账单一起上去，只是不占用户看到的计数。
   const categories = await db.getAllAsync<Record<string, unknown>>(
     `SELECT id, name, icon, type, parentId, sortOrder, isActive FROM categories
      WHERE synced = 0 ORDER BY parentId IS NOT NULL, sortOrder`,
@@ -200,8 +193,11 @@ export async function maybeAutoSync(): Promise<void> {
     if (elapsedDays < AutoSyncPeriodDays[period]) return;
   }
 
-  // 删除也算"有东西要推"：只删过账、没记过账的那一天，云端同样该跟上
-  if ((await countUnsynced()) === 0 && (await countPendingDeletions()) === 0) return;
+  // 删除也算"有东西要推"：只删过账、没记过账的那一天，云端同样该跟上。
+  // 用 unsyncedTotal 而不是"所有 synced = 0 的行"：装完 App 就有的那 30 行内置分类和账户
+  // 不该让自动同步在用户一笔账都没记的时候空跑一趟（见 db/backup.ts 的 PendingCounts）
+  const { unsyncedTotal } = await getLocalStats();
+  if (unsyncedTotal === 0 && (await countPendingDeletions()) === 0) return;
 
   try {
     await pushUnsynced();

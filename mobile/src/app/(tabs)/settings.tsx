@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,7 +14,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenPadding, Spacing } from '@/constants/theme';
 import { fetchCloudBundle } from '@/api/sync';
-import { parseBundle, type BackupBundle } from '@/db/backup';
+import { parseBundle, type BackupBundle, type ImportSource, type PendingCounts } from '@/db/backup';
 import { pickBackupFile } from '@/db/backup-file';
 import { AutoSyncPeriodLabels } from '@/db/settings';
 import { useAutoSyncPeriod, useBackupState, useLocalStats } from '@/hooks/use-backup';
@@ -32,7 +33,17 @@ import { useAuthStore } from '@/store/auth.store';
  * 备份卡放在网格**下面**而不是上面：它紧挨着「数据」那一组，
  * 状态（三个数字）和它的两个二级入口连成一段，读起来是一件事。
  */
-type RestoreSource = { label: string; load: () => Promise<BackupBundle> };
+type RestoreSource = { label: string; load: () => Promise<BackupBundle>; source: ImportSource };
+
+// 取数还没回来时给确认层一份全零：它自己会显示成「云端已经是最新的」并且禁用按钮，
+// 比先闪一个错的数字好
+const EMPTY_PENDING: PendingCounts = {
+  transactions: 0,
+  categories: 0,
+  accounts: 0,
+  transfers: 0,
+  recurring: 0,
+};
 
 export default function SettingsScreen() {
   const user = useAuthStore((state) => state.user);
@@ -57,11 +68,11 @@ export default function SettingsScreen() {
     try {
       const picked = await pickBackupFile();
       if (!picked) return;
-      setRestoreSource({ label: picked.name, load: () => parseBundle(picked.text) });
+      setRestoreSource({ label: picked.name, load: () => parseBundle(picked.text), source: 'file' });
     } catch (error) {
       // 选择器自己出问题（极少）：把这条错误交给恢复层去显示，不在这一页另做一套错误 UI
       const message = (error as Error).message;
-      setRestoreSource({ label: '文件', load: () => Promise.reject(new Error(message)) });
+      setRestoreSource({ label: '文件', load: () => Promise.reject(new Error(message)), source: 'file' });
     }
   };
 
@@ -88,19 +99,22 @@ export default function SettingsScreen() {
 
           <BackupCard
             transactions={stats?.transactions ?? 0}
-            unsynced={stats?.unsynced ?? 0}
+            unsynced={stats?.unsyncedTotal ?? 0}
             lastBackupAt={lastBackupAt}
+            isSignedIn={!!user}
+            onSignIn={() => router.push('/login')}
             onBackup={() => setSheet('backup')}
-            onRestore={() => setRestoreSource({ label: '云端', load: fetchCloudBundle })}
+            onRestore={() => setRestoreSource({ label: '云端', load: fetchCloudBundle, source: 'cloud' })}
           />
 
           <SettingsSection label="数据">
             <SettingsRow
               icon="cloud-outline"
               label="自动同步"
-              hint="打开 App 时检查，只上传、不下载"
-              value={AutoSyncPeriodLabels[autoSyncPeriod ?? 'off']}
-              href="/settings/auto-sync"
+              hint={user ? '打开 App 时检查，只上传、不下载' : '登录后可用'}
+              value={user ? AutoSyncPeriodLabels[autoSyncPeriod ?? 'off'] : undefined}
+              // 没登录就直接去登录页：进到一个按了也不会生效的开关面前更让人困惑
+              href={user ? '/settings/auto-sync' : '/login'}
             />
             {/* 导出成文件从「备份」里拆出来单独站一行。恢复不在这里再开一个门——
                 它就是卡上那个「恢复」，同一个页面开两扇门会被当成两个功能 */}
@@ -124,7 +138,7 @@ export default function SettingsScreen() {
             <SettingsRow
               icon="person-outline"
               label="账号"
-              hint={user?.email}
+              hint={user?.email ?? '未登录 · 登录后才能用云端备份'}
               href="/settings/account"
             />
             <SettingsRow icon="information-circle-outline" label="关于" href="/settings/about" />
@@ -138,12 +152,17 @@ export default function SettingsScreen() {
           读一下、把将要发生的事逐条列出来、按一个确认。
           文件那两条在「数据」组里：导出是弹层，从文件恢复是路由（要弹系统文件选择器） */}
       {sheet === 'backup' ? (
-        <CloudBackupSheet unsynced={stats?.unsyncedTotal ?? 0} onDismiss={() => setSheet(null)} />
+        <CloudBackupSheet
+          pending={stats?.pending ?? EMPTY_PENDING}
+          builtins={stats?.pendingBuiltins ?? 0}
+          onDismiss={() => setSheet(null)}
+        />
       ) : null}
       {restoreSource ? (
         <RestoreSheet
           sourceLabel={restoreSource.label}
           load={restoreSource.load}
+          source={restoreSource.source}
           onDismiss={() => setRestoreSource(null)}
         />
       ) : null}

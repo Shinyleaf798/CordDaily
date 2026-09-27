@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 
+import { RestorePrompt } from '@/components/settings/restore-prompt';
 import { ScreenTransitions } from '@/constants/screen-transitions';
 import { ThemeScheme } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -103,9 +104,12 @@ export default function RootLayout() {
         {/* JS 栈，不是默认那份原生栈：原生栈 pop 时路由当场从 state.routes 移除、React 立刻卸载，
             而原生层还在播动画，滑走的是个空壳（NativeStackView.js:53-54）。JS 栈用 closingRouteKeys
             留到动画播完才移除，顺带动画也变成可以自己写的（见 DECISIONS.md 2026-09-17）。 */}
+        {/* 没有 Stack.Protected 了：**不登录也能记账**。
+            本地 SQLite 本来就是唯一的录入源头（CLAUDE.md 原则#1），登录只为一件事——
+            把账推到云端。为了一个可选功能把整个 App 挡在登录页后面，是本末倒置。
+            登录/注册从「我的 → 账号」进，跟其它二级页一样 push 进来。 */}
         <Stack>
-          <Stack.Protected guard={!!user}>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             {/* 记一笔从右滑入、保存后原路滑回右边（见 ScreenTransitions.push 的注释）。
                 返回动画不用单独配：slide_from_right 的出场本来就是它的逆过程。
 
@@ -154,12 +158,13 @@ export default function RootLayout() {
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
             <Stack.Screen name="settings/auto-sync" options={{ ...ScreenTransitions.push, title: '自动同步' }} />
             <Stack.Screen name="settings/about" options={{ ...ScreenTransitions.push, title: '关于' }} />
-          </Stack.Protected>
-          <Stack.Protected guard={!user}>
-            <Stack.Screen name="login" options={ScreenTransitions.crossFade} />
-            <Stack.Screen name="register" options={ScreenTransitions.crossFade} />
-          </Stack.Protected>
+            <Stack.Screen name="login" options={{ ...ScreenTransitions.push, title: '登录' }} />
+            <Stack.Screen name="register" options={{ ...ScreenTransitions.push, title: '注册' }} />
         </Stack>
+
+        {/* 挂在 Stack 外面：它是一层盖在任何页面之上的问句，不属于任何一个路由。
+            三个条件同时成立时才出现（登录了 + 本地空库 + 云端有账），平时它 return null */}
+        <RestorePrompt />
       </ThemeProvider>
     </QueryClientProvider>
   );

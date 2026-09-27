@@ -6,7 +6,13 @@ import { ModalHost } from '@/components/ui/modal-host';
 import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
-import { planImport, type BackupBundle, type ImportPlan, type ImportResult } from '@/db/backup';
+import {
+  planImport,
+  type BackupBundle,
+  type ImportPlan,
+  type ImportResult,
+  type ImportSource,
+} from '@/db/backup';
 import { describeError } from '@/db/sync';
 import { useApplyImport } from '@/hooks/use-backup';
 import { useTheme } from '@/hooks/use-theme';
@@ -16,6 +22,8 @@ type RestoreSheetProps = {
   sourceLabel: string;
   /** 把 bundle 拿到手。云端是一个 GET，文件是 parseBundle(已经读进来的文本) */
   load: () => Promise<BackupBundle>;
+  /** 云端来的行直接标成"已备份"——它们本来就是从服务器拉下来的（见 db/backup.ts 的 applyImport） */
+  source: ImportSource;
   onDismiss: () => void;
 };
 
@@ -35,7 +43,7 @@ type RestoreSheetProps = {
  *
  * 一打开就开始读，不用再点一次"开始"——用户点「恢复」/ 选完文件时已经表达过这个意思了。
  */
-export function RestoreSheet({ sourceLabel, load, onDismiss }: RestoreSheetProps) {
+export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSheetProps) {
   const theme = useTheme();
   const sheet = useSheetTransition(onDismiss, 0.8);
   const applyImport = useApplyImport();
@@ -66,7 +74,7 @@ export function RestoreSheet({ sourceLabel, load, onDismiss }: RestoreSheetProps
     if (!plan) return;
     setError(null);
     applyImport.mutate(
-      { plan },
+      { plan, source },
       {
         onSuccess: (applied) => setResult(applied),
         onError: (applyError) => setError((applyError as Error).message),

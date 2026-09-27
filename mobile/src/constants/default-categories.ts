@@ -116,17 +116,28 @@ export const DEFAULT_ACCOUNTS = {
   cash: { id: '76ee66a4-724c-41c1-aca5-72e21281ab89', name: '现金' },
 } as const;
 
-/** 拍平成一维，给迁移和备份逻辑用 */
-export const DEFAULT_CATEGORIES_FLAT: { id: string; name: string; type: 'INCOME' | 'EXPENSE'; parentId: string | null }[] =
-  DEFAULT_CATEGORIES.flatMap((category) => [
-    { id: category.id, name: category.name, type: category.type, parentId: null },
-    ...(category.children ?? []).map((child) => ({
-      id: child.id,
-      name: child.name,
-      type: category.type,
-      parentId: category.id,
-    })),
-  ]);
+/**
+ * 拍平成一维，给迁移和备份逻辑用。
+ *
+ * 带上 `icon` 是因为 `db/backup.ts` 要拿它跟库里那一行逐字段比——
+ * 判断某个内置分类"还是不是出厂的样子"，那个判断决定它算骨架还是算用户自己的数据。
+ */
+export const DEFAULT_CATEGORIES_FLAT: {
+  id: string;
+  name: string;
+  icon: string;
+  type: 'INCOME' | 'EXPENSE';
+  parentId: string | null;
+}[] = DEFAULT_CATEGORIES.flatMap((category) => [
+  { id: category.id, name: category.name, icon: category.icon, type: category.type, parentId: null },
+  ...(category.children ?? []).map((child) => ({
+    id: child.id,
+    name: child.name,
+    icon: child.icon,
+    type: category.type,
+    parentId: category.id,
+  })),
+]);
 
 /** 这个 id 是不是内置的。目前只有备份的统计口径用得上，判断逻辑本身不改变任何行为 */
 export function isBuiltinCategoryId(id: string): boolean {

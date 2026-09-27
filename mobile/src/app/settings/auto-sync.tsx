@@ -41,7 +41,8 @@ export default function AutoSyncSettingsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const isOn = period !== 'off';
-  const unsynced = stats?.unsynced ?? 0;
+  // 跟备份卡、备份确认层同一个口径：待推送的全部记录，内置分类和账户不算（见 db/backup.ts）
+  const unsynced = stats?.unsyncedTotal ?? 0;
 
   const handlePushNow = () => {
     setError(null);
@@ -102,7 +103,7 @@ export default function AutoSyncSettingsScreen() {
             </ThemedText>
             <Line label="上次备份到云端" value={backupState?.lastCloudBackupAt ? formatMoment(backupState.lastCloudBackupAt) : '从没'} />
             <Line label="上次导出成文件" value={backupState?.lastFileBackupAt ? formatMoment(backupState.lastFileBackupAt) : '从没'} />
-            <Line label="未备份" value={`${stats?.unsynced ?? 0} 笔`} />
+            <Line label="未备份" value={`${unsynced} 条`} />
             <Line label="这台手机的账单" value={`${stats?.transactions ?? 0} 笔`} />
           </View>
 
@@ -140,7 +141,7 @@ export default function AutoSyncSettingsScreen() {
               <ActivityIndicator color={theme.onCardHighlight} />
             ) : (
               <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-                {unsynced === 0 ? '没有需要上传的记录' : `立即备份 ${unsynced} 笔`}
+                {unsynced === 0 ? '没有需要上传的记录' : `立即备份 ${unsynced} 条`}
               </ThemedText>
             )}
           </Pressable>

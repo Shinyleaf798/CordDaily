@@ -1,12 +1,11 @@
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput } from 'react-native';
+import { ActivityIndicator, Pressable, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import * as authApi from '@/api/auth';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore } from '@/store/auth.store';
 import { authScreenStyles as styles } from '@/components/auth/auth-screen.styles';
@@ -26,6 +25,13 @@ export default function LoginScreen() {
     try {
       const session = await authApi.login(email.trim(), password);
       await setSession(session);
+      // 原来这里什么都不用做：那道 Stack.Protected 的门会自己换屏。
+      // 现在登录只是一个普通的二级页，成功之后得自己走人。
+      //
+      // dismissAll 而不是 back：这一层上面可能还压着别的（注册页是从登录页再 push 的），
+      // back 一次只会退回那张表单。一路收回到底下的 tab，顺带让「我的」页立刻显示登录后的样子
+      if (router.canDismiss()) router.dismissAll();
+      else router.back();
     } catch (err: any) {
       setError(err?.response?.data?.error?.message ?? 'Login failed, please try again');
     } finally {

@@ -7,10 +7,15 @@ import { useTheme } from '@/hooks/use-theme';
 
 type BackupCardProps = {
   transactions: number;
+  /** 待备份的条数。跟备份确认层里那份清单是**同一个口径**（`LocalStats.unsyncedTotal`）：
+   *  这里说"全部已备份"、点进去却列出一堆要上传的，比数字大一点更让人不信任 */
   unsynced: number;
   lastBackupAt: string | null;
+  /** 没登录时这张卡只剩三个数字和一个「去登录」——云端那两件事没有账号做不了 */
+  isSignedIn: boolean;
   onBackup: () => void;
   onRestore: () => void;
+  onSignIn: () => void;
 };
 
 /**
@@ -23,7 +28,15 @@ type BackupCardProps = {
  * 这张卡**不能折叠、不能挪到二级页**：自动同步默认关着、开了也可能失败，
  * 「还有 12 笔没备份」是用户唯一的安全绳。
  */
-export function BackupCard({ transactions, unsynced, lastBackupAt, onBackup, onRestore }: BackupCardProps) {
+export function BackupCard({
+  transactions,
+  unsynced,
+  lastBackupAt,
+  isSignedIn,
+  onBackup,
+  onRestore,
+  onSignIn,
+}: BackupCardProps) {
   const theme = useTheme();
   const hasPending = unsynced > 0;
 
@@ -33,7 +46,7 @@ export function BackupCard({ transactions, unsynced, lastBackupAt, onBackup, onR
         <ThemedText type="default">备份</ThemedText>
         <View style={[styles.pill, { borderColor: hasPending ? theme.cardHighlight : theme.backgroundSelected }]}>
           <ThemedText type="small" style={{ color: hasPending ? theme.cardHighlight : theme.textSecondary }}>
-            {hasPending ? `${unsynced} 笔未备份` : '全部已备份'}
+            {hasPending ? `${unsynced} 条未备份` : '全部已备份'}
           </ThemedText>
         </View>
       </View>
@@ -44,23 +57,35 @@ export function BackupCard({ transactions, unsynced, lastBackupAt, onBackup, onR
         <Stat label="上次备份" value={lastBackupAt ? formatDay(lastBackupAt) : '从没'} />
       </View>
 
-      <View style={styles.buttons}>
-        <Pressable onPress={onBackup} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
-          <Ionicons name="arrow-up-circle-outline" size={18} color={theme.onCardHighlight} />
+      {isSignedIn ? (
+        <View style={styles.buttons}>
+          <Pressable onPress={onBackup} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
+            <Ionicons name="arrow-up-circle-outline" size={18} color={theme.onCardHighlight} />
+            <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
+              备份到云端
+            </ThemedText>
+          </Pressable>
+          <Pressable onPress={onRestore} style={[styles.button, styles.ghost, { borderColor: theme.backgroundSelected }]}>
+            <Ionicons name="arrow-down-circle-outline" size={18} color={theme.text} />
+            <ThemedText type="default">恢复</ThemedText>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable onPress={onSignIn} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
+          <Ionicons name="log-in-outline" size={18} color={theme.onCardHighlight} />
           <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-            备份到云端
+            登录后备份到云端
           </ThemedText>
         </Pressable>
-        <Pressable onPress={onRestore} style={[styles.button, styles.ghost, { borderColor: theme.backgroundSelected }]}>
-          <Ionicons name="arrow-down-circle-outline" size={18} color={theme.text} />
-          <ThemedText type="default">恢复</ThemedText>
-        </Pressable>
-      </View>
+      )}
 
       {/* 说清楚这两个按钮的去处都是云端，以及文件那条在哪儿——
-          不写的话用户会在这张卡上找"导入文件"，找不到就以为功能没做 */}
+          不写的话用户会在这张卡上找"导入文件"，找不到就以为功能没做。
+          没登录时更要说：文件那条**不需要账号**，现在就能用 */}
       <ThemedText type="small" themeColor="textSecondary">
-        这两个按钮都走云端。要用文件，看下面「数据」里的导出和恢复。
+        {isSignedIn
+          ? '这两个按钮都走云端。要用文件，看下面「数据」里的导出和恢复。'
+          : '不登录也能记账。下面「数据」里的导出成文件和从文件恢复，现在就能用。'}
       </ThemedText>
     </View>
   );

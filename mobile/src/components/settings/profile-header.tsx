@@ -25,8 +25,11 @@ type ProfileHeaderProps = {
 export function ProfileHeader({ email, transactionCount, firstTransactionDate }: ProfileHeaderProps) {
   const theme = useTheme();
 
-  const name = email?.split('@')[0] ?? '我';
-  const initial = (name[0] ?? '?').toUpperCase();
+  // 没登录也照样记账（见根布局那段注释），所以这一条要能表达"还没登录"这个状态，
+  // 而不是拿一个假名字糊过去
+  const isSignedIn = !!email;
+  const name = email?.split('@')[0] ?? '未登录';
+  const initial = isSignedIn ? name[0].toUpperCase() : '·';
 
   const days = firstTransactionDate ? daysSince(firstTransactionDate) : null;
 
@@ -44,15 +47,13 @@ export function ProfileHeader({ email, transactionCount, firstTransactionDate }:
         <ThemedText type="default" numberOfLines={1}>
           {name}
         </ThemedText>
-        {days !== null ? (
-          <ThemedText type="small" themeColor="textSecondary">
-            记账第 {days} 天 · 共 {transactionCount} 笔
-          </ThemedText>
-        ) : (
-          <ThemedText type="small" themeColor="textSecondary">
-            还没有账单，去记第一笔吧
-          </ThemedText>
-        )}
+        <ThemedText type="small" themeColor="textSecondary">
+          {!isSignedIn
+            ? '登录后可以把账备份到云端'
+            : days !== null
+              ? `记账第 ${days} 天 · 共 ${transactionCount} 笔`
+              : '还没有账单，去记第一笔吧'}
+        </ThemedText>
       </View>
 
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />

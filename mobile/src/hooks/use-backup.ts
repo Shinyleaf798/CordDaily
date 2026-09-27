@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchCloudSummary } from '@/api/sync';
-import { applyImport, getLocalStats, type BackupRange, type ImportPlan } from '@/db/backup';
+import {
+  applyImport,
+  getLocalStats,
+  type BackupRange,
+  type ImportPlan,
+  type ImportSource,
+} from '@/db/backup';
 import { listPendingDeletions } from '@/db/deletions';
 import { pushUnsynced } from '@/db/sync';
 import { exportToFile, type ExportFormat } from '@/db/backup-file';
@@ -42,8 +48,15 @@ export function useSetAutoSyncPeriod() {
 export function useApplyImport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ plan, choices }: { plan: ImportPlan; choices?: Record<string, string> }) =>
-      applyImport(plan, choices ?? {}),
+    mutationFn: ({
+      plan,
+      choices,
+      source,
+    }: {
+      plan: ImportPlan;
+      choices?: Record<string, string>;
+      source: ImportSource;
+    }) => applyImport(plan, choices ?? {}, source),
     onSuccess: () => queryClient.invalidateQueries(),
   });
 }

@@ -1,3 +1,5 @@
+import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES_FLAT } from '@/constants/default-categories';
+
 import { getDb } from './client';
 import { getOverallBudget, setOverallBudget } from './budgets';
 
@@ -14,6 +16,12 @@ import { getOverallBudget, setOverallBudget } from './budgets';
  * **干跑和落库共用一份计划**：`planImport` 产出的 `ImportPlan` 既喂给预览页显示数字，
  * 也原样交给 `applyImport` 执行。分两套实现，预览上承诺的数字和实际写进去的迟早对不上。
  */
+
+/**
+ * 这份包从哪来。影响的只有一件事：写进本地库的行算不算"已经备份过"
+ * （见 applyImport）。除此之外恢复的每一步都跟来源无关——一份格式，两个来源。
+ */
+export type ImportSource = 'cloud' | 'file';
 
 export const BACKUP_FORMAT = 'corddaily-backup' as const;
 export const BACKUP_FORMAT_VERSION = 1;
@@ -57,7 +65,8 @@ export type BackupBundle = {
 };
 
 // `synced` 是纯本地的一个标记（0 = 还没备份过），不该写进包里：
-// 它描述的是"这台手机跟服务器的关系"，换一台手机之后这个关系要重新算（恢复完一律置 0）
+// 它描述的是"这台手机跟服务器的关系"，换一台手机之后这个关系要重新算
+// （恢复时按包的来源重新定，见 applyImport 的 source 参数）
 const STRIP = 'synced';
 
 function stripLocalFields<T extends Record<string, unknown>>(row: T): T {
@@ -71,16 +80,54 @@ async function getSchemaVersion(): Promise<number> {
   return row?.user_version ?? 0;
 }
 
+/**
+ * 待推送的记录，按种类分开。
+ *
+ * **原封不动的内置分类和账户不算在里面。** 13 个一级 + 15 个子分类 + 2 个账户，
+ * 每台设备装完就有、id 还是写死的同一批（constants/default-categories.ts）。
+ * 把它们计进去的后果，是一个字都没记过的新用户打开备份层看到「要上传的记录 30 条」——
+ * 数字没错，但它回答的不是用户问的那个问题（"我有多少东西还没上去"）。
+ *
+ * 它们照样会被推上去（服务器那边得先有这一行，账单的外键才落得下），
+ * 只是作为**骨架**跟着账单一起走，不占用户的计数。见 db/sync.ts 里推分类那一段。
+ *
+ * **但"改过的内置分类"要算。** 把「餐饮」改名成「吃饭」、把「社交」停用，这就是用户自己的数据了，
+ * 只是恰好住在一个内置 id 上。按 id 一刀切排除的话，只做过这一件事的用户会看到
+ * 「云端已经是最新的」+ 灰掉的按钮，那个改名**永远推不上去**（自动同步同样会跳过）——
+ * 一个为了数字好看而制造出来的死角。所以这里跟出厂值逐字段比对，改过的算用户的。
+ */
+export type PendingCounts = {
+  transactions: number;
+  /** 用户自己建的，加上**被改过**的内置分类 */
+  categories: number;
+  accounts: number;
+  transfers: number;
+  recurring: number;
+};
+
 export type LocalStats = {
   transactions: number;
-  /** 还没备份过的**账单**笔数（`synced = 0`）。卡上那个「未备份」显示的是它——
-   *  跟旁边的「本地账单」同一个口径，两个数才能放在一起读 */
+  /** 还没备份过的**账单**笔数（`synced = 0`）。 */
   unsynced: number;
-  /** 连分类、账户、转账、周期规则一起算的待推送条数。备份确认层说「要上传 N 条记录」用它 */
+  /** 按种类分开的待推送数，备份确认层逐行列出来用 */
+  pending: PendingCounts;
+  /** `pending` 五项之和。卡上那个「未备份」和确认层的总数用它 */
   unsyncedTotal: number;
+  /** 还没上过云端、而且**一个字都没被改过**的内置分类和账户。不计进 unsyncedTotal，
+   *  数字也不显示——只用来决定备份确认层底下那句脚注要不要出现 */
+  pendingBuiltins: number;
   /** 最早一笔账的日期，用来算「记账第 N 天」。一笔都没有时是 null，那一行就不显示 */
   firstTransactionDate: string | null;
 };
+
+const BUILTIN_CATEGORY_IDS = DEFAULT_CATEGORIES_FLAT.map((category) => category.id);
+const BUILTIN_ACCOUNT_IDS = Object.values(DEFAULT_ACCOUNTS).map((account) => account.id);
+const SHIPPED_CATEGORIES = new Map(DEFAULT_CATEGORIES_FLAT.map((category) => [category.id, category]));
+// 显式给 key 标 string：DEFAULT_ACCOUNTS 是 as const，不标的话 key 的类型会窄成那两个字面量 id
+const SHIPPED_ACCOUNTS = new Map<string, { id: string; name: string }>(
+  Object.values(DEFAULT_ACCOUNTS).map((account) => [account.id, account]),
+);
+const placeholders = (ids: string[]) => ids.map(() => '?').join(',');
 
 export async function getLocalStats(): Promise<LocalStats> {
   const db = await getDb();
@@ -88,24 +135,101 @@ export async function getLocalStats(): Promise<LocalStats> {
     total: number;
     unsynced: number;
     firstDate: string | null;
-    unsyncedTotal: number;
+    pendingTransactions: number;
+    pendingCategories: number;
+    pendingAccounts: number;
+    pendingTransfers: number;
+    pendingRecurring: number;
   }>(
     `SELECT COUNT(*) AS total,
             SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) AS unsynced,
             MIN(date) AS firstDate,
-            (SELECT COUNT(*) FROM transactions WHERE synced = 0)
-          + (SELECT COUNT(*) FROM categories WHERE synced = 0)
-          + (SELECT COUNT(*) FROM accounts WHERE synced = 0)
-          + (SELECT COUNT(*) FROM transfers WHERE synced = 0)
-          + (SELECT COUNT(*) FROM recurring_transactions WHERE synced = 0) AS unsyncedTotal
+            (SELECT COUNT(*) FROM transactions WHERE synced = 0) AS pendingTransactions,
+            (SELECT COUNT(*) FROM categories
+              WHERE synced = 0 AND id NOT IN (${placeholders(BUILTIN_CATEGORY_IDS)})) AS pendingCategories,
+            (SELECT COUNT(*) FROM accounts
+              WHERE synced = 0 AND id NOT IN (${placeholders(BUILTIN_ACCOUNT_IDS)})) AS pendingAccounts,
+            (SELECT COUNT(*) FROM transfers WHERE synced = 0) AS pendingTransfers,
+            (SELECT COUNT(*) FROM recurring_transactions WHERE synced = 0) AS pendingRecurring
        FROM transactions`,
+    [...BUILTIN_CATEGORY_IDS, ...BUILTIN_ACCOUNT_IDS],
   );
+
+  // 内置的那批单独捞出来分两拨：原封不动的是骨架，改过的算用户自己的数据。
+  // 放在 JS 里比而不是写进 SQL：要比的是"跟出厂值一不一样"，而出厂值在常量文件里
+  const { edited: editedCategories, untouched: untouchedCategories } = splitBuiltins(
+    await db.getAllAsync<BuiltinCategoryRow>(
+      `SELECT id, name, icon, parentId, isActive FROM categories
+        WHERE synced = 0 AND id IN (${placeholders(BUILTIN_CATEGORY_IDS)})`,
+      BUILTIN_CATEGORY_IDS,
+    ),
+    isCategoryAsShipped,
+  );
+  const { edited: editedAccounts, untouched: untouchedAccounts } = splitBuiltins(
+    await db.getAllAsync<BuiltinAccountRow>(
+      `SELECT id, name, openingBalance FROM accounts
+        WHERE synced = 0 AND id IN (${placeholders(BUILTIN_ACCOUNT_IDS)})`,
+      BUILTIN_ACCOUNT_IDS,
+    ),
+    isAccountAsShipped,
+  );
+
+  const pending: PendingCounts = {
+    transactions: row?.pendingTransactions ?? 0,
+    categories: (row?.pendingCategories ?? 0) + editedCategories,
+    accounts: (row?.pendingAccounts ?? 0) + editedAccounts,
+    transfers: row?.pendingTransfers ?? 0,
+    recurring: row?.pendingRecurring ?? 0,
+  };
+
   return {
     transactions: row?.total ?? 0,
     unsynced: row?.unsynced ?? 0,
-    unsyncedTotal: row?.unsyncedTotal ?? 0,
+    pending,
+    unsyncedTotal: Object.values(pending).reduce((sum, count) => sum + count, 0),
+    pendingBuiltins: untouchedCategories + untouchedAccounts,
     firstTransactionDate: row?.firstDate ?? null,
   };
+}
+
+type BuiltinCategoryRow = {
+  id: string;
+  name: string;
+  icon: string | null;
+  parentId: string | null;
+  isActive: number;
+};
+type BuiltinAccountRow = { id: string; name: string; openingBalance: number };
+
+function splitBuiltins<T>(rows: T[], isAsShipped: (row: T) => boolean) {
+  const untouched = rows.filter(isAsShipped).length;
+  return { edited: rows.length - untouched, untouched };
+}
+
+/**
+ * 这一行还跟出厂时一模一样吗。
+ *
+ * **不比 sortOrder**：拖动排序也会置 `synced = 0`，但只拖过顺序、别的什么都没做，
+ * 算不算"我有东西还没备份"很难说得清，而顺序本身会跟着下一次推送一起上去
+ * （`pushUnsynced` 推的是所有 `synced = 0` 的行，不看这里的计数）。
+ * 比它的代价是得在这里重算一遍灌种子时的序号规则——两份规则迟早分叉。
+ */
+function isCategoryAsShipped(row: BuiltinCategoryRow): boolean {
+  const shipped = SHIPPED_CATEGORIES.get(row.id);
+  if (!shipped) return false;
+  return (
+    row.name === shipped.name &&
+    row.icon === shipped.icon &&
+    (row.parentId ?? null) === shipped.parentId &&
+    row.isActive === 1
+  );
+}
+
+// 账户只比用户能改的那两样：界面上 type 和 currency 是只读的（见 accounts.ts 的 updateAccount）
+function isAccountAsShipped(row: BuiltinAccountRow): boolean {
+  const shipped = SHIPPED_ACCOUNTS.get(row.id);
+  if (!shipped) return false;
+  return row.name === shipped.name && row.openingBalance === 0;
 }
 
 export type BackupRange = { from?: string; to?: string };
@@ -397,9 +521,22 @@ export type ImportResult = {
  *
  * `choices` 是对照页的结果：来源分类 id → 本地分类 id。没给的按 plan 里算好的走。
  */
-export async function applyImport(plan: ImportPlan, choices: Record<string, string> = {}): Promise<ImportResult> {
+/**
+ * @param source 这份包从哪来，决定写进去的行算不算"已经备份过"。
+ *   **云端来的一律算已备份**（`synced = 1`）：它们本来就是从这个账号的服务器上拉下来的，
+ *   再当成"待上传"的话，恢复完 2 笔账，备份卡立刻显示「2 条未备份」，
+ *   点进去还能把刚下载的东西再上传一遍——一个自己跟自己较劲的循环。
+ *   **文件来的算没备份过**（`synced = 0`）：一个 .json 文件说明不了服务器上有没有这些行，
+ *   宁可多推一次也不能漏——服务器按 id 幂等去重，推重了不会变两份（CLAUDE.md 原则#2）。
+ */
+export async function applyImport(
+  plan: ImportPlan,
+  choices: Record<string, string> = {},
+  source: ImportSource = 'file',
+): Promise<ImportResult> {
   const db = await getDb();
   const { bundle } = plan;
+  const synced = source === 'cloud' ? 1 : 0;
 
   const idMap = new Map<string, string>();
   for (const resolution of plan.categories) {
@@ -435,18 +572,28 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
     // 分类：父必须先落地，子的 parentId 才有指向。bundle 里已经是父在前，
     // 这里再排一次是为了不依赖来源的顺序（手改过的文件、以后换个服务器实现都可能乱序）
     const ordered = [...bundle.categories].sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId));
-    for (const source of ordered) {
-      const resolution = plan.categories.find((item) => item.source.id === source.id);
+    // 循环变量叫 row 不叫 source：source 现在是函数参数（这份包从哪来）
+    for (const row of ordered) {
+      const resolution = plan.categories.find((item) => item.source.id === row.id);
       if (!resolution) continue;
 
-      const targetId = idMap.get(source.id) ?? source.id;
-      const parentId = source.parentId ? (idMap.get(source.parentId) ?? source.parentId) : null;
+      const targetId = idMap.get(row.id) ?? row.id;
+      const parentId = row.parentId ? (idMap.get(row.parentId) ?? row.parentId) : null;
 
-      if (resolution.action === 'create' && !choices[source.id]) {
+      if (resolution.action === 'create' && !choices[row.id]) {
         await db.runAsync(
           `INSERT OR IGNORE INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-          [targetId, source.name, source.icon, source.type, parentId, source.sortOrder ?? 0, source.isActive ?? 1],
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            targetId,
+            row.name,
+            row.icon,
+            row.type,
+            parentId,
+            row.sortOrder ?? 0,
+            row.isActive ?? 1,
+            synced,
+          ],
         );
         result.categories += 1;
         continue;
@@ -457,8 +604,8 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
       // 库里已经有账的时候反过来——本地是用户当下在用的，不能被一份旧备份改写
       if (resolution.action === 'exists' && plan.adoptWholesale) {
         await db.runAsync(
-          `UPDATE categories SET name = ?, icon = ?, parentId = ?, sortOrder = ?, isActive = ?, synced = 0 WHERE id = ?`,
-          [source.name, source.icon, parentId, source.sortOrder ?? 0, source.isActive ?? 1, targetId],
+          `UPDATE categories SET name = ?, icon = ?, parentId = ?, sortOrder = ?, isActive = ?, synced = ? WHERE id = ?`,
+          [row.name, row.icon, parentId, row.sortOrder ?? 0, row.isActive ?? 1, synced, targetId],
         );
       }
     }
@@ -468,7 +615,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
       if (localAccountIds.has(targetId) || localAccountByName.has(account.name)) continue;
       await db.runAsync(
         `INSERT OR IGNORE INTO accounts (id, name, type, currency, openingBalance, icon, createdAt, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           targetId,
           account.name,
@@ -477,6 +624,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
           account.openingBalance ?? 0,
           account.icon ?? null,
           account.createdAt ?? new Date().toISOString(),
+          synced,
         ],
       );
       result.accounts += 1;
@@ -490,14 +638,13 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
       const categoryId = idMap.get(transaction.categoryId) ?? transaction.categoryId;
       const accountId = accountMap.get(transaction.accountId) ?? transaction.accountId;
 
-      // synced 一律 0：这些记录对这台手机来说都"还没备份过"。就算它们在旧手机上推过，
-      // 再推一次也不会变两份——服务器按 id 幂等去重（CLAUDE.md 原则#2）
+      // synced 跟着来源走，见函数头上那段
       await db.runAsync(
         `INSERT OR IGNORE INTO transactions
            (id, title, remarks, amount, currency, exchangeRate, amountInBase, type, date, tags,
             isReimbursable, excludeFromStats, categoryId, accountId, recurringId, createdAt, updatedAt,
             merchant, location, reimbursedAt, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           transaction.id,
           transaction.title as string,
@@ -519,6 +666,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
           (transaction.merchant as string) ?? null,
           (transaction.location as string) ?? null,
           (transaction.reimbursedAt as string) ?? null,
+          synced,
         ],
       );
       result.transactions += 1;
@@ -534,7 +682,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
     for (const transfer of bundle.transfers) {
       await db.runAsync(
         `INSERT OR IGNORE INTO transfers (id, amount, date, note, fromAccountId, toAccountId, createdAt, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           transfer.id as string,
           transfer.amount as number,
@@ -543,6 +691,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
           accountMap.get(transfer.fromAccountId as string) ?? (transfer.fromAccountId as string),
           accountMap.get(transfer.toAccountId as string) ?? (transfer.toAccountId as string),
           (transfer.createdAt as string) ?? new Date().toISOString(),
+          synced,
         ],
       );
       result.transfers += 1;
@@ -553,7 +702,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
         `INSERT OR IGNORE INTO recurring_transactions
            (id, title, remarks, amount, currency, exchangeRate, type, frequency, startDate, nextRunDate,
             endDate, isActive, categoryId, accountId, createdAt, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           rule.id as string,
           rule.title as string,
@@ -570,6 +719,7 @@ export async function applyImport(plan: ImportPlan, choices: Record<string, stri
           idMap.get(rule.categoryId as string) ?? (rule.categoryId as string),
           accountMap.get(rule.accountId as string) ?? (rule.accountId as string),
           (rule.createdAt as string) ?? new Date().toISOString(),
+          synced,
         ],
       );
       result.recurring += 1;
