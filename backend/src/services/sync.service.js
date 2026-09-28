@@ -1,4 +1,5 @@
 import prisma from "../config/prisma.js";
+import * as categoryIconService from "./categoryIcon.service.js";
 
 /**
  * 恢复用的整包数据。
@@ -15,8 +16,10 @@ import prisma from "../config/prisma.js";
  * 手机端读不到时按 0 处理，于是"备份比本地库还新"那道拦截不会误伤这条路。
  */
 export async function getBundle(userId) {
-  const [categories, accounts, transactions, transfers, recurring] = await Promise.all([
+  const [categories, categoryIcons, accounts, transactions, transfers, recurring] = await Promise.all([
     prisma.category.findMany({ where: { userId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+    // 图片本体跟着整包回去。这是恢复唯一需要它们的时刻，所以没有单独的"下载一张图"接口
+    categoryIconService.listForBundle(userId),
     prisma.account.findMany({ where: { userId }, orderBy: { createdAt: "asc" } }),
     prisma.transaction.findMany({ where: { userId }, include: { images: true } }),
     prisma.transfer.findMany({ where: { userId } }),
@@ -37,6 +40,10 @@ export async function getBundle(userId) {
       sortOrder: category.sortOrder,
       isActive: category.isActive ? 1 : 0,
     })),
+
+    // 自定义图标的图片本体（base64）。字段名和形状跟手机端导出的 .json 一模一样，
+    // 所以恢复那边不用为"从云端来的"再写一条分支——一份格式，两个来源
+    categoryIcons,
 
     accounts: accounts.map((account) => ({
       id: account.id,

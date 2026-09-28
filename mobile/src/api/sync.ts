@@ -34,6 +34,26 @@ export async function fetchCloudBundle(): Promise<BackupBundle> {
 /** `updated` 是这一批里**已经在云端、这次被改写**的条数——编辑过的记录走这条路 */
 export type BatchResult = { inserted: number; updated: number; skipped?: number };
 
+/**
+ * 云端已经存了哪些自定义分类图标，**只回名字不回图**。
+ *
+ * 有了它，"这次要传哪几张"就不用在本地记一份上传台账——那份台账一旦跟云端实际情况走散
+ * （换手机、服务器那边丢了一行、上传成功但标记没写进去），差异是永久的，而且没人发现得了。
+ * 每次拿云端的实际情况当答案，多花一个很小的请求，换来的是这条路自己会愈合。
+ */
+export async function fetchCloudIconNames(): Promise<string[]> {
+  const res = await apiClient.get('/category-icons');
+  return res.data.data?.names ?? [];
+}
+
+/** 把图片本体（base64）传上去。一批最多 20 张，调用方负责分批 */
+export async function pushCategoryIcons(
+  icons: { name: string; data: string }[],
+): Promise<{ inserted: number; skipped: number }> {
+  const res = await apiClient.post('/category-icons/batch', { icons });
+  return res.data.data;
+}
+
 /** 父在前、子在后由调用方排好：服务器按数组顺序写，子分类的 parentId 得先有着落 */
 export async function pushCategories(categories: Record<string, unknown>[]): Promise<BatchResult> {
   const res = await apiClient.post('/categories/batch', { categories });

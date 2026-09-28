@@ -1,4 +1,5 @@
 import prisma from "../config/prisma.js";
+import * as categoryIconService from "./categoryIcon.service.js";
 import { ApiError } from "../utils/response.js";
 
 // 按手机端排出来的顺序返回，电脑端画出来的分类次序才跟手机上看到的一样。
@@ -90,7 +91,26 @@ export async function batchCreate(userId, items) {
     });
   }
 
-  return { inserted: items.length - existedBefore.size, updated: existedBefore.size };
+  // 分类写完了才扫图标，顺序不能反：备份是先传图、后推分类，
+  // 在传图那一刻扫会把刚上来的图当成孤儿删掉（详见 categoryIcon.service.js 的 pruneOrphans）
+  const iconsRemoved = await pruneIconsQuietly(userId);
+
+  return { inserted: items.length - existedBefore.size, updated: existedBefore.size, iconsRemoved };
+}
+
+/**
+ * 扫一遍没人引用的图标。**出错只记日志，不往上抛**：
+ * 上面那批分类已经写进去了，一次清理失败不该让手机端以为整批推送失败
+ * （它会因此不标记 synced，下次把同一批再推一遍）。漏掉这次也无所谓，
+ * 下一次推分类还会再扫——这是对账，不是一次性动作。
+ */
+async function pruneIconsQuietly(userId) {
+  try {
+    return await categoryIconService.pruneOrphans(userId);
+  } catch (err) {
+    console.error("pruneOrphans failed", err);
+    return 0;
+  }
 }
 
 export async function update(userId, id, data) {
@@ -107,6 +127,9 @@ export async function update(userId, id, data) {
 export async function remove(userId, id) {
   await assertOwned(userId, id);
   await prisma.category.delete({ where: { userId_id: { userId, id } } });
+  // 删分类是引用消失的另一个时刻。只删过分类、什么都没改的那次备份不会走 /categories/batch，
+  // 不在这里也扫一下的话，那张图要等到下次改分类才被收走
+  await pruneIconsQuietly(userId);
 }
 
 async function assertOwned(userId, id) {

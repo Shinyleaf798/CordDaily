@@ -38,6 +38,7 @@ model User {
   createdAt    DateTime @default(now())
 
   categories            Category[]
+  categoryIcons         CategoryIcon[]
   transactions          Transaction[]
   recurringTransactions RecurringTransaction[]
   accounts              Account[]
@@ -131,6 +132,34 @@ model Transaction {
   recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id])
 
   images TransactionImage[]
+}
+
+/// 用户自己上传的分类图标，**二进制真的存在这张表里**（bytea），不走图床。
+///
+/// 这是对「图片只存网址、后端不碰二进制」（CLAUDE.md 原则#6）的一次**有意破例**，
+/// 范围只限分类图标：手机端在存进沙盒之前已经把它缩到长边 192px / JPEG，单张 10–20 KB，
+/// 张数是"用户手动挑过几次图"这个量级（个位数），整个用户加起来还没有他一个月的账单行大。
+/// 为这点数据去接一个图床，要多一套凭证、多一个会过期的外部依赖、多一条删不干净的清理链。
+/// 账单收据照片不在此列——那是张数无上限、单张 MB 级的东西，仍然走 Cloudinary（见 TransactionImage）。
+///
+/// 主键是 `(userId, name)`：`name` 就是手机端生成的文件名（UUID.jpg），也是本地
+/// `categories.icon` 里 `custom:` 后面那一段。按用户隔离而不是全局唯一，理由跟 Category 一样——
+/// 两个账号各自恢复同一份备份文件时，这两行的 name 会撞在一起。
+///
+/// 故意**不跟 Category 建外键**：图标的生命周期比分类长一截——换图之后旧文件还在、
+/// 恢复时图先落地分类后写。建了外键，这两个顺序都得倒过来迁就它。
+model CategoryIcon {
+  name     String
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mimeType String
+  /// 图片本体。Prisma 的 Bytes 映射成 Postgres 的 bytea，比存 base64 文本省三分之一
+  data     Bytes
+  /// 字节数。单独存一列是为了"这个账号占了多少空间"不用把每张图都读出来才数得出
+  size      Int
+  createdAt DateTime @default(now())
+
+  @@id([userId, name])
 }
 
 model TransactionImage {

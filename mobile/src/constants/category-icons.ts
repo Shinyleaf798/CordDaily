@@ -1,13 +1,14 @@
 import type { ImageSourcePropType } from 'react-native';
 
 /**
- * 分类图标的三种写法，全部存在 `categories.icon` 这一个 TEXT 字段里：
+ * 分类图标的几种写法，全部存在 `categories.icon` 这一个 TEXT 字段里：
  *
  * | 写法 | 例子 | 图从哪来 |
  * |---|---|---|
  * | emoji | `🍜` | 字体，不需要资源文件 |
  * | 内置图片 | `builtin:food` | 跟 App 一起打包的 `assets/categories/food.png` |
- * | 用户图片 | `file:///.../abc.png` | App 沙盒目录，运行时写进去的 |
+ * | 用户上传 | `custom:a1b2.jpg` | 沙盒里的 `category-icons/` 目录，见 `db/category-icon-files.ts` |
+ * | 绝对路径 | `file:///.../abc.png` | 早期写法，只剩解析，不再产生新的 |
  *
  * 为什么不给 icon 拆成 `iconType` + `iconValue` 两列：这个字段的消费方只有"渲染一个图标"
  * 这一个场景，没有任何查询要按类型过滤。拆成两列换来的是每张表、每个 INSERT、每个同步
@@ -15,14 +16,23 @@ import type { ImageSourcePropType } from 'react-native';
  *
  * 为什么内置图片要用 `builtin:key` 这层间接引用，而不是直接存文件名：
  * 存的是**引用**不是图片本身，所以换图、改文件名、甚至把 PNG 换成 SVG，都不用动数据库里的任何一行。
+ *
+ * 用户上传的图沿用同一层间接：存 `custom:文件名`，**不存绝对路径**。
+ * iOS 每次装 App 都会换一个沙盒容器 id，`file:///var/mobile/Containers/Data/Application/<每次都变>/...`
+ * 这种绝对路径升级一次就全部失效，而库里那一行还理直气壮地指着它。
+ * 只存文件名的话，"目录在哪"是运行时现算的，换了容器也对得上。
  */
 
 export type CategoryIconSource =
   | { kind: 'emoji'; emoji: string }
   | { kind: 'builtin'; key: string; image: ImageSourcePropType | null; fallbackEmoji: string }
+  /** 用户自己传的图。这里只给出文件名，拼成完整 uri 是 `db/category-icon-files.ts` 的事——
+   *  那个目录在哪属于存储细节，解析一个字符串的函数不该认识文件系统 */
+  | { kind: 'custom'; fileName: string }
   | { kind: 'file'; uri: string };
 
 const BUILTIN_PREFIX = 'builtin:';
+const CUSTOM_PREFIX = 'custom:';
 
 /** icon 字段为空、或者引用了一个已经不存在的 key 时显示它 */
 export const FALLBACK_EMOJI = '📦';
@@ -127,6 +137,19 @@ export function builtinIconRef(key: string): string {
   return `${BUILTIN_PREFIX}${key}`;
 }
 
+/** 同上，用户上传那一种。文件名由 db/category-icon-files.ts 生成 */
+export function customIconRef(fileName: string): string {
+  return `${CUSTOM_PREFIX}${fileName}`;
+}
+
+/** 这个 icon 值是不是用户上传的图；是的话给出它的文件名。清理和备份都要按文件名点名 */
+export function customIconFileName(raw: string | null | undefined): string | null {
+  const icon = raw?.trim();
+  if (!icon?.startsWith(CUSTOM_PREFIX)) return null;
+  const fileName = icon.slice(CUSTOM_PREFIX.length);
+  return fileName ? fileName : null;
+}
+
 /**
  * 把库里那个字符串解析成"该怎么渲染"。
  * 解析不出来一律退回 emoji，绝不抛错——一个图标显示成 📦 是小事，
@@ -145,6 +168,10 @@ export function parseCategoryIcon(raw: string | null | undefined): CategoryIconS
       image: BUILTIN_ICON_IMAGES[key] ?? null,
       fallbackEmoji: entry?.fallbackEmoji ?? FALLBACK_EMOJI,
     };
+  }
+
+  if (icon.startsWith(CUSTOM_PREFIX)) {
+    return { kind: 'custom', fileName: icon.slice(CUSTOM_PREFIX.length) };
   }
 
   // file:// 和 content://（Android 相册）都当本地文件处理，expo-image 两种都能直接加载

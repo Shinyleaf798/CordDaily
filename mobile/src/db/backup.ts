@@ -1,5 +1,10 @@
 import { DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES_FLAT } from '@/constants/default-categories';
 
+import {
+  collectCategoryIconBlobs,
+  restoreCategoryIconBlobs,
+  type CategoryIconBlob,
+} from './category-icon-files';
 import { getDb } from './client';
 import { getOverallBudget, setOverallBudget } from './budgets';
 
@@ -55,6 +60,16 @@ export type BackupBundle = {
   schemaVersion: number;
   exportedAt: string;
   categories: CategoryRow[];
+  /**
+   * 分类里用到的自定义图标，文件名 + base64。
+   *
+   * 图片跟着包走，而不是只存一个 `custom:xxx.jpg` 的引用：**包要自解释**（CLAUDE.md 原则#3）。
+   * 只存引用的话，重装恢复后每个自己传过图的分类都变成一个 📦，而那张图已经没了。
+   * 单张十几 KB、数量是"用户手动传过几次"这个量级，塞进 JSON 的代价可以忽略。
+   *
+   * 老版本导出的包没有这个字段，parseBundle 补成空数组——少几张图标不影响任何一笔账。
+   */
+  categoryIcons: CategoryIconBlob[];
   accounts: AccountRow[];
   transactions: TransactionRow[];
   transactionImages: Record<string, unknown>[];
@@ -279,6 +294,8 @@ export async function buildBackup(range: BackupRange = {}): Promise<BackupBundle
     schemaVersion: await getSchemaVersion(),
     exportedAt: new Date().toISOString(),
     categories: categories.map(stripLocalFields),
+    // 按上面查出来的分类去收图，不是把整个目录打包：目录里可能还躺着没被对账收走的孤儿
+    categoryIcons: await collectCategoryIconBlobs(categories.map((category) => category.icon)),
     accounts: accounts.map(stripLocalFields),
     transactions: transactions.map(stripLocalFields),
     transactionImages: images,
@@ -401,6 +418,7 @@ export async function parseBundle(text: string): Promise<BackupBundle> {
   return {
     ...(bundle as BackupBundle),
     accounts: bundle.accounts ?? [],
+    categoryIcons: bundle.categoryIcons ?? [],
     transactionImages: bundle.transactionImages ?? [],
     transfers: bundle.transfers ?? [],
     recurring: bundle.recurring ?? [],
@@ -449,6 +467,12 @@ export async function planImport(bundle: BackupBundle): Promise<ImportPlan> {
   const localTransactionIds = new Set(
     (await db.getAllAsync<{ id: string }>('SELECT id FROM transactions')).map((row) => row.id),
   );
+
+  // 图片先落地，再进事务写库。文件系统没有回滚，跟 SQLite 凑不成一个原子操作，
+  // 所以只能挑一个错得轻的顺序：先图后库，崩在中间留下的是几个没人用的文件（下次写分类时对账收走）；
+  // 反过来则是一批指向空气的引用，用户看到一排 📦，而且自己修不好。
+  // 包里没有这个字段（老版本导出的）时这一步什么都不做
+  await restoreCategoryIconBlobs(bundle.categoryIcons ?? []);
   const localCount = localTransactionIds.size;
 
   const localById = new Map(localCategories.map((category) => [category.id, category]));

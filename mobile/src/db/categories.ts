@@ -2,10 +2,25 @@ import * as Crypto from 'expo-crypto';
 
 import { DEFAULT_CATEGORIES } from '@/constants/default-categories';
 
+import { pruneUnusedCategoryIcons } from './category-icon-files';
 import { getDb } from './client';
 import { recordDeletion } from './deletions';
 
 export type CategoryType = 'INCOME' | 'EXPENSE';
+
+/**
+ * 写完分类顺手对一次账，删掉没人再用的自定义图标文件（见 db/category-icon-files.ts）。
+ *
+ * **吞掉异常**：库那一行已经写成了，一个删不掉的旧文件不该让"改个分类名"整个失败。
+ * 漏掉这一次也没关系，下次任何一个分类写操作都会重新扫一遍。
+ */
+async function sweepIconFiles(): Promise<void> {
+  try {
+    await pruneUnusedCategoryIcons();
+  } catch {
+    // 留到下次
+  }
+}
 
 export type Category = {
   id: string;
@@ -187,6 +202,10 @@ export async function createCategory(input: {
     ],
   );
 
+  // 在 INSERT 之后扫：新分类那张图此刻已经在库里了，不会被当成孤儿删掉。
+  // 收的是用户"选了图又取消了新建"留下的那些
+  await sweepIconFiles();
+
   return category;
 }
 
@@ -198,6 +217,8 @@ export async function updateCategory(input: { id: string; name: string; icon: st
     input.icon,
     input.id,
   ]);
+  // 换图标时旧的那张就此没人用了
+  await sweepIconFiles();
 }
 
 /**
@@ -320,4 +341,5 @@ export async function deleteCategory(id: string): Promise<void> {
   const row = await db.getFirstAsync<{ name: string }>('SELECT name FROM categories WHERE id = ?', [id]);
   if (row) await recordDeletion('category', id, row.name);
   await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
+  await sweepIconFiles();
 }

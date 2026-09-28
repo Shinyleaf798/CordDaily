@@ -206,6 +206,9 @@ function describePush(result: PushResult): string {
     result.transactions ? `${result.transactions} 笔账单` : null,
     result.transfers ? `${result.transfers} 条转账` : null,
     result.recurring ? `${result.recurring} 条周期规则` : null,
+    // 图标报出来，虽然它不是"一条记录"：传图片是这次备份里唯一花了明显时间和流量的事，
+    // 不说的话用户只会觉得"今天怎么这么慢"
+    result.icons ? `${result.icons} 张分类图标` : null,
   ].filter(Boolean);
 
   const uploaded = parts.length ? `上传了 ${parts.join('、')}` : '没有新的记录要传';

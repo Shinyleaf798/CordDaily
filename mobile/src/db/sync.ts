@@ -1,13 +1,16 @@
 import {
   deleteRemote,
+  fetchCloudIconNames,
   pushAccounts,
   pushCategories,
+  pushCategoryIcons,
   pushRecurring,
   pushTransactions,
   pushTransfers,
 } from '@/api/sync';
 
 import { getLocalStats } from './backup';
+import { listUsedCategoryIconNames, readCategoryIconBlobs } from './category-icon-files';
 import { getDb } from './client';
 import { clearDeletion, countPendingDeletions, listPendingDeletions } from './deletions';
 import {
@@ -32,6 +35,8 @@ import {
 
 export type PushResult = {
   categories: number;
+  /** 这次传上去的自定义分类图标张数。图片本体存在 Neon 里，见 backend 的 CategoryIcon */
+  icons: number;
   accounts: number;
   transactions: number;
   transfers: number;
@@ -68,6 +73,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   const db = await getDb();
   const result: PushResult = {
     categories: 0,
+    icons: 0,
     accounts: 0,
     transactions: 0,
     transfers: 0,
@@ -84,6 +90,11 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
       result.deletions += 1;
     }
   }
+
+  // 图标先于分类上去，理由跟恢复时"先落图后写库"是同一条：这两样凑不成一个原子操作，
+  // 只能挑错得轻的顺序。先图后行，崩在中间留下的是一张没人引用的图（占几 KB）；
+  // 反过来则是云端一行分类指着一张不存在的图，而那正是重装恢复时会显形的坏
+  result.icons = await pushMissingIcons();
 
   // 父在前、子在后：子分类的 parentId 指向父，父还没到服务器的话那一条会被打回。
   //
@@ -179,6 +190,42 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
 
   await markCloudBackupDone();
   return result;
+}
+
+/**
+ * 把云端还没有的那些自定义图标传上去，返回这次传了几张。
+ *
+ * **问云端要一份已有清单，而不是在本地记"传过没传过"。** 本地台账走散之后没人发现得了
+ * （见 api/sync.ts 的 fetchCloudIconNames），而这条路每次都拿云端的实际情况当答案，
+ * 所以它会自己愈合：某次上传失败、或者服务器那边丢了一行，下次备份自动补上。
+ *
+ * **一张图都没有的用户一个请求都不发。** 绝大多数人从没传过图，
+ * 不该为这个功能在每次备份时多等一个来回。
+ *
+ * 失败**不吞**：图没上去而分类上去了，就是云端存着一个指向空气的引用，
+ * 那正是这一步要防的事。让整次备份失败、下次重来，比留下一个坏掉的云端状态好。
+ */
+async function pushMissingIcons(): Promise<number> {
+  const used = await listUsedCategoryIconNames();
+  if (!used.length) return 0;
+
+  const remote = new Set(await fetchCloudIconNames());
+  const missing = used.filter((name) => !remote.has(name));
+  if (!missing.length) return 0;
+
+  // 文件不在了（用户清过沙盒）的那些读不出来，readCategoryIconBlobs 直接跳过：
+  // 传一张空图上去比不传更糟
+  const blobs = await readCategoryIconBlobs(missing);
+
+  // 分批：服务器一批收 20 张，而且请求体里装的是图片，一次塞太多在 Render 免费实例上是真的会超时
+  const BATCH_SIZE = 10;
+  let uploaded = 0;
+  for (let offset = 0; offset < blobs.length; offset += BATCH_SIZE) {
+    const batch = blobs.slice(offset, offset + BATCH_SIZE);
+    const { inserted } = await pushCategoryIcons(batch);
+    uploaded += inserted;
+  }
+  return uploaded;
 }
 
 // 脏了的 tags 不该让整批推送失败：这一列是本地写进去的 JSON 文本，

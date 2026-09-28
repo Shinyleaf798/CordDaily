@@ -34,6 +34,14 @@
         }
       ],
       "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "用来挑一张图当分类图标。选中的图会缩小后存在 App 自己的目录里，不会上传，也不会读你其他的照片。",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "expo-secure-store",
       "expo-image",
       "expo-web-browser",
