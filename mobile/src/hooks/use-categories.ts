@@ -30,10 +30,20 @@ export function useCategories(type: CategoryType) {
   });
 }
 
-// 改了分类名/图标，账单列表里显示的分类名和图标也跟着变（列表是 JOIN categories 查出来的），
-// 所以这三个写操作都要连 transactions 那组缓存一起失效，不能只刷分类自己
+/**
+ * 一次分类写操作会牵动谁。
+ *
+ * - `transactions`：改了分类名/图标，账单列表里显示的也跟着变（列表是 JOIN categories 查出来的）
+ * - `categoryUsage`：管理页用它决定「删除」灰不灰
+ * - `localStats`：**备份卡和备份确认层的数字**。分类的增删改都会改变"还有多少东西没备份"——
+ *   新建的那条 synced 是 0，改名会把 synced 置回 0（连内置分类也算，见 db/backup.ts 里
+ *   "改过的内置分类要算"那段）。漏掉它的表现极其隐蔽：「我的」是 tab，**不会重新挂载**，
+ *   于是那张卡一直停在改动前的数字，点进备份层也看不到「要上传的分类」，
+ *   看起来像"改名根本没被记下来"——而库里其实早就记下了
+ * - `pendingDeletions`：删分类会留一块墓碑，备份层那行「要从云端删掉的」读的就是它
+ */
 function invalidateCategoryConsumers(queryClient: ReturnType<typeof useQueryClient>) {
-  for (const key of [CATEGORIES_KEY, ['transactions'], ['categoryUsage']]) {
+  for (const key of [CATEGORIES_KEY, ['transactions'], ['categoryUsage'], ['localStats'], ['pendingDeletions']]) {
     queryClient.invalidateQueries({ queryKey: key });
   }
 }

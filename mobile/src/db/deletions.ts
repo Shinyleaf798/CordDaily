@@ -56,6 +56,18 @@ export async function countPendingDeletions(): Promise<number> {
 }
 
 /** 服务器上删成功（或者本来就没有）之后，把碑撤掉 */
+/**
+ * 某一类里所有还没在云端执行的删除 id。
+ *
+ * 合并那一步要它回答一个问题：云端有、本地没有的那一行，**是云端新增的，还是本地删掉的**。
+ * 没有它就只能当成"云端新增"，于是用户删掉的分类会在下一次同步时自己长回来。
+ */
+export async function listDeletedIds(kind: DeletionKind): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: string }>('SELECT id FROM deleted_records WHERE kind = ?', [kind]);
+  return rows.map((row) => row.id);
+}
+
 export async function clearDeletion(kind: DeletionKind, id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM deleted_records WHERE kind = ? AND id = ?', [kind, id]);

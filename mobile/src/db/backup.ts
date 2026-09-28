@@ -7,6 +7,13 @@ import {
 } from './category-icon-files';
 import { getDb } from './client';
 import { getOverallBudget, setOverallBudget } from './budgets';
+import {
+  accountFingerprint,
+  categoryFingerprint,
+  isUntouchedSinceSync,
+  type AccountFingerprintRow,
+  type CategoryFingerprintRow,
+} from './sync-fingerprint';
 
 /**
  * 备份包的读写。三个函数一条链：`buildBackup` 打包 → `planImport` 干跑 → `applyImport` 落库。
@@ -79,14 +86,18 @@ export type BackupBundle = {
   settings: { overallMonthlyBudget: number | null };
 };
 
-// `synced` 是纯本地的一个标记（0 = 还没备份过），不该写进包里：
-// 它描述的是"这台手机跟服务器的关系"，换一台手机之后这个关系要重新算
-// （恢复时按包的来源重新定，见 applyImport 的 source 参数）
-const STRIP = 'synced';
+// `synced` 和 `syncedFingerprint` 都是纯本地的记账（这行备份过没有、上次推上去时长什么样），
+// 不该写进包里：它们描述的是"**这台**手机跟服务器的关系"，换一台手机之后这个关系要重新算
+// （恢复时按包的来源重新定，见 applyImport 的 source 参数和那个 fingerprintFor）。
+//
+// 漏掉指纹的后果比漏掉 synced 更难看出来：包里会多带一列看着很像数据的字符串，
+// 而它在另一台设备上的含义是错的——那台机器从没推过这一行
+const STRIP = ['synced', 'syncedFingerprint'] as const;
 
 function stripLocalFields<T extends Record<string, unknown>>(row: T): T {
-  const { [STRIP]: _ignored, ...rest } = row;
-  return rest as T;
+  const rest = { ...row };
+  for (const field of STRIP) delete rest[field];
+  return rest;
 }
 
 async function getSchemaVersion(): Promise<number> {
@@ -142,7 +153,8 @@ const SHIPPED_CATEGORIES = new Map(DEFAULT_CATEGORIES_FLAT.map((category) => [ca
 const SHIPPED_ACCOUNTS = new Map<string, { id: string; name: string }>(
   Object.values(DEFAULT_ACCOUNTS).map((account) => [account.id, account]),
 );
-const placeholders = (ids: string[]) => ids.map(() => '?').join(',');
+const BUILTIN_CATEGORY_ID_SET = new Set<string>(BUILTIN_CATEGORY_IDS);
+const BUILTIN_ACCOUNT_ID_SET = new Set<string>(BUILTIN_ACCOUNT_IDS);
 
 export async function getLocalStats(): Promise<LocalStats> {
   const db = await getDb();
@@ -151,8 +163,6 @@ export async function getLocalStats(): Promise<LocalStats> {
     unsynced: number;
     firstDate: string | null;
     pendingTransactions: number;
-    pendingCategories: number;
-    pendingAccounts: number;
     pendingTransfers: number;
     pendingRecurring: number;
   }>(
@@ -160,39 +170,43 @@ export async function getLocalStats(): Promise<LocalStats> {
             SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END) AS unsynced,
             MIN(date) AS firstDate,
             (SELECT COUNT(*) FROM transactions WHERE synced = 0) AS pendingTransactions,
-            (SELECT COUNT(*) FROM categories
-              WHERE synced = 0 AND id NOT IN (${placeholders(BUILTIN_CATEGORY_IDS)})) AS pendingCategories,
-            (SELECT COUNT(*) FROM accounts
-              WHERE synced = 0 AND id NOT IN (${placeholders(BUILTIN_ACCOUNT_IDS)})) AS pendingAccounts,
             (SELECT COUNT(*) FROM transfers WHERE synced = 0) AS pendingTransfers,
             (SELECT COUNT(*) FROM recurring_transactions WHERE synced = 0) AS pendingRecurring
        FROM transactions`,
-    [...BUILTIN_CATEGORY_IDS, ...BUILTIN_ACCOUNT_IDS],
   );
 
-  // 内置的那批单独捞出来分两拨：原封不动的是骨架，改过的算用户自己的数据。
-  // 放在 JS 里比而不是写进 SQL：要比的是"跟出厂值一不一样"，而出厂值在常量文件里
-  const { edited: editedCategories, untouched: untouchedCategories } = splitBuiltins(
-    await db.getAllAsync<BuiltinCategoryRow>(
-      `SELECT id, name, icon, parentId, isActive FROM categories
-        WHERE synced = 0 AND id IN (${placeholders(BUILTIN_CATEGORY_IDS)})`,
-      BUILTIN_CATEGORY_IDS,
-    ),
-    isCategoryAsShipped,
+  /**
+   * 分类和账户**不按 `synced` 数，按内容指纹**跟上次推上去的那份比。
+   *
+   * `synced` 记的是"动过没有"：把一个分类改名再改回来，它是 0，但那一行跟云端一模一样，
+   * 而备份层会一直显示"要上传的分类 1 条"。指纹问的是"跟推上去的那份一不一样"，
+   * 改一圈又改回去算不出差别（见 db/sync-fingerprint.ts）。
+   *
+   * 全表读进来在 JS 里比：指纹是拼出来的字符串，SQL 算不出来。这两张表各几十行，
+   * 而账单那几千行继续走 `synced = 0` 的老路——每次刷新都给它们算一遍指纹不值得。
+   */
+  const categoryRows = await db.getAllAsync<CategoryFingerprintRow & { syncedFingerprint: string | null }>(
+    `SELECT id, name, icon, type, parentId, sortOrder, isActive, syncedFingerprint FROM categories`,
   );
-  const { edited: editedAccounts, untouched: untouchedAccounts } = splitBuiltins(
-    await db.getAllAsync<BuiltinAccountRow>(
-      `SELECT id, name, openingBalance FROM accounts
-        WHERE synced = 0 AND id IN (${placeholders(BUILTIN_ACCOUNT_IDS)})`,
-      BUILTIN_ACCOUNT_IDS,
-    ),
-    isAccountAsShipped,
+  const accountRows = await db.getAllAsync<AccountFingerprintRow & { syncedFingerprint: string | null }>(
+    `SELECT id, name, type, currency, openingBalance, icon, syncedFingerprint FROM accounts`,
+  );
+
+  // 脏行再分两拨：原封不动的内置项是骨架（不计数、不显示），其余都算用户自己的数据。
+  // "跟出厂值一不一样"同样只能在 JS 里比——出厂值在常量文件里，不在库里
+  const categorySplit = splitPending(
+    categoryRows.filter((category) => category.syncedFingerprint !== categoryFingerprint(category)),
+    (category) => BUILTIN_CATEGORY_ID_SET.has(category.id) && isCategoryAsShipped(category),
+  );
+  const accountSplit = splitPending(
+    accountRows.filter((account) => account.syncedFingerprint !== accountFingerprint(account)),
+    (account) => BUILTIN_ACCOUNT_ID_SET.has(account.id) && isAccountAsShipped(account),
   );
 
   const pending: PendingCounts = {
     transactions: row?.pendingTransactions ?? 0,
-    categories: (row?.pendingCategories ?? 0) + editedCategories,
-    accounts: (row?.pendingAccounts ?? 0) + editedAccounts,
+    categories: categorySplit.mine,
+    accounts: accountSplit.mine,
     transfers: row?.pendingTransfers ?? 0,
     recurring: row?.pendingRecurring ?? 0,
   };
@@ -202,7 +216,7 @@ export async function getLocalStats(): Promise<LocalStats> {
     unsynced: row?.unsynced ?? 0,
     pending,
     unsyncedTotal: Object.values(pending).reduce((sum, count) => sum + count, 0),
-    pendingBuiltins: untouchedCategories + untouchedAccounts,
+    pendingBuiltins: categorySplit.skeleton + accountSplit.skeleton,
     firstTransactionDate: row?.firstDate ?? null,
   };
 }
@@ -212,13 +226,19 @@ type BuiltinCategoryRow = {
   name: string;
   icon: string | null;
   parentId: string | null;
-  isActive: number;
+  // 库里是 0/1，而推送前那一步会把它转成 boolean——两种都收，下面用 !! 归一
+  isActive: number | boolean;
 };
 type BuiltinAccountRow = { id: string; name: string; openingBalance: number };
 
-function splitBuiltins<T>(rows: T[], isAsShipped: (row: T) => boolean) {
-  const untouched = rows.filter(isAsShipped).length;
-  return { edited: rows.length - untouched, untouched };
+/**
+ * 把"还没推上去的行"分成两拨：`skeleton` 是原封不动的内置项（云端得先有这一行，
+ * 账单的外键才落得下，但它不是用户能决定要不要传的东西），`mine` 是其余的。
+ * 只有 `mine` 进用户看到的计数。
+ */
+function splitPending<T>(rows: T[], isSkeleton: (row: T) => boolean) {
+  const skeleton = rows.filter(isSkeleton).length;
+  return { mine: rows.length - skeleton, skeleton };
 }
 
 /**
@@ -229,19 +249,19 @@ function splitBuiltins<T>(rows: T[], isAsShipped: (row: T) => boolean) {
  * （`pushUnsynced` 推的是所有 `synced = 0` 的行，不看这里的计数）。
  * 比它的代价是得在这里重算一遍灌种子时的序号规则——两份规则迟早分叉。
  */
-function isCategoryAsShipped(row: BuiltinCategoryRow): boolean {
+export function isCategoryAsShipped(row: BuiltinCategoryRow): boolean {
   const shipped = SHIPPED_CATEGORIES.get(row.id);
   if (!shipped) return false;
   return (
     row.name === shipped.name &&
     row.icon === shipped.icon &&
     (row.parentId ?? null) === shipped.parentId &&
-    row.isActive === 1
+    !!row.isActive
   );
 }
 
 // 账户只比用户能改的那两样：界面上 type 和 currency 是只读的（见 accounts.ts 的 updateAccount）
-function isAccountAsShipped(row: BuiltinAccountRow): boolean {
+export function isAccountAsShipped(row: BuiltinAccountRow): boolean {
   const shipped = SHIPPED_ACCOUNTS.get(row.id);
   if (!shipped) return false;
   return row.name === shipped.name && row.openingBalance === 0;
@@ -432,12 +452,45 @@ function pathKey(type: string, parentName: string | null, name: string): string 
   return `${type}|${parentName ?? ''}|${name}`;
 }
 
+/**
+ * 包里这一行跟本地那一行**内容上**是不是同一个样子。id 和 type 不比——
+ * 能走到这里就是同一个 id，而 type 改不了（界面上没有这个入口，改了也就是另一个分类了）。
+ *
+ * 比的是用户看得见的那五样：名字、图标、挂在谁下面、排第几、停不停用。
+ * 任何一样不同，这一行就该被包里的版本覆盖。
+ *
+ * `isActive` 用 `!!` 归一：本地存的是 SQLite 的 0/1，而手改过的 JSON 文件里可能是 true/false，
+ * 不归一的话 `1 !== true`，每一行都会被判成"不一样"，于是每次恢复都把整张表重写一遍。
+ */
+function isSameCategory(local: CategoryRow, source: CategoryRow): boolean {
+  return (
+    local.name === source.name &&
+    (local.icon ?? null) === (source.icon ?? null) &&
+    (local.parentId ?? null) === (source.parentId ?? null) &&
+    (local.sortOrder ?? 0) === (source.sortOrder ?? 0) &&
+    !!local.isActive === !!source.isActive
+  );
+}
+
 export type CategoryResolution = {
   source: CategoryRow;
   /** 来源里这个分类底下有多少笔账（给对照页显示"这条选错会影响多少账"） */
   transactionCount: number;
   /** exists = 本地已有同一个 id；matched = 按名字对上了本地另一个 id；create = 本地没有，照建 */
   action: 'exists' | 'matched' | 'create';
+  /**
+   * 只对 `exists` 有意义。两个字段是**三方合并**的两种结局，互斥：
+   *
+   * - `differs`：包里那份跟本地不一样，而**本地自上次同步以来没被动过** → 采用包里的
+   * - `conflict`：包里那份跟本地不一样，而本地也改过 → **保留本地**，等下次推送把它送上去
+   *
+   * 两个都 false 就是无事发生（两边内容一致）。
+   *
+   * 算在 planImport 里而不是各自判断一次：预览上承诺"更新 N 个分类"、结果页兑现同一个 N，
+   * 两处读的必须是同一个判断。这个文件开头那条"分两套实现，数字迟早对不上"说的就是它。
+   */
+  differs: boolean;
+  conflict: boolean;
   targetId: string;
   /** 只有"按名字猜"出来的才需要用户确认（CSV、两台手机合并）。JSON 包里 id 是权威的，不用问 */
   needsChoice: boolean;
@@ -445,12 +498,6 @@ export type CategoryResolution = {
 
 export type ImportPlan = {
   bundle: BackupBundle;
-  /**
-   * 空库快路径：本地一笔账都没有，那几个默认分类没人引用，
-   * 于是整张字典可以**原样采用**来源里的版本（连改过的名字、停用状态一起回来），
-   * 一个 id 都不用改写。重装后恢复走的就是这条。
-   */
-  adoptWholesale: boolean;
   categories: CategoryResolution[];
   newAccounts: number;
   newTransactions: number;
@@ -462,7 +509,9 @@ export type ImportPlan = {
 export async function planImport(bundle: BackupBundle): Promise<ImportPlan> {
   const db = await getDb();
 
-  const localCategories = await db.getAllAsync<CategoryRow>('SELECT * FROM categories');
+  const localCategories = await db.getAllAsync<CategoryRow & { synced: number; syncedFingerprint: string | null }>(
+    'SELECT * FROM categories',
+  );
   const localAccounts = await db.getAllAsync<{ id: string; name: string }>('SELECT id, name FROM accounts');
   const localTransactionIds = new Set(
     (await db.getAllAsync<{ id: string }>('SELECT id FROM transactions')).map((row) => row.id),
@@ -473,8 +522,6 @@ export async function planImport(bundle: BackupBundle): Promise<ImportPlan> {
   // 反过来则是一批指向空气的引用，用户看到一排 📦，而且自己修不好。
   // 包里没有这个字段（老版本导出的）时这一步什么都不做
   await restoreCategoryIconBlobs(bundle.categoryIcons ?? []);
-  const localCount = localTransactionIds.size;
-
   const localById = new Map(localCategories.map((category) => [category.id, category]));
   const localNameById = new Map(localCategories.map((category) => [category.id, category.name]));
   const localByPath = new Map(
@@ -490,24 +537,60 @@ export async function planImport(bundle: BackupBundle): Promise<ImportPlan> {
     countByCategory.set(transaction.categoryId, (countByCategory.get(transaction.categoryId) ?? 0) + 1);
   }
 
-  const adoptWholesale = localCount === 0;
-
   const categories: CategoryResolution[] = bundle.categories.map((source) => {
     const transactionCount = countByCategory.get(source.id) ?? 0;
 
-    if (localById.has(source.id)) {
-      return { source, transactionCount, action: 'exists', targetId: source.id, needsChoice: false };
+    const local = localById.get(source.id);
+    if (local) {
+      /**
+       * 三方合并的判断放在这里，恢复和备份走的是同一条规则（见 db/sync-merge.ts 的表）。
+       *
+       * 曾经这里是"包里不一样就覆盖"，一刀切。那条规则修好了一个 bug（A 机换了图标、
+       * B 机恢复后原样不动），却造出另一个：**本地改了但还没推，先点了恢复**——
+       * 那些改动会被一份更旧的包直接盖掉，而用户完全不知道。
+       * 两个场景的区别只有一个问题答得了："本地这一行，自上次同步以来动过没有。"
+       */
+      const sameAsBundle = isSameCategory(local, source);
+      const localUntouched = isUntouchedSinceSync(local, categoryFingerprint(local), () =>
+        isCategoryAsShipped(local),
+      );
+      return {
+        source,
+        transactionCount,
+        action: 'exists',
+        differs: !sameAsBundle && localUntouched,
+        conflict: !sameAsBundle && !localUntouched,
+        targetId: source.id,
+        needsChoice: false,
+      };
     }
 
     // 没有 id 能对上时才退到按名字猜。CSV 那条路上每一行都会走到这里
+    // （differs 只对 exists 有意义，另外两支一律 false）
     const matched = localByPath.get(
       pathKey(source.type, source.parentId ? (sourceNameById.get(source.parentId) ?? null) : null, source.name),
     );
     if (matched) {
-      return { source, transactionCount, action: 'matched', targetId: matched.id, needsChoice: false };
+      return {
+        source,
+        transactionCount,
+        action: 'matched',
+        differs: false,
+        conflict: false,
+        targetId: matched.id,
+        needsChoice: false,
+      };
     }
 
-    return { source, transactionCount, action: 'create', targetId: source.id, needsChoice: false };
+    return {
+      source,
+      transactionCount,
+      action: 'create',
+      differs: false,
+      conflict: false,
+      targetId: source.id,
+      needsChoice: false,
+    };
   });
 
   const localAccountIds = new Set(localAccounts.map((account) => account.id));
@@ -520,7 +603,6 @@ export async function planImport(bundle: BackupBundle): Promise<ImportPlan> {
 
   return {
     bundle,
-    adoptWholesale,
     categories,
     newAccounts,
     newTransactions,
@@ -532,7 +614,12 @@ export async function planImport(bundle: BackupBundle): Promise<ImportPlan> {
 export type ImportResult = {
   transactions: number;
   skipped: number;
+  /** 新建的分类 */
   categories: number;
+  /** 本地已有、这次被包里的版本更新掉的分类 */
+  categoriesUpdated: number;
+  /** 两边都改过、这次保留了本地那一份的分类。它们仍然是「未备份」，下次推送会送上去 */
+  categoriesKept: number;
   accounts: number;
   transfers: number;
   recurring: number;
@@ -582,10 +669,29 @@ export async function applyImport(
     (await db.getAllAsync<{ id: string }>('SELECT id FROM transactions')).map((row) => row.id),
   );
 
+  /**
+   * 这一行写下去之后，`syncedFingerprint` 该记什么。
+   *
+   * **只有云端来源才有得记**：那份包就是服务器此刻的样子，所以落库的同时就能说
+   * "这一行跟云端一致"。从文件恢复的包不是——它可能是三个月前导出的，
+   * 服务器上早就不是这个样子了，所以留 null（= 从没推上去过 → 待上传）。
+   *
+   * **id 或 parentId 被改写过的行也留 null**：指纹描述的是"服务器上那一行"，
+   * 而改写之后本地这一行跟服务器就不是同一个东西了。往"算作待上传"的方向错是安全的
+   * （多推一次，服务器 upsert 幂等）；反过来错则是改动永远上不去，而且界面上看不出来。
+   */
+  const fingerprintFor = (row: CategoryRow, targetId: string, parentId: string | null): string | null => {
+    if (synced !== 1) return null;
+    if (targetId !== row.id || parentId !== (row.parentId ?? null)) return null;
+    return categoryFingerprint({ ...row, parentId, sortOrder: row.sortOrder ?? 0, isActive: row.isActive ?? 1 });
+  };
+
   const result: ImportResult = {
     transactions: 0,
     skipped: 0,
     categories: 0,
+    categoriesUpdated: 0,
+    categoriesKept: 0,
     accounts: 0,
     transfers: 0,
     recurring: 0,
@@ -606,8 +712,9 @@ export async function applyImport(
 
       if (resolution.action === 'create' && !choices[row.id]) {
         await db.runAsync(
-          `INSERT OR IGNORE INTO categories (id, name, icon, type, parentId, sortOrder, isActive, synced)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO categories
+             (id, name, icon, type, parentId, sortOrder, isActive, synced, syncedFingerprint)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             targetId,
             row.name,
@@ -617,20 +724,48 @@ export async function applyImport(
             row.sortOrder ?? 0,
             row.isActive ?? 1,
             synced,
+            fingerprintFor(row, targetId, parentId),
           ],
         );
         result.categories += 1;
         continue;
       }
 
-      // 空库时本地那份是刚 seed 出来的原始默认分类，来源里那份才是用户整理过的：
-      // 改过的名字、换过的图标、停用状态、拖出来的顺序，全部覆盖回来。
-      // 库里已经有账的时候反过来——本地是用户当下在用的，不能被一份旧备份改写
-      if (resolution.action === 'exists' && plan.adoptWholesale) {
+      /**
+       * 本地已经有这个 id：**只在本地那一行自上次同步以来没被动过时**，才用包里的版本覆盖。
+       *
+       * 两个真实场景各自的诉求，被这一个条件同时满足：
+       * - A 机给「FGO」换了图、推上云端，B 机（已经有账）恢复 → B 上那一行没人动过，
+       *   采用包里的，图标跟着变。原来这里整行跳过，图其实已经下到沙盒里，
+       *   只是没人引用，下一次分类写操作就被当孤儿扫掉。
+       * - 本地改了分类、还没推，先点了恢复 → 那一行动过，**保留本地**；
+       *   它仍然是「未备份」，下次推送照样送上去，一个字都不会丢。
+       *
+       * `differs` / `conflict` 由 planImport 算好，预览承诺的数字和这里实际写的是同一个判断。
+       * 全等的行两个都是 false，不写，也就不会白白把 synced 置回 0。
+       */
+      if (resolution.conflict) {
+        result.categoriesKept += 1;
+        continue;
+      }
+
+      if (resolution.action === 'exists' && resolution.differs) {
         await db.runAsync(
-          `UPDATE categories SET name = ?, icon = ?, parentId = ?, sortOrder = ?, isActive = ?, synced = ? WHERE id = ?`,
-          [row.name, row.icon, parentId, row.sortOrder ?? 0, row.isActive ?? 1, synced, targetId],
+          `UPDATE categories
+              SET name = ?, icon = ?, parentId = ?, sortOrder = ?, isActive = ?, synced = ?, syncedFingerprint = ?
+            WHERE id = ?`,
+          [
+            row.name,
+            row.icon,
+            parentId,
+            row.sortOrder ?? 0,
+            row.isActive ?? 1,
+            synced,
+            fingerprintFor(row, targetId, parentId),
+            targetId,
+          ],
         );
+        result.categoriesUpdated += 1;
       }
     }
 
@@ -638,8 +773,9 @@ export async function applyImport(
       const targetId = accountMap.get(account.id) ?? account.id;
       if (localAccountIds.has(targetId) || localAccountByName.has(account.name)) continue;
       await db.runAsync(
-        `INSERT OR IGNORE INTO accounts (id, name, type, currency, openingBalance, icon, createdAt, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO accounts
+           (id, name, type, currency, openingBalance, icon, createdAt, synced, syncedFingerprint)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           targetId,
           account.name,
@@ -649,6 +785,17 @@ export async function applyImport(
           account.icon ?? null,
           account.createdAt ?? new Date().toISOString(),
           synced,
+          // 同分类：只有云端来源、且 id 没被改写过，才说得上"跟云端一致"
+          synced === 1 && targetId === account.id
+            ? accountFingerprint({
+                id: targetId,
+                name: account.name,
+                type: account.type ?? 'OTHER',
+                currency: account.currency ?? 'MYR',
+                openingBalance: account.openingBalance ?? 0,
+                icon: account.icon ?? null,
+              })
+            : null,
         ],
       );
       result.accounts += 1;

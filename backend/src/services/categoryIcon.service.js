@@ -5,9 +5,12 @@ import { ApiError } from "../utils/response.js";
  * 用户自己上传的分类图标。**图片本体存在 Neon 里**（`CategoryIcon.data`，bytea），
  * 不走图床——为什么这里对「图片只存网址」破例，理由写在 schema.prisma 那个 model 上面。
  *
- * 这条路只有两个动作：**问云端已经有哪些**（manifest），和**把缺的传上去**。
- * 没有"下载单张"的接口：图片是跟着 `GET /sync/bundle` 整包回去的，
- * 因为需要它们的场景只有一个——重装之后的首次恢复，那一刻本来就要拉整包。
+ * 三个动作：**问云端已经有哪些**（manifest）、**把缺的传上去**、**按名字取回几张**。
+ *
+ * 最后那个是后加的。原来没有，理由是"需要图片的场景只有一个——重装后的首次恢复，
+ * 那一刻本来就要拉整包"。这个前提后来不成立了：手机端点备份时会先拉一遍云端的分类合并回本地
+ * （见 mobile/src/db/sync-merge.ts），那一步会把一行 `icon = custom:xxx.jpg` 带下来，
+ * 而它**不拉整包**——没有取回单张的路，用户看到的就是一个指向空气的引用（一个 📦）。
  */
 
 /**
@@ -128,6 +131,27 @@ export async function listForBundle(userId) {
   const rows = await prisma.categoryIcon.findMany({
     where: { userId },
     orderBy: { createdAt: "asc" },
+  });
+  return rows.map((row) => ({
+    name: row.name,
+    mimeType: row.mimeType,
+    data: Buffer.from(row.data).toString("base64"),
+  }));
+}
+
+/**
+ * 按名字取回几张图。手机端合并完分类后，拿它把本地缺的那几张补下来。
+ *
+ * **只回点名要的那几张**，不像 listForBundle 那样整份回去：合并是每次备份都会跑的一步，
+ * 而绝大多数时候一张都不缺，缺也就缺刚换的那一两张。
+ *
+ * 名字对不上的静默忽略，不报错：调用方要的是"把能补的补上"，
+ * 为一个云端已经清理掉的孤儿名字让整次备份失败，代价完全不成比例。
+ */
+export async function listByNames(userId, names) {
+  if (!names.length) return [];
+  const rows = await prisma.categoryIcon.findMany({
+    where: { userId, name: { in: names } },
   });
   return rows.map((row) => ({
     name: row.name,

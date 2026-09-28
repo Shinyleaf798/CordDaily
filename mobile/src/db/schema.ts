@@ -247,4 +247,24 @@ export const MIGRATIONS: string[][] = [
   // `WHERE id = (SELECT ... AND id <> 常量 ORDER BY rowid LIMIT 1)`。同名两行时，
   // 第一行改成常量 id 之后子查询重新求值会指向第二行，第二行也被改成同一个 id，撞主键。
   // 要写成 `rowid = (SELECT MIN(rowid) ...)`——它的结果不随这次 UPDATE 改变。
+
+  // v12：分类和账户加 syncedFingerprint——上次成功推上去时那一行长什么样。
+  //
+  // `synced` 是个布尔，它记的是"这行被动过"，不是"这行跟云端不一样"。把分类改个名再改回来，
+  // 两次 UPDATE 各置一次 0，备份层于是永远显示"要上传的分类 1 条"，而那一行跟云端一模一样。
+  // 指纹把判据换成"跟上次推上去的那份一不一样"，改一圈又改回去就不再算数（见 db/sync-fingerprint.ts）。
+  //
+  // 只给这两张表加：它们各几十行，每次统计现算指纹的开销可以忽略，而"改一圈又改回去"
+  // （改名、换图标、拖顺序）恰恰只在这两张表上真会发生。账单继续用布尔。
+  //
+  // **不给 NOT NULL 也不给默认值**：NULL 的含义是"从没推上去过"，
+  // 跟"推过、但之后内容变了"必须分得开——前者是新记录，后者是改动，两者都要推，
+  // 但只有前者会在恢复到一台新设备时整批出现。给个 '' 默认值就把这个区别抹平了。
+  //
+  // `synced` 列**留着照常维护**：删除墓碑那套靠它判断"这行出过门没有"
+  // （见 db/deletions.ts），推送成功时两样一起写。
+  [
+    `ALTER TABLE categories ADD COLUMN syncedFingerprint TEXT;`,
+    `ALTER TABLE accounts ADD COLUMN syncedFingerprint TEXT;`,
+  ],
 ];

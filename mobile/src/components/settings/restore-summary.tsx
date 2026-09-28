@@ -21,6 +21,12 @@ export function RestorePreview({ sourceLabel, plan }: { sourceLabel: string; pla
   const theme = useTheme();
   const created = plan.categories.filter((item) => item.action === 'create').length;
   const matched = plan.categories.filter((item) => item.action === 'matched').length;
+  // 本地已有、而且内容跟包里不一样的。差额（本地已有且完全相同的）不报——
+  // 那些行恢复前后一个字都不变，写进清单只是一个恒为"无事发生"的数
+  const updated = plan.categories.filter((item) => item.action === 'exists' && item.differs).length;
+  // 你在这台手机上改过、还没备份的那些：恢复不动它们，下次推送会把本地那份送上去。
+  // 这里不区分"云端也改过没有"——对着一张恢复预览，用户要知道的就是"我的改动会不会没"
+  const kept = plan.categories.filter((item) => item.conflict).length;
 
   return (
     <View style={styles.stack}>
@@ -43,17 +49,19 @@ export function RestorePreview({ sourceLabel, plan }: { sourceLabel: string; pla
         <Line label="新增账单" value={`+ ${plan.newTransactions}`} />
         <Line label="已存在，跳过" value={String(plan.duplicateTransactions)} />
         <Line label="新增分类" value={`+ ${created}`} />
+        <Line label="更新本地已有分类" value={String(updated)} />
+        <Line label="保留你改过的" value={String(kept)} />
         <Line label="对齐到本地已有分类" value={String(matched)} />
         <Line label="新增账户" value={`+ ${plan.newAccounts}`} />
         <Line label="月预算" value={plan.budgetToRestore ? `恢复 ${plan.budgetToRestore}` : '不覆盖'} />
       </View>
 
-      {/* 空库快路径值得说出来：这时候本地那些默认分类没人引用，
-          整张字典原样采用来源里的版本，连改过的名字和停用状态都会回来 */}
+      {/* 覆盖是这一步唯一会"改掉现有东西"的地方，必须说在按下确认之前。
+          账单只增不改（重复的跳过），分类不一样——所以这句话点名只说分类 */}
       <ThemedText type="small" themeColor="textSecondary">
-        {plan.adoptWholesale
-          ? '这台手机还没有账单，会直接采用备份里的分类，包括你改过的名字和停用状态。'
-          : '这台手机已经有账了，本地现有的分类保持原样；备份里多出来的才会新建。'}
+        {kept > 0
+          ? `有 ${kept} 个分类你在这台手机上改过、还没备份，恢复不会动它们——下次备份时以这台手机的版本为准。其余同 id 的分类按备份里的版本更新。账单只新增，不会被改动。`
+          : '同 id 的分类会按备份里的版本更新，但你在这台手机上改过、还没备份的那些会原样保留。账单只新增，不会被改动。'}
       </ThemedText>
     </View>
   );
@@ -75,6 +83,8 @@ export function RestoreResult({ result }: { result: ImportResult }) {
         <Line label="新增账单" value={String(result.transactions)} />
         <Line label="重复跳过" value={String(result.skipped)} />
         <Line label="新增分类" value={String(result.categories)} />
+        <Line label="更新分类" value={String(result.categoriesUpdated)} />
+        <Line label="保留你改过的" value={String(result.categoriesKept)} />
         <Line label="新增账户" value={String(result.accounts)} />
         {result.budgetRestored ? <Line label="月预算已恢复" value={String(result.budgetRestored)} /> : null}
       </View>

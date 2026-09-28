@@ -202,6 +202,16 @@ const KIND_LABELS = { transaction: '账单', category: '分类', account: '账�
  * 一条都没动时给一句话而不是一串 0：那说明云端本来就是最新的。
  */
 function describePush(result: PushResult): string {
+  // 从云端下来的东西排在最前面：这次备份里唯一**改变了这台手机**的事，
+  // 用户抬头就该看见，而不是在一串上传数字后面找
+  const pulled = [
+    result.merged ? `更新了 ${result.merged} 个分类/账户` : null,
+    result.pulled ? `补回 ${result.pulled} 个` : null,
+    // 图片单独报：它是这条路上唯一明显花时间和流量的东西，
+    // 也是用户最可能专门盯着看有没有成功的那一样
+    result.pulledIcons ? `下载了 ${result.pulledIcons} 张图标` : null,
+  ].filter(Boolean);
+
   const parts = [
     result.transactions ? `${result.transactions} 笔账单` : null,
     result.transfers ? `${result.transfers} 条转账` : null,
@@ -212,7 +222,15 @@ function describePush(result: PushResult): string {
   ].filter(Boolean);
 
   const uploaded = parts.length ? `上传了 ${parts.join('、')}` : '没有新的记录要传';
-  return result.deletions ? `${uploaded}，从云端删掉 ${result.deletions} 条` : uploaded;
+  const lines = [pulled.length ? `从云端${pulled.join('、')}` : null, uploaded].filter(Boolean);
+  const base = lines.join('；');
+  const withDeletions = result.deletions ? `${base}，从云端删掉 ${result.deletions} 条` : base;
+
+  // 冲突必须逐条点名。只说"有 2 处冲突"的话，用户没法知道要去哪儿核对，
+  // 而保留本地这个结果意味着另一台设备上的那次修改这轮没生效
+  return result.conflicts.length
+    ? `${withDeletions}。「${result.conflicts.join('」「')}」两边都改过，这次保留了这台手机上的版本`
+    : withDeletions;
 }
 
 const styles = StyleSheet.create({

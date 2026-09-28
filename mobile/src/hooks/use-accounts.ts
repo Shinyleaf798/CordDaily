@@ -22,12 +22,23 @@ export function useAccounts() {
   });
 }
 
+/**
+ * 一次账户写操作会牵动谁。跟 use-categories 的同名函数是同一件事、同一个理由：
+ * 账户的增删改都会改变"还有多少东西没备份"（新建的 synced 是 0，改名会把它置回 0，
+ * 删除留一块墓碑），而「我的」页是 tab、不会重新挂载——不失效 `localStats` 的话，
+ * 那张备份卡会一直停在改动前的数字，点进备份层也看不到「要上传的账户」。
+ */
+function invalidateAccountConsumers(queryClient: ReturnType<typeof useQueryClient>, extra: string[][] = []) {
+  for (const key of [ACCOUNTS_KEY, ['localStats'], ['pendingDeletions'], ...extra]) {
+    queryClient.invalidateQueries({ queryKey: key });
+  }
+}
+
 export function useUpdateAccount() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateAccount,
-    // 账户只剩名字可改，失效账户列表就够了
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
+    onSuccess: () => invalidateAccountConsumers(queryClient),
   });
 }
 
@@ -35,7 +46,7 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateAccountInput) => createAccount(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
+    onSuccess: () => invalidateAccountConsumers(queryClient),
   });
 }
 
@@ -54,11 +65,7 @@ export function useDeleteAccount() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (accountId: string) => deleteAccount(accountId),
-    onSuccess: () => {
-      for (const key of [ACCOUNTS_KEY, ['transactions'], ['accountTransactionCount']]) {
-        queryClient.invalidateQueries({ queryKey: key });
-      }
-    },
+    onSuccess: () => invalidateAccountConsumers(queryClient, [['transactions'], ['accountTransactionCount']]),
   });
 }
 

@@ -1,4 +1,5 @@
 import type { BackupBundle } from '@/db/backup';
+import type { CategoryIconBlob } from '@/db/category-icon-files';
 
 import { apiClient } from './client';
 
@@ -31,6 +32,43 @@ export async function fetchCloudBundle(): Promise<BackupBundle> {
   return res.data.data;
 }
 
+/**
+ * 云端现在的分类 / 账户。合并那一步（db/sync-merge.ts）拿它跟本地比。
+ *
+ * 用 `GET /categories`、`GET /accounts` 这两个现成的接口，不用 `/sync/bundle`：
+ * 整包会把几千条账单一起拖下来，而这一步只关心那两张几十行的小表。
+ */
+/** 只列合并用得上的字段，服务器多回的（userId、关联数组）忽略 */
+export type CloudCategory = {
+  id: string;
+  name: string;
+  icon: string | null;
+  type: string;
+  parentId: string | null;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+/** `openingBalance` 声明成两种：Prisma 的 Decimal 过 JSON 之后是字符串，不是数字 */
+export type CloudAccount = {
+  id: string;
+  name: string;
+  type: string;
+  currency: string;
+  openingBalance: number | string;
+  icon: string | null;
+};
+
+export async function fetchCloudCategories(): Promise<CloudCategory[]> {
+  const res = await apiClient.get('/categories');
+  return res.data.data ?? [];
+}
+
+export async function fetchCloudAccounts(): Promise<CloudAccount[]> {
+  const res = await apiClient.get('/accounts');
+  return res.data.data ?? [];
+}
+
 /** `updated` 是这一批里**已经在云端、这次被改写**的条数——编辑过的记录走这条路 */
 export type BatchResult = { inserted: number; updated: number; skipped?: number };
 
@@ -44,6 +82,17 @@ export type BatchResult = { inserted: number; updated: number; skipped?: number 
 export async function fetchCloudIconNames(): Promise<string[]> {
   const res = await apiClient.get('/category-icons');
   return res.data.data?.names ?? [];
+}
+
+/**
+ * 按名字取回几张图。合并完云端的分类之后，用它把本地缺的那几张补下来。
+ *
+ * 不走 `/sync/bundle`：那会把几千条账单一起拖下来，只为了拿一两张 15 KB 的图。
+ * 一批最多 50 个名字（服务器那边的上限），调用方负责分批。
+ */
+export async function fetchCategoryIconBlobs(names: string[]): Promise<CategoryIconBlob[]> {
+  const res = await apiClient.post('/category-icons/fetch', { names });
+  return res.data.data?.icons ?? [];
 }
 
 /** 把图片本体（base64）传上去。一批最多 20 张，调用方负责分批 */

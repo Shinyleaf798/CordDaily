@@ -13,6 +13,13 @@ import { getLocalStats } from './backup';
 import { listUsedCategoryIconNames, readCategoryIconBlobs } from './category-icon-files';
 import { getDb } from './client';
 import { clearDeletion, countPendingDeletions, listPendingDeletions } from './deletions';
+import { mergeFromCloud } from './sync-merge';
+import {
+  accountFingerprint,
+  categoryFingerprint,
+  type AccountFingerprintRow,
+  type CategoryFingerprintRow,
+} from './sync-fingerprint';
 import {
   AutoSyncPeriodDays,
   getAutoSyncPeriod,
@@ -22,9 +29,15 @@ import {
 } from './settings';
 
 /**
- * 把本地「还没备份过」（`synced = 0`）的记录单向推给服务器。
+ * 备份到云端：先把云端对**分类和账户**的改动合并回本地，再把本地的改动推上去。
  *
- * **只推不拉**（CLAUDE.md 原则#1）。拉只发生在一种情况：本地是空库、用户明确点了恢复。
+ * **拉那一步只管分类和账户**（见 db/sync-merge.ts）。账单仍然只推不拉——
+ * 几千条每次全量拉下来比对在免费实例上不现实，而且"云端有、本地没有"到底是新增还是删除，
+ * 要服务器也留墓碑才答得了。CLAUDE.md 原则#1 划出去的那条线还在，只是往前挪了两张小表。
+ *
+ * **先拉后推的顺序不能反**：合并会把"云端改过、本地没动过"的行就地更新掉并记上新的 base，
+ * 于是它们不再是脏行，推送阶段自然跳过。反过来先推的话，本地那份会先把云端覆盖掉，
+ * 再去拉就永远拉不到任何东西——等于这一步没做。
  *
  * **手动和自动走的是同一个函数**，自动那条只是先过一道周期判断（见 maybeAutoSync）。
  * 分成两套实现的话，两边对"什么算未备份"的定义迟早会分叉。
@@ -34,6 +47,14 @@ import {
  */
 
 export type PushResult = {
+  /** 从云端采纳下来的分类/账户行数（本地没动过、云端改了的那些） */
+  merged: number;
+  /** 云端有、本地没有，这次补进来的分类/账户 */
+  pulled: number;
+  /** 两边都改过、保留了本地那一份的名字。它们照常被推上去，但要说出来 */
+  conflicts: string[];
+  /** 合并时从云端**补下来**的分类图片张数。跟下面的 icons（这次传上去的）是两个方向 */
+  pulledIcons: number;
   categories: number;
   /** 这次传上去的自定义分类图标张数。图片本体存在 Neon 里，见 backend 的 CategoryIcon */
   icons: number;
@@ -50,6 +71,26 @@ async function markSynced(table: string, ids: string[]): Promise<void> {
   const db = await getDb();
   const placeholders = ids.map(() => '?').join(',');
   await db.runAsync(`UPDATE ${table} SET synced = 1 WHERE id IN (${placeholders})`, ids);
+}
+
+/**
+ * 分类和账户的"已推送"标记：除了 `synced = 1`，还把**刚推上去的那一行的指纹**记下来。
+ *
+ * 有了它，下次判断"这行要不要推"问的就不再是"动过没有"，而是"跟推上去的那份一不一样"——
+ * 改个名再改回来于是不算数（见 db/sync-fingerprint.ts）。
+ *
+ * 一行一条 UPDATE，不像 markSynced 那样一条 IN 批量搞定：每行的指纹都不一样，
+ * 批量写要么拼一大串 CASE WHEN，要么临时表，为几十行不值得。
+ */
+async function markSyncedWithFingerprint(table: string, rows: { id: string; fingerprint: string }[]): Promise<void> {
+  if (!rows.length) return;
+  const db = await getDb();
+  for (const row of rows) {
+    await db.runAsync(`UPDATE ${table} SET synced = 1, syncedFingerprint = ? WHERE id = ?`, [
+      row.fingerprint,
+      row.id,
+    ]);
+  }
 }
 
 /**
@@ -72,6 +113,10 @@ async function markSynced(table: string, ids: string[]): Promise<void> {
 export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   const db = await getDb();
   const result: PushResult = {
+    merged: 0,
+    pulled: 0,
+    conflicts: [],
+    pulledIcons: 0,
     categories: 0,
     icons: 0,
     accounts: 0,
@@ -80,6 +125,15 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     recurring: 0,
     deletions: 0,
   };
+
+  // 先合并：把云端改过、而本地没动过的分类/账户就地更新掉。
+  // 放在删除之前，是因为合并要读墓碑来回答"云端有、本地没有"是新增还是删除——
+  // 删除一旦执行完，墓碑就被清掉了，那个问题就再也答不了
+  const merge = await mergeFromCloud();
+  result.merged = merge.adopted;
+  result.pulled = merge.added;
+  result.conflicts = merge.conflicts;
+  result.pulledIcons = merge.icons;
 
   // 删除走在最前面：本地删掉的分类可能正被云端某条老账单引用着，
   // 而 listPendingDeletions 已经把账单排在分类和账户前面了（外键顺序）
@@ -101,30 +155,43 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   // 这里**不筛掉内置分类**，尽管 getLocalStats 不把它们算进「未备份」：
   // 服务器上 Category 是 `@@id([userId, id])`，每个用户都得有自己那一行，
   // 账单的外键才落得下。它们是骨架，跟着账单一起上去，只是不占用户看到的计数。
-  const categories = await db.getAllAsync<Record<string, unknown>>(
-    `SELECT id, name, icon, type, parentId, sortOrder, isActive FROM categories
-     WHERE synced = 0 ORDER BY parentId IS NOT NULL, sortOrder`,
+  // 取全部行再在 JS 里筛，不写 WHERE：要判的是"跟上次推上去的那份一不一样"，
+  // 而指纹是拼出来的字符串，SQL 里算不出来（见 db/sync-fingerprint.ts）。
+  // 分类就几十行，多读一遍的代价可以忽略；filter 保序，父在前的顺序不会被打乱
+  const allCategories = await db.getAllAsync<CategoryFingerprintRow & { syncedFingerprint: string | null }>(
+    `SELECT id, name, icon, type, parentId, sortOrder, isActive, syncedFingerprint FROM categories
+     ORDER BY parentId IS NOT NULL, sortOrder`,
   );
+  const categories = allCategories.filter((category) => category.syncedFingerprint !== categoryFingerprint(category));
   if (categories.length) {
     // 一个请求推整批，服务器按数组顺序写——上面那个 ORDER BY 已经把父排在前面了。
-    // 整批成功才 markSynced：半途失败时这些行留着 synced = 0，下次重推，
+    // 整批成功才写标记：半途失败时这些行的指纹留在旧值上，下次重推，
     // 而服务器那边全是按 (userId, id) 的 upsert，重推一次结果完全一样
-    await pushCategories(categories.map((category) => ({ ...category, isActive: !!category.isActive })));
-    await markSynced(
+    await pushCategories(
+      categories.map(({ syncedFingerprint: _ignored, ...category }) => ({
+        ...category,
+        isActive: !!category.isActive,
+      })),
+    );
+    // 指纹按**推之前那一刻的行**算。推送期间用户又改了一笔的话，新值跟这个指纹对不上，
+    // 下次自然会再推一遍——反过来（推完再查一次库算指纹）会把那次改动当成已经上去了
+    await markSyncedWithFingerprint(
       'categories',
-      categories.map((category) => category.id as string),
+      categories.map((category) => ({ id: category.id, fingerprint: categoryFingerprint(category) })),
     );
     result.categories = categories.length;
   }
 
-  const accounts = await db.getAllAsync<Record<string, unknown>>(
-    `SELECT id, name, type, currency, openingBalance, icon FROM accounts WHERE synced = 0`,
+  // 同分类：按指纹筛，不按 synced
+  const allAccounts = await db.getAllAsync<AccountFingerprintRow & { syncedFingerprint: string | null }>(
+    `SELECT id, name, type, currency, openingBalance, icon, syncedFingerprint FROM accounts`,
   );
+  const accounts = allAccounts.filter((account) => account.syncedFingerprint !== accountFingerprint(account));
   if (accounts.length) {
-    await pushAccounts(accounts);
-    await markSynced(
+    await pushAccounts(accounts.map(({ syncedFingerprint: _ignored, ...account }) => account));
+    await markSyncedWithFingerprint(
       'accounts',
-      accounts.map((account) => account.id as string),
+      accounts.map((account) => ({ id: account.id, fingerprint: accountFingerprint(account) })),
     );
     result.accounts = accounts.length;
   }

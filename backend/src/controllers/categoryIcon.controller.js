@@ -34,6 +34,19 @@ export async function list(req, res, next) {
   }
 }
 
+// 取回用 POST 不用 GET，因为名字是一串 UUID：20 个就一千多字符，
+// 塞进查询串要闯代理和服务器各自的 URL 长度限制，而这条路没有任何缓存价值可言
+const fetchSchema = z.object({ names: z.array(nameSchema).min(1).max(50) });
+
+export async function fetchByNames(req, res, next) {
+  try {
+    const { names } = fetchSchema.parse(req.body);
+    ok(res, { icons: await categoryIconService.listByNames(req.userId, names) });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function batchUpload(req, res, next) {
   try {
     const { icons } = batchSchema.parse(req.body);
