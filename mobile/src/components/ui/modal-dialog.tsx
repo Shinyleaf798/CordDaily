@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ModalBackdrop } from '@/components/ui/modal-backdrop';
 import { ThemedText } from '@/components/ui/themed-text';
@@ -27,9 +27,14 @@ type ModalDialogProps = {
  * - 对话框：只问一件事、一两个按钮就能答完（确认删除、填一个数）
  * - 底部弹层：要滚动、要列表、要多个字段，够不着屏幕顶部也无所谓
  *
- * **键盘避让：被盖住才抬，而且只抬被盖住的那一段。**
- * 对话框是居中的，个子不高的时候它本来就整个在键盘上方——这种情况不该动。
- * 所以每次都量一遍：卡片底边比键盘顶边低多少，低多少就抬多少，不低就是 0。
+ * **键盘避让：只保证聚焦的那个输入框看得见，别的一概不管。**
+ * 参照物是**输入框的底边**，不是卡片底边。拿卡片底边当参照的话，只要卡片够高，
+ * 底边就必然被键盘盖住，于是必然抬——哪怕输入框本来就在键盘上方老远。
+ * 分类对话框就是这样：输入框在第一行，下面挂着 200 高的图标网格和按钮，
+ * 一聚焦整张卡就被推起来，而用户盯着的那一行根本没被挡过。
+ *
+ * 代价是抬起后卡片下半截会被键盘盖住（图标网格、保存按钮）。这是故意选的：
+ * 收键盘是一个动作，而打字的时候看不见自己打的字没法补救。
  *
  * **不用 KeyboardAvoidingView，也不用 padding，用 transform。**
  * 原来 Android 走 `behavior="height"`，靠改容器高度让位；改高度就是让整棵子树
@@ -47,10 +52,51 @@ export function ModalDialog({ title, onDismiss, dismissOnBackdropPress = true, c
   const [hostHeight, setHostHeight] = useState(0);
   const [card, setCard] = useState({ top: 0, bottom: 0 });
 
+  // 聚焦输入框的底边（同一套窗口坐标）。没有输入框聚焦时是 null，参照物退回卡片底边
+  const [inputBottom, setInputBottom] = useState<number | null>(null);
+  // 当前位移，只给下面那个异步测量回调读
+  const liftRef = useRef(0);
+
   const keyboardTop = hostHeight - keyboardHeight;
-  const covered = keyboardHeight > 0 && hostHeight > 0 ? card.bottom - keyboardTop : 0;
+  const mustSeeBottom = inputBottom ?? card.bottom;
+  // 加一道缝，不然输入框下边缘正好贴着键盘顶边
+  const covered = keyboardHeight > 0 && hostHeight > 0 ? mustSeeBottom + Spacing.two - keyboardTop : 0;
   // 上限取 card.top：抬过头会把标题顶出屏幕，那是拿一个看不见换另一个看不见
   const lift = Math.max(0, Math.min(covered, card.top));
+
+  // 输入框在调用方的子树里，这一层挂不上 onLayout，只能自己去量。
+  // 挂在键盘事件上而不是写成「跟着 keyboardHeight 变就量」：键盘是外部系统，
+  // 在它的回调里 setState 才是 effect 的正常用法——effect 体里同步 setState 会级联渲染。
+  // 事件名的选法跟 use-keyboard-height 一致：Will 只有 iOS 发得出来。
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const show = Keyboard.addListener(showEvent, () => {
+      // 用 currentlyFocusedInput 而不是让调用方传 ref 进来：所有对话框自动生效，一个调用点都不用改
+      const input = TextInput.State.currentlyFocusedInput();
+      if (!input) {
+        setInputBottom(null);
+        return;
+      }
+      // measureInWindow 报的是「画到屏幕上」的位置，已经含了卡片当前的 translateY。
+      // 把 lift 加回去还原成没位移时的坐标，否则测量值会喂给产生它的那个位移，
+      // 每次键盘事件都往上爬一截——上面 transform 那段说的回路，换个入口又长出来
+      input.measureInWindow((_x, y, _width, height) => setInputBottom(y + height + liftRef.current));
+    });
+    const hide = Keyboard.addListener(hideEvent, () => setInputBottom(null));
+
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  // 等测量回调异步落回来时，liftRef 里是「屏幕上这一帧」的位移，
+  // 跟 measureInWindow 量到的位置对得上
+  useEffect(() => {
+    liftRef.current = lift;
+  }, [lift]);
 
   return (
     <View style={styles.root} onLayout={(e) => setHostHeight(e.nativeEvent.layout.height)}>
