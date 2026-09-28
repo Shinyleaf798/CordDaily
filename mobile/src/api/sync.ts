@@ -6,9 +6,10 @@ import { apiClient } from './client';
  * 同步用到的几个接口。这一层只负责"发请求、把 data 摘出来"，
  * 什么该推、推完怎么标记，在 `db/sync.ts` 里。
  *
- * 分类和账户是**一条一条** POST 的（后端那两个接口是单条 upsert），
- * 交易、转账、周期规则走 batch。没给分类做批量接口是因为它们数量小（几十条）
- * 而且只在第一次推的时候全量走一遍——为此多开一个端点不划算。
+ * 除了周期规则，全都是批量的。分类和账户曾经是一条一个 POST，理由是"数量小、
+ * 只在第一次全量走一遍"——这个前提后来塌了：内置分类涨到 36 个，而且**拖一次排序
+ * 会把那一层整层标脏**，于是一次很普通的操作要几十个来回。慢的是网络往返，不是数据量。
+ * 周期规则还是单条：它是用户一条一条建的，同时脏一批的场景不存在。
  */
 
 export type CloudSummary = {
@@ -30,15 +31,19 @@ export async function fetchCloudBundle(): Promise<BackupBundle> {
   return res.data.data;
 }
 
-export async function pushCategory(category: Record<string, unknown>): Promise<void> {
-  await apiClient.post('/categories', category);
+/** `updated` 是这一批里**已经在云端、这次被改写**的条数——编辑过的记录走这条路 */
+export type BatchResult = { inserted: number; updated: number; skipped?: number };
+
+/** 父在前、子在后由调用方排好：服务器按数组顺序写，子分类的 parentId 得先有着落 */
+export async function pushCategories(categories: Record<string, unknown>[]): Promise<BatchResult> {
+  const res = await apiClient.post('/categories/batch', { categories });
+  return res.data.data;
 }
 
-export async function pushAccount(account: Record<string, unknown>): Promise<void> {
-  await apiClient.post('/accounts', account);
+export async function pushAccounts(accounts: Record<string, unknown>[]): Promise<BatchResult> {
+  const res = await apiClient.post('/accounts/batch', { accounts });
+  return res.data.data;
 }
-
-export type BatchResult = { inserted: number; skipped: number };
 
 export async function pushTransactions(transactions: Record<string, unknown>[]): Promise<BatchResult> {
   const res = await apiClient.post('/transactions/batch', { transactions });

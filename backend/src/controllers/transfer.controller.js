@@ -6,7 +6,7 @@ const transferItemSchema = z.object({
   id: z.string().uuid(),
   amount: z.number().positive(),
   date: z.coerce.date(),
-  note: z.string().optional(),
+  note: z.string().nullish(),
   fromAccountId: z.string().uuid(),
   toAccountId: z.string().uuid(),
 });

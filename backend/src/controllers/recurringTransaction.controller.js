@@ -5,7 +5,7 @@ import { ok } from "../utils/response.js";
 const createSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
-  remarks: z.string().optional(),
+  remarks: z.string().nullish(),
   amount: z.number(),
   currency: z.string().default("MYR"),
   exchangeRate: z.number().default(1),
@@ -13,7 +13,7 @@ const createSchema = z.object({
   frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]),
   startDate: z.coerce.date(),
   nextRunDate: z.coerce.date(),
-  endDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().nullish(),
   isActive: z.boolean().default(true),
   categoryId: z.string().uuid(),
   accountId: z.string().uuid(),

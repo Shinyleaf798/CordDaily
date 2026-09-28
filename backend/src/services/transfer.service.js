@@ -8,28 +8,31 @@ export async function list(userId) {
   });
 }
 
-// 同 transactions/batch：客户端生成 id，插入前先查哪些已存在，做幂等去重
+// 同 transactions/batch：客户端生成 id，已存在的更新、没有的插入
 export async function batchCreate(userId, items) {
   await verifyAccounts(userId, items);
 
   const ids = items.map((item) => item.id);
   const existing = await prisma.transfer.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, userId },
     select: { id: true },
   });
   const existingIds = new Set(existing.map((t) => t.id));
   const newItems = items.filter((item) => !existingIds.has(item.id));
+  const editedItems = items.filter((item) => existingIds.has(item.id));
 
-  if (newItems.length === 0) {
-    return { inserted: 0, skipped: items.length };
+  if (newItems.length > 0) {
+    await prisma.transfer.createMany({
+      data: newItems.map((item) => ({ ...item, userId })),
+      skipDuplicates: true,
+    });
   }
 
-  await prisma.transfer.createMany({
-    data: newItems.map((item) => ({ ...item, userId })),
-    skipDuplicates: true,
-  });
+  for (const { id, ...rest } of editedItems) {
+    await prisma.transfer.update({ where: { id }, data: rest });
+  }
 
-  return { inserted: newItems.length, skipped: items.length - newItems.length };
+  return { inserted: newItems.length, updated: editedItems.length, skipped: 0 };
 }
 
 async function verifyAccounts(userId, items) {

@@ -10,13 +10,18 @@ export async function list(userId) {
 
 // id 由手机端本地生成（规则本身也是离线创建的）。重复提交同一个 id 时视为幂等操作，
 // 直接返回已存在的规则，而不是报错——同步重试不应该让用户看到失败提示。
+// 同步入口，一条一条推。已存在就**更新**而不是原样返回：
+// 规则改了金额、改了周期、或者被停用（isActive:false），都得跟着上去。
+// 原来发现 id 已存在就直接把旧的还回去，等于"规则只有第一次备份算数"。
 export async function create(userId, data) {
-  const existing = await prisma.recurringTransaction.findUnique({ where: { id: data.id } });
+  await verifyRefs(userId, data);
+
+  const { id, ...rest } = data;
+  const existing = await prisma.recurringTransaction.findFirst({ where: { id, userId }, select: { id: true } });
   if (existing) {
-    return existing;
+    return prisma.recurringTransaction.update({ where: { id }, data: rest });
   }
 
-  await verifyRefs(userId, data);
   return prisma.recurringTransaction.create({ data: { ...data, userId } });
 }
 

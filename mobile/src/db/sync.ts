@@ -1,7 +1,7 @@
 import {
   deleteRemote,
-  pushAccount,
-  pushCategory,
+  pushAccounts,
+  pushCategories,
   pushRecurring,
   pushTransactions,
   pushTransfers,
@@ -40,11 +40,6 @@ export type PushResult = {
   deletions: number;
 };
 
-/** 后端的 zod 用的是 `.optional()`，它**不接受 null**——本地那些可空列必须先把 null 摘掉 */
-function omitNulls<T extends Record<string, unknown>>(row: T): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null && value !== undefined));
-}
-
 async function markSynced(table: string, ids: string[]): Promise<void> {
   if (!ids.length) return;
   const db = await getDb();
@@ -53,6 +48,18 @@ async function markSynced(table: string, ids: string[]): Promise<void> {
 }
 
 /**
+ * 一条规则贯穿下面每一种记录：**推整行，null 照送**。
+ *
+ * 服务器那边全是「有则更新、无则插入」，而更新是整行覆盖——少送一个字段不等于"这个字段没变"，
+ * 等于"这个字段保持云端的旧值"。所以任何「把某个值清空」的操作（撤回报销、清掉店名、
+ * 把二级分类升成一级）都必须送一个显式的 null 上去，否则它永远到不了云端，
+ * 而手机端收到 2xx 会把这一行标成已备份，界面上看不出任何异样。
+ *
+ * 曾经这里有个 `omitNulls`，把 null 字段整个滤掉。它省下的是几个字节的 JSON，
+ * 代价是上面那一整类"改了但没同步、还不报错"的 bug（见 DECISIONS.md）。删掉了。
+ * 后端每个可空字段的 zod 因此都是 `.nullish()` 而不是 `.optional()`——两者的区别正是
+ * "收得下 null" 和 "只收得下缺席"。
+ *
  * @param withDeletions 要不要把本地删掉的那些也在云端删掉。默认 true——
  *   "备份"的通常含义是让云端跟本地一致。用户在确认弹层里取消勾选时传 false，
  *   那些墓碑会**留着**等下一次：不勾等于"这次先别动云端"，不是放弃。
@@ -87,19 +94,28 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     `SELECT id, name, icon, type, parentId, sortOrder, isActive FROM categories
      WHERE synced = 0 ORDER BY parentId IS NOT NULL, sortOrder`,
   );
-  for (const category of categories) {
-    await pushCategory(omitNulls({ ...category, isActive: !!category.isActive }));
-    await markSynced('categories', [category.id as string]);
-    result.categories += 1;
+  if (categories.length) {
+    // 一个请求推整批，服务器按数组顺序写——上面那个 ORDER BY 已经把父排在前面了。
+    // 整批成功才 markSynced：半途失败时这些行留着 synced = 0，下次重推，
+    // 而服务器那边全是按 (userId, id) 的 upsert，重推一次结果完全一样
+    await pushCategories(categories.map((category) => ({ ...category, isActive: !!category.isActive })));
+    await markSynced(
+      'categories',
+      categories.map((category) => category.id as string),
+    );
+    result.categories = categories.length;
   }
 
   const accounts = await db.getAllAsync<Record<string, unknown>>(
     `SELECT id, name, type, currency, openingBalance, icon FROM accounts WHERE synced = 0`,
   );
-  for (const account of accounts) {
-    await pushAccount(omitNulls(account));
-    await markSynced('accounts', [account.id as string]);
-    result.accounts += 1;
+  if (accounts.length) {
+    await pushAccounts(accounts);
+    await markSynced(
+      'accounts',
+      accounts.map((account) => account.id as string),
+    );
+    result.accounts = accounts.length;
   }
 
   const transactions = await db.getAllAsync<Record<string, unknown>>(
@@ -119,19 +135,19 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
       ids,
     );
 
+    // 这里的 null 尤其有含义：reimbursedAt 为空是「还没收回来」，
+    // merchant / location / remarks 为空是「用户清掉了」——都得原样送上去
     await pushTransactions(
-      batch.map((transaction) =>
-        omitNulls({
-          ...transaction,
-          // 本地存的是一段 JSON 文本和 0/1，后端要的是数组和布尔
-          tags: safeParseTags(transaction.tags),
-          isReimbursable: !!transaction.isReimbursable,
-          excludeFromStats: !!transaction.excludeFromStats,
-          images: images
-            .filter((image) => image.transactionId === transaction.id)
-            .map((image) => ({ url: image.url })),
-        }),
-      ),
+      batch.map((transaction) => ({
+        ...transaction,
+        // 本地存的是一段 JSON 文本和 0/1，后端要的是数组和布尔
+        tags: safeParseTags(transaction.tags),
+        isReimbursable: !!transaction.isReimbursable,
+        excludeFromStats: !!transaction.excludeFromStats,
+        images: images
+          .filter((image) => image.transactionId === transaction.id)
+          .map((image) => ({ url: image.url })),
+      })),
     );
     await markSynced('transactions', ids);
     result.transactions += batch.length;
@@ -141,7 +157,8 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     `SELECT id, amount, date, note, fromAccountId, toAccountId FROM transfers WHERE synced = 0`,
   );
   if (transfers.length) {
-    await pushTransfers(transfers.map(omitNulls));
+    // 同账单：整行推，note 清空了也要让云端跟着空
+    await pushTransfers(transfers);
     await markSynced(
       'transfers',
       transfers.map((transfer) => transfer.id as string),
@@ -155,7 +172,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
        FROM recurring_transactions WHERE synced = 0`,
   );
   for (const rule of recurring) {
-    await pushRecurring(omitNulls({ ...rule, isActive: !!rule.isActive }));
+    await pushRecurring({ ...rule, isActive: !!rule.isActive });
     await markSynced('recurring_transactions', [rule.id as string]);
     result.recurring += 1;
   }
@@ -206,10 +223,21 @@ export async function maybeAutoSync(): Promise<void> {
   }
 }
 
-/** 把 axios 那一坨错误压成一句人话——它会原样显示在自动同步页上 */
+/**
+ * 把 axios 那一坨错误压成一句人话——它会原样显示在自动同步页上。
+ *
+ * 4xx 带上服务器那句 message：后端打回来的都是具体原因
+ * （「One or more categories do not belong to this user」这种），
+ * 而只显示一个「服务器返回 400」等于把唯一的线索丢掉——
+ * 排查时得去翻服务器日志，可 4xx 根本不进日志（见 error.middleware，只有 500 才 console.error）。
+ * 5xx 不带：那是服务器内部的事，用户看了也无从下手，而且消息里可能有实现细节。
+ */
 export function describeError(error: unknown): string {
-  const response = (error as { response?: { status?: number } })?.response;
+  const response = (error as { response?: { status?: number; data?: { error?: { message?: string } } } })?.response;
   if (response?.status === 401) return '登录已过期，重新登录后再试';
-  if (response?.status) return `服务器返回 ${response.status}`;
+  if (response?.status) {
+    const detail = response.status < 500 ? response.data?.error?.message : undefined;
+    return detail ? `服务器返回 ${response.status}：${detail}` : `服务器返回 ${response.status}`;
+  }
   return '连不上服务器，可能是没网络或服务器在休眠';
 }

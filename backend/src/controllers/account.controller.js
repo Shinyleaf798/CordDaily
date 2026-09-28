@@ -9,10 +9,13 @@ const createSchema = z.object({
   type: z.enum(["CASH", "BANK", "EWALLET", "CREDIT_CARD", "OTHER"]),
   currency: z.string().default("MYR"),
   openingBalance: z.number().default(0),
-  icon: z.string().optional(),
+  icon: z.string().nullish(),
 });
 
 const updateSchema = createSchema.omit({ id: true }).partial();
+
+// 同步用的批量入口，上限同分类
+const batchSchema = z.object({ accounts: z.array(createSchema).min(1).max(500) });
 
 export async function list(req, res, next) {
   try {
@@ -26,6 +29,15 @@ export async function create(req, res, next) {
   try {
     const body = createSchema.parse(req.body);
     ok(res, await accountService.create(req.userId, body), 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function batchCreate(req, res, next) {
+  try {
+    const { accounts } = batchSchema.parse(req.body);
+    ok(res, await accountService.batchCreate(req.userId, accounts), 201);
   } catch (err) {
     next(err);
   }

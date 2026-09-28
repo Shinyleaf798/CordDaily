@@ -19,6 +19,29 @@ export async function create(userId, { id, ...data }) {
   });
 }
 
+/**
+ * 同步入口：一批账户一次推上来。理由跟分类那个 batchCreate 一样——
+ * 省的是网络往返，不是数据库时间。同样不包事务：upsert 幂等，重推一次结果一样。
+ */
+export async function batchCreate(userId, items) {
+  const ids = items.map((item) => item.id);
+  const existing = await prisma.account.findMany({
+    where: { userId, id: { in: ids } },
+    select: { id: true },
+  });
+  const existedBefore = new Set(existing.map((account) => account.id));
+
+  for (const { id, ...data } of items) {
+    await prisma.account.upsert({
+      where: { userId_id: { userId, id } },
+      create: { ...data, id, userId },
+      update: data,
+    });
+  }
+
+  return { inserted: items.length - existedBefore.size, updated: existedBefore.size };
+}
+
 export async function update(userId, id, data) {
   await assertOwned(userId, id);
   return prisma.account.update({ where: { userId_id: { userId, id } }, data });

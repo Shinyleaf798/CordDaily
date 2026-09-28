@@ -7,9 +7,12 @@ const imageSchema = z.object({ url: z.string().url() });
 const transactionItemSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
-  merchant: z.string().optional(),
-  location: z.string().optional(),
-  remarks: z.string().optional(),
+  // nullish 而不是 optional：手机端推的是**整行**，清空一个字段送的是 null。
+  // 只认 optional 的话 null 会被校验打回，而漏掉这个字段又会让 update 保持原值——
+  // 两种都等于"清空同步不上去"（同一个坑的完整讨论见 DECISIONS.md 的 omitNulls 那条）
+  merchant: z.string().nullish(),
+  location: z.string().nullish(),
+  remarks: z.string().nullish(),
   amount: z.number(),
   currency: z.string().default("MYR"),
   exchangeRate: z.number().default(1),
@@ -18,7 +21,7 @@ const transactionItemSchema = z.object({
   date: z.coerce.date(),
   categoryId: z.string().uuid(),
   accountId: z.string().uuid(),
-  recurringId: z.string().uuid().optional(),
+  recurringId: z.string().uuid().nullish(),
   tags: z.array(z.string()).default([]),
   isReimbursable: z.boolean().default(false),
   reimbursedAt: z.coerce.date().nullish(),
