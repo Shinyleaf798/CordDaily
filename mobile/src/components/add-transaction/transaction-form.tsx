@@ -49,7 +49,19 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const keyboardHeight = useKeyboardHeight();
   // 两个高度都实测，不按屏幕比例硬算——外壳的 55% 还要扣掉安全区，算出来的和实际差一截
   const [sheetHeight, setSheetHeight] = useState(0);
-  const [noteFieldsHeight, setNoteFieldsHeight] = useState(0);
+  /**
+   * 输入块**下面**那一截（选项行 + 数字键盘）有多高。
+   *
+   * 直接量它，而不是用「外壳高 - 输入块高」去减出来。两种写法算的是同一个数，
+   * 区别在于**信谁报的 layout**：减法要求输入块那个 `Animated.View` 的 onLayout
+   * 在展开店名/地点之后如实更新，而它身上挂着 native driver 驱动的 transform；
+   * 一旦那次更新没到，减出来的还是收起时的高度，位移就正好差一行——
+   * 表现就是"输入块贴着键盘，但展开的那一行在键盘底下"。
+   *
+   * 这一块是块普通 View，没有 transform，而且 `flex: 1`——输入块长高一行，
+   * 它就在**同一次布局**里矮一行，两个数永远是自洽的。
+   */
+  const [actionBlockHeight, setActionBlockHeight] = useState(0);
 
   // 正在填哪个文字字段。历史补全的浮层归这一层渲染，不归 TransactionNoteFields：
   // 浮层要盖在输入块**上方**，而 Android 上画到父容器外面的东西收不到触摸，
@@ -77,9 +89,22 @@ export function TransactionForm({ initial }: TransactionFormProps) {
       return { ...prev, [field]: anchor };
     });
 
-  // 输入块底边离屏幕底边本来就有这么远，键盘只要没盖过这个距离就不用动它
-  const restingGap = Math.max(0, sheetHeight - noteFieldsHeight);
-  const targetLift = Math.max(0, keyboardHeight - restingGap);
+  // 输入块底边离屏幕底边本来就有这么远。安全区那一截在外壳的 paddingBottom 上，
+  // 不在 actionBlock 里面，所以要单独加回来
+  const restingGap = actionBlockHeight + insets.bottom;
+  /**
+   * 键盘弹起时，输入块的下边缘**贴着键盘顶边**；收起时回原位。
+   *
+   * 差值**允许为负**，负的就是往下走。原来这里钳在 0（"本来就在键盘上方就不用动"），
+   * 只保证了输入框不被盖住——但 `restingGap` 有 300 多 dp（面板占屏幕 55%，
+   * 减掉百来 dp 的输入块，剩下的全是数字键盘），跟一个中文输入法的高度基本相当。
+   * 于是常见情况下算出来的位移是 0 到十几 dp：输入块几乎不动，
+   * 跟键盘之间留着几十 dp 的空隙露出选项行的上半截，看着像"没贴上"。
+   *
+   * 代价：贴上去之后，选项行（日期/账户/标签）会被输入块盖住。
+   * 那一行在打字时本来也有大半截在键盘底下，而"输入框紧挨着键盘"是打字时唯一重要的事。
+   */
+  const targetLift = keyboardHeight > 0 ? keyboardHeight - restingGap : 0;
   const [lift] = useState(() => new Animated.Value(0));
   // 负值才是"往上"，所以取反一次给 translateY
   const liftY = useMemo(() => Animated.multiply(lift, -1), [lift]);
@@ -324,16 +349,16 @@ export function TransactionForm({ initial }: TransactionFormProps) {
         type="backgroundElement"
         onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
         style={[styles.bottomSheet, { paddingBottom: insets.bottom }]}>
-        {/* 键盘弹出时这一块滑到键盘顶边。位移量是算出来的而不是直接用键盘高度：
-            它本来就离屏幕底边有 (外壳高 - 自己高) 那么远，只需要补上不够的那一截，
-            直接按键盘高度位移会冲过头。差值 <= 0 就说明本来就在键盘上方，不用动。
+        {/* 键盘弹出时这一块滑到键盘顶边、紧贴着它。位移量是算出来的而不是直接用键盘高度：
+            它本来就离屏幕底边有 (外壳高 - 自己高) 那么远，只需要补上差的那一截，
+            直接按键盘高度位移会冲过头。差值为负时往**下**走——那说明它本来就在键盘上方
+            太远了，中间空着一条（见上面 targetLift 的说明）。
 
             用 transform 而不是 position: absolute：transform 不参与布局，
             所以它动的时候下面几块一格不挪，也不需要占位 View。
             走 Animated 是为了跟键盘一起滑——直接改值会在键盘还没滑上来时先跳上去，
             中间那一瞬间就会露出背景 */}
         <Animated.View
-          onLayout={(e) => setNoteFieldsHeight(e.nativeEvent.layout.height)}
           style={[
             styles.noteFields,
             { backgroundColor: theme.backgroundElement, transform: [{ translateY: liftY }] },
@@ -354,7 +379,10 @@ export function TransactionForm({ initial }: TransactionFormProps) {
         </Animated.View>
 
         {/* 下半块：方角，因为它永远接在输入块下面，自己不是顶部 */}
-        <ThemedView type="backgroundElement" style={styles.actionBlock}>
+        <ThemedView
+          type="backgroundElement"
+          onLayout={(e) => setActionBlockHeight(e.nativeEvent.layout.height)}
+          style={styles.actionBlock}>
           <TransactionOptionsRow
             date={date}
             onDatePress={() => setOpenSheet('date')}
