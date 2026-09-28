@@ -187,6 +187,32 @@ export async function listUsedCategoryIconNames(): Promise<string[]> {
   return [...new Set(names)];
 }
 
+/**
+ * 沙盒里现在有哪些图标文件，**刚传的在最前**。
+ *
+ * 跟 listUsedCategoryIconNames 不是同一个问题，两个都要：那个问"库里还有谁在引用"
+ * （备份和清理要的答案），这个问"盘上现在有哪些图"。差别正是**刚挑完、还没点保存的那一张**——
+ * 它此刻在 categories 表里查不到，而选择器必须立刻把它摆在第一格。
+ *
+ * 同步的：`Directory.list()` 本来就是同步 API（pruneUnusedCategoryIcons 也这么用它）。
+ * 目录不存在或者读不动就当空的——选择器少列几张图，不该让整张弹层打不开。
+ */
+export function listCustomIconFiles(): string[] {
+  try {
+    const dir = iconsDir();
+    if (!dir.exists) return [];
+    return dir
+      .list()
+      .filter((entry): entry is File => entry instanceof File)
+      // 按修改时间倒序：刚传的那张要落在第一格，否则用户得在几十张里找自己两秒前选的图。
+      // modificationTime 是可选字段（平台不给就没有），取不到的沉底
+      .sort((a, b) => (b.modificationTime ?? 0) - (a.modificationTime ?? 0))
+      .map((file) => file.name);
+  } catch {
+    return [];
+  }
+}
+
 /** 备份包里一张图标的样子：文件名 + base64 的图片内容 */
 export type CategoryIconBlob = { name: string; data: string; mimeType?: string };
 

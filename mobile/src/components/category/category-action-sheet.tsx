@@ -8,7 +8,7 @@ import { Spacing } from '@/constants/theme';
 import type { Category } from '@/db/categories';
 import { useTheme } from '@/hooks/use-theme';
 
-export type CategoryAction = 'edit' | 'move' | 'bills' | 'toggleActive' | 'delete';
+export type CategoryAction = 'edit' | 'move' | 'bills' | 'sortChildren' | 'toggleActive' | 'delete';
 
 type CategoryActionSheetProps = {
   category: Category;
@@ -38,7 +38,10 @@ export function CategoryActionSheet({
   onDismiss,
 }: CategoryActionSheetProps) {
   const theme = useTheme();
-  const transition = useSheetTransition(onDismiss, 0.62);
+  // 0.72 而不是原来的 0.62：多了「给子分类排序」这一条之后，六行操作加上头尾
+  // 在矮一点的屏幕上会顶到上限——ModalSheet 没有内部滚动，顶到上限就是直接裁掉，
+  // 被裁掉的正好是最底下的「取消」
+  const transition = useSheetTransition(onDismiss, 0.72);
 
   // 选完先播完出场动画再执行，菜单不会在动作生效的同一帧里"啪"地消失
   const pick = (action: CategoryAction) => transition.close(() => onSelect(action));
@@ -54,6 +57,9 @@ export function CategoryActionSheet({
 
   // 自己还带着子分类就不能挂到别人下面，否则就成了三层
   const moveReason = blockedByChildren ? '底下有子分类的，不能再挂到别人下面' : undefined;
+
+  // 一个还没有子分类的一级分类，"排序"这件事存在但现在没得排
+  const sortReason = blockedByChildren ? undefined : '底下还没有子分类';
 
   const subtitle = [
     childCount > 0 ? `${childCount} 个子分类` : null,
@@ -82,6 +88,22 @@ export function CategoryActionSheet({
             disabledReason={moveReason}
             onPress={() => pick('move')}
           />
+          {/* 只有一级分类有这一条，子分类整条不出现。
+              上面那些"灰着列出来写明原因"说的是**现在不行**（还有账单在用、底下有子分类），
+              而子分类的子分类这个项目里根本不存在（只有两层），灰一条永远不会亮的给用户看，
+              读起来像是"再想想办法就能用"——那是另一种误导 */}
+          {category.parentId ? null : (
+            <>
+              <Divider />
+              <ActionRow
+                icon="swap-vertical-outline"
+                label="子分类排序"
+                caption={sortReason ?? '决定它们在记账页网格里的先后'}
+                disabledReason={sortReason}
+                onPress={() => pick('sortChildren')}
+              />
+            </>
+          )}
           <Divider />
           <ActionRow icon="receipt-outline" label="查看这一类的账单" onPress={() => pick('bills')} />
         </View>

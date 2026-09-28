@@ -30,7 +30,14 @@ type CategoryGridProps = {
 
 // 一格的高度写死。二级面板要浮在被点那一行的正下方，行高必须是确定的数才算得出位置。
 // 这个数是下面三样加出来的：CIRCLE_SIZE + Spacing.one + 标签行高，改任何一个都要重算
-const ITEM_HEIGHT = 62;
+/**
+ * 一格的高度：图标框 + Spacing.one + **两行**标签（16 × 2）。
+ *
+ * 标签从一行改成两行之后这个数必须跟着长，两个理由：
+ * 1. `styles.item` 直接用它当定高，不加高第二行会被裁掉，反而比截断更难看
+ * 2. 子分类浮层的落点是拿它算出来的（见 PanelAnchor），对不上的话小三角会指偏
+ */
+const ITEM_HEIGHT = 62 + 16;
 /** 图标本身的边长，网格和二级面板共用 */
 const ICON_SIZE = 24;
 /** 选中时垫在图标后面那个圆的直径 */
@@ -222,7 +229,9 @@ function IconCell({ icon, label, selected, hasChildren, onPress }: IconCellProps
         type="small"
         themeColor={selected ? undefined : 'textSecondary'}
         style={[styles.label, selected ? { color: theme.cardHighlight } : null]}
-        numberOfLines={1}>
+        // 两行：一格只有五分之一屏宽，一行装不下「Crash of Clan」这种名字，
+        // 而截断之后剩下的「Crash of Cl…」既认不出是哪个分类，也看不出自己起过什么名
+        numberOfLines={2}>
         {label}
       </ThemedText>
     </Pressable>
@@ -305,6 +314,9 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     lineHeight: 16,
+    // 换行之后每一行各自居中。不写的话文本块整体居中、行内却是左对齐的，
+    // 短的那一行（多半是第二行）会贴在左边，看着像没对齐
+    textAlign: 'center',
   },
   childDot: {
     position: 'absolute',

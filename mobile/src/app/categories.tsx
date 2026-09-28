@@ -6,7 +6,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategoryActionSheet, type CategoryAction } from '@/components/category/category-action-sheet';
-import { CategoryEditorDialog } from '@/components/category/category-editor-dialog';
+import { CategoryEditorSheet } from '@/components/category/category-editor-sheet';
 import { CategoryIcon } from '@/components/category/category-icon';
 import { CategoryParentPicker } from '@/components/category/category-parent-picker';
 import { TransactionTypeTabs } from '@/components/transaction/transaction-type-tabs';
@@ -141,6 +141,10 @@ export default function CategoriesScreen() {
         // 不带 month：那一页自己会落到当前月份，从这里进去看的就是"最近的情况"
         router.push({ pathname: '/category-spending', params: { id: target.id } });
         break;
+      case 'sortChildren':
+        // type 跟着一起传：那一页要按收支类型取分类表，不传就得先查一次父分类才知道去哪张表找
+        router.push({ pathname: '/subcategory-order', params: { id: target.id, type } });
+        break;
       case 'toggleActive':
         setActive.mutate({ id: target.id, isActive: !target.isActive });
         break;
@@ -215,15 +219,6 @@ export default function CategoriesScreen() {
             }}
           />
 
-          <Pressable
-            onPress={() => setEditor({ category: null })}
-            style={[styles.addRow, { borderColor: theme.cardHighlight }]}>
-            <Ionicons name="add" size={20} color={theme.cardHighlight} />
-            <ThemedText type="default" style={{ color: theme.cardHighlight }}>
-              新建{type === 'EXPENSE' ? '支出' : '收入'}分类
-            </ThemedText>
-          </Pressable>
-
           {/* 停用的收在最后，不跟在用的混在一起：它们在记账页已经看不见了，
               摆在中间只会让用户以为自己没停用成功 */}
           {inactiveParents.length > 0 ? (
@@ -242,6 +237,25 @@ export default function CategoriesScreen() {
             </View>
           ) : null}
         </ScrollView>
+
+        {/* 「新建」钉在屏幕底部，不跟着列表滚。
+            它原来排在一级分类列表和"已停用"那一段之间，于是分类一多就被挤出屏幕——
+            而"再建一个"这个念头恰恰是翻完整张列表才会冒出来的，那时它已经不在视野里了。
+            钉在底下还顺带把它挪进了拇指够得着的那一圈。
+
+            放在 ScrollView 外面而不是用绝对定位浮在上面：占真实高度的话，
+            列表的可滚区自己就短了那么一截，最后一行不会被它盖住，也不用再补一个
+            "刚好等于按钮高度"的 paddingBottom 去躲它——那种数字改一次样式就要对一次 */}
+        <View style={[styles.footer, { borderTopColor: theme.backgroundSelected }]}>
+          <Pressable
+            onPress={() => setEditor({ category: null })}
+            style={[styles.addRow, { borderColor: theme.cardHighlight }]}>
+            <Ionicons name="add" size={20} color={theme.cardHighlight} />
+            <ThemedText type="default" style={{ color: theme.cardHighlight }}>
+              新建{type === 'EXPENSE' ? '支出' : '收入'}分类
+            </ThemedText>
+          </Pressable>
+        </View>
       </ThemedView>
 
       {sheetCategory ? (
@@ -256,7 +270,7 @@ export default function CategoriesScreen() {
 
       {/* 只在打开时挂载：对话框的初始值就能直接从 props 读，不用 useEffect 往 state 里同步 */}
       {editor ? (
-        <CategoryEditorDialog
+        <CategoryEditorSheet
           type={type}
           category={editor.category}
           // 只跟同一层比重名：「餐饮 > 早餐」和「交通 > 早餐」互不冲突
@@ -385,7 +399,9 @@ function CategoryGroup({
                 <View style={[styles.cellIcon, !child.isActive && styles.inactiveCard]}>
                   <CategoryIcon icon={child.icon} size={22} />
                 </View>
-                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.cellLabel}>
+                {/* 跟记账页那张网格一样给两行。这一格更窄（一行七个），两行也未必装得下
+                    很长的拉丁名，但装得下的那部分明显更多 */}
+                <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.cellLabel}>
                   {child.name}
                 </ThemedText>
               </Pressable>
@@ -580,6 +596,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: 'dashed',
   },
+  footer: {
+    paddingHorizontal: ScreenPadding,
+    paddingVertical: Spacing.three,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   addRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -589,7 +610,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: 'dashed',
-    marginTop: Spacing.three,
   },
   inactiveSection: {
     marginTop: Spacing.four,

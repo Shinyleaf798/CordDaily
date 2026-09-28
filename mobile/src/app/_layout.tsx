@@ -140,6 +140,12 @@ export default function RootLayout() {
               name="categories"
               options={{ ...ScreenTransitions.push, title: '', headerTitleAlign: 'center' }}
             />
+            {/* 分类管理的下一级：某个一级分类底下那几条子分类的顺序。
+                标题写在页面里（要带上父分类的名字），这里只给个组件还没渲染时的兜底 */}
+            <Stack.Screen
+              name="subcategory-order"
+              options={{ ...ScreenTransitions.push, title: '子分类', headerTitleAlign: 'center' }}
+            />
             {/* 跟记一笔、分类管理同一类，用同一个 push。以前空着看不出来是因为原生栈在 Android 上
                 会把 slide_from_right 回落成默认；JS 栈照字面执行，不写就分叉成两种动画。 */}
             <Stack.Screen name="tags" options={{ ...ScreenTransitions.push, title: '标签汇总' }} />

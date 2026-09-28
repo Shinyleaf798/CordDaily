@@ -43,7 +43,7 @@ export default function AccountEditorScreen() {
   const existing = id ? accounts?.find((a) => a.id === id) : undefined;
   const isEdit = !!id;
 
-  // 初始值直接读进 useState，不用 useEffect 把 props 同步进 state（同 CategoryEditorDialog）
+  // 初始值直接读进 useState，不用 useEffect 把 props 同步进 state（同 CategoryEditorSheet）
   const [name, setName] = useState(existing?.name ?? '');
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
