@@ -222,6 +222,9 @@ Keyboard.addListener('keyboardDidShow', e => setHeight(e.endCoordinates.height))
 
 平台差异：`keyboardWillShow` **只有 iOS 会发**，Android 只能用 `keyboardDidShow`。所以 iOS 上能跟键盘同步滑，Android 上是等键盘弹完再动。
 
+上面这段是最小可用版本，**直接抄会踩两个坑**：报的高度零点不含导航栏（要加 `insets.bottom`），
+而且可能是负数。见第 9 条。
+
 **能带走的规矩**
 
 > 全面屏 / edge-to-edge 下，"系统会自动帮我让开"这个假设不再成立，得自己处理。
@@ -242,3 +245,140 @@ Keyboard.addListener('keyboardDidShow', e => setHeight(e.endCoordinates.height))
 最能说明问题的一对：`set-budget`（路由）和分类编辑对话框（就地）——**长得一模一样、用的是同一个组件、都不回传值**，唯一的区别是前者有两个入口、能被直接跳进来。
 
 > 外观和机制是两件事。「看起来像弹窗」不决定「它是不是一个页面」。
+
+---
+
+## 9. 键盘高度可能是负数
+
+**现象**
+
+模拟器上点输入框，会避让的那一块不升反降了一点点。真机上没有这个问题。
+
+**原因**
+
+输入法接管了硬件键盘时（模拟器开了 `hw.keyboard=yes`、平板接实体键盘、桌面模式），
+Gboard 不给整块键盘，只给一条悬浮工具条，**IME 窗口整个留在屏幕外**。
+
+这时候 Android **照样发 `keyboardDidShow`**，只是 `endCoordinates.height` 是负的：
+
+```
+[kb] SHOW raw= -24  screenY= 899.43  insetsBottom= 24
+```
+
+负数在说"键盘顶边比屏幕底边还低 24"，也就是键盘不占地方。
+而 -24 正好等于导航栏高度——跟 #7 那条修正是同一个公式：
+
+```
+真机：   报 327 + insets.bottom 47 = 374  ← 跟截图量出来的一样
+硬键盘： 报 -24 + insets.bottom 24 = 0    ← 键盘确实不占地方
+```
+
+所以公式对负数一样成立，**要夹的是修正之后的结果，不是之前**。
+写成 `height > 0 ? height + inset : height` 就恰好在最需要修正的时候把修正跳过了，
+调用方拿 -24 当 padding 用，面板反向移动。
+
+**解法**
+
+"收起"和"高度为 0"必须分开表示——0 是一个合法的测量值：
+
+```ts
+const [reported, setReported] = useState<number | null>(null);  // null = 收起
+// show → setReported(e.endCoordinates.height)   hide → setReported(null)
+
+if (reported === null) return 0;
+const corrected = Platform.OS === 'android' ? reported + insets.bottom : reported;
+return Math.max(0, corrected);
+```
+
+**能带走的规矩**
+
+> 系统报给你的尺寸不保证是正数。任何直接拿去当 padding / 位移用的值，
+> 先问一句"它可能是负的吗"。
+
+> 还有一条更值钱的：**真机不复现，不代表代码没问题。**
+> 这个 bug 要两个条件同时成立才炸——异常的键盘几何（环境）+ 没防负数的代码。
+> 真机只是没喂给它那个异常数据而已。所以"换台机器就好了"是结论最容易出错的地方。
+
+---
+
+## 10. 键盘避让要改"画在哪"，不要改"多大"
+
+**现象**
+
+对话框里点输入框，整个窗口疯狂上下跳。真机不跳。
+
+**原因**
+
+用的是 `KeyboardAvoidingView` 的 `behavior="height"`——它靠**改容器高度**给键盘让位。
+改高度就是让整棵子树重新布局，里面的 `TextInput` 跟着重新测量，
+**焦点会在重排途中掉**。而 Android 的规矩是焦点一掉就收键盘：
+
+```
+键盘弹出 → 容器缩高 → 子树重布局 → 焦点掉 → 系统收键盘
+        → 用户再点 → 从头再来
+```
+
+`padding` 好一点但同源：它不改外框尺寸，可是会改内容区大小，
+里面按百分比算的东西（`maxHeight: '60%'`）照样会重新解析。
+
+**解法**
+
+用 `transform: translateY`。它只改**画到屏幕上的位置**，布局尺寸一个都不变——
+所以连 `onLayout` 都不会因为这次位移而重新触发，测量值不会被自己的结果影响。
+
+顺带还有一条判断：**先看被没被挡，再决定动不动**，而不是"键盘一出现就动"。
+
+```
+被盖住 = 元素底边 − 键盘顶边
+≤ 0 → 不动     > 0 → 往上抬这么多（上限是元素顶边，抬过头会把标题顶出屏幕）
+```
+
+居中的对话框个子不高时本来就整个在键盘上方，无条件避让会让它莫名其妙地跳一下。
+
+**能带走的规矩**
+
+> 避让是"把东西挪开"，不是"把东西改小"。
+> 凡是会改变布局尺寸的方案（`height` / `padding` / `flex`），都可能反过来触发
+> 新一轮测量，跟触发它的事件连成回路；位移类（`transform`）不会。
+
+---
+
+## 11. 键盘"自己动"的时候，用 ImeTracker 分清是谁干的
+
+**现象**
+
+键盘弹出来立刻又收回去，不知道是自己的代码关的、还是系统关的。这两个方向的排查完全不同。
+
+**原因**
+
+Android 有个 `ImeTracker`，把每一次显示/隐藏请求的**来源**都打进 logcat 了，不用猜。
+
+**解法**
+
+```bash
+adb logcat -v threadtime | grep ImeTracker
+```
+
+看三个字段就够：
+
+| 字段 | 含义 |
+|---|---|
+| `ORIGIN_CLIENT` / `ORIGIN_SERVER` | 请求是 App 进程发的，还是系统发的 |
+| `reason` | `SHOW_SOFT_INPUT` / `HIDE_SOFT_INPUT` / `CONTROLS_CHANGED` … |
+| `fromUser` | 是不是用户的直接操作 |
+
+```
+onRequestHide at ORIGIN_CLIENT reason HIDE_SOFT_INPUT fromUser false
+```
+
+这一行的意思是：**App 自己关的，而且没人碰屏幕**——往自己代码里找。
+如果是 `ORIGIN_SERVER`，往窗口焦点、insets 控制权那边找。
+
+**能带走的规矩**
+
+> 排查前先建对照组，改前改后各抓一次日志，对比"哪条消失了"。
+
+> 反过来也要小心：**日志多 ≠ 是证据。**
+> 这次一度把输入法每秒 40 行的日志当成佐证，后来发现它在键盘根本没弹出来的时候
+> 也照样刷 45 行/秒——那只是它自己的噪音。
+> 判断一条日志是不是证据，看它**在对照组里消不消失**，不看它有多吵。

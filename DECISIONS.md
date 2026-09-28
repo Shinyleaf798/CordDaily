@@ -2176,3 +2176,114 @@ iOS 不加——那边 `endCoordinates` 本来就是屏幕坐标，已经含了�
 验证：`tsc` / `eslint` 干净，几何用真机截图上的数值逐项核对过（见上面两组数）。
 **手势导航的设备还没抽查**——推理说差值到哪都等于 `insets.bottom`，但那是从一台
 三键导航的机器上量出来的，换个导航方式值得再看一眼。
+
+## 2026-09-28 弹层键盘避让全面改用 padding；键盘高度可能是负数
+
+**症状**：模拟器上打开「新建分类」对话框，点名字输入框，整个对话框疯狂上下跳；
+真机没有。改完第一刀之后跳没了，但换成"点一下往下沉一点"。
+
+**根源是同一个**：模拟器没有真键盘（`hw.keyboard=yes`），系统报的键盘高度是负的（-24）。
+两处避让代码都没防住这个负数，撞出两种不同的症状——RN 自带的 `KeyboardAvoidingView`
+撞出疯狂闪烁，我们自己的 hook 撞出往下沉。所以不是"两个独立的 bug"，
+是一个异常输入打在两个地方；但修是分两处修的，下面分开记。
+
+通用的那部分（负数高度、避让该改位置而不是改尺寸、用 ImeTracker 分辨是谁关的键盘）
+已经抽进 `docs/NOTES.md` 第 9/10/11 条，这里只留跟本项目代码有关的。
+
+### 一、`KeyboardAvoidingView behavior="height"` 的重布局回路
+
+`modal-dialog` / `modal-sheet` 的 Android 分支都走 `behavior="height"`——靠**改容器高度**
+让位。改高度就是让整棵子树重新布局，里面的 `TextInput` 跟着重新测量；而这两层又都套在
+RN `Modal`（一个独立的系统窗口）里。回路就此成立：
+
+```
+键盘弹出 → 容器缩高 → 子树重布局 → 焦点抖掉 → RN 发 hideSoftInput
+        → 键盘收起 → 用户再点 → 从头再来
+```
+
+**证据取自 logcat 的 `ImeTracker`**，这是这次唯一能一锤定音的东西：
+
+```
+07:37:40.411  host.exp.exponent: onShown
+07:37:40.493  host.exp.exponent: onRequestHide  ORIGIN_CLIENT  HIDE_SOFT_INPUT  fromUser false
+07:37:40.734  host.exp.exponent: onHidden
+```
+
+`ORIGIN_CLIENT` = 请求来自 App 进程；`fromUser false` = 没人碰屏幕，是代码发的。
+键盘弹出来 82ms 后 App 自己把它关了。改成 padding 之后，60 秒日志里
+`HIDE_SOFT_INPUT` 一条都没有了。
+
+**改法**：不改布局尺寸，改画出来的位置。底部弹层用 `paddingBottom: useKeyboardHeight()`
+把可用区的下边界抬上去；对话框用 `transform: translateY`。两者都不触发子树重布局，
+回路不成立。
+
+**对话框还多一条：被盖住才抬，而且只抬被盖住的那一段。**
+它是居中的，个子不高的时候本来就整个在键盘上方，这种情况一动不该动——
+第一版无条件把可用区缩掉一个键盘高度，结果是对话框明明没被挡也往上跳。
+现在每帧算一次 `卡片底边 − 键盘顶边`，正数才抬，抬这么多；上限取卡片顶边，
+免得抬过头把标题顶出屏幕。
+
+底部弹层不需要这条判断：它贴着屏幕底，键盘一出现必然被盖，
+盖住的量正好等于键盘高度，所以"抬一个键盘高度"就是"只抬被盖住的那一段"。
+
+顺带：弹层自己那条 `paddingBottom: Math.max(insets.bottom, Spacing.three)` 在键盘顶上来时
+改成只留 `Spacing.three`——那时候弹层下面挨着的是键盘，不是导航栏，安全区那一截没有意义。
+
+### 二、`endCoordinates.height` 可能是负数，而守卫把修正跳过了
+
+第一刀之后剩下"点输入框对话框下沉"。往 hook 里加临时日志，抓 `ReactNativeJS` 拿到：
+
+```
+[kb] SHOW raw= -24  screenY= 899.43  insetsBottom= 24
+```
+
+输入法接管硬件键盘时（模拟器 `hw.keyboard=yes`、平板接实体键盘），Gboard 只给一条
+悬浮工具条，IME 窗口整个留在屏幕外——顶边比屏幕底边还低 24dp，正好一条导航栏。
+Android 照样发 `keyboardDidShow`，只是高度是负的。
+
+而 hook 里的守卫是 `height > 0 && Platform.OS === 'android' ? height + insets.bottom : height`：
+`-24` 不满足条件，原样返回，调用方拿 `-24` 当 `paddingBottom` 用，
+底部内边距反而少了 24，居中内容往下沉 12dp。
+
+**关键观察是修正公式对负数一样成立**：`-24 + 24 = 0`，跟真机那组（`327 + 47 = 374`）
+同一个公式。所以错的不是公式，是那个守卫——它在最需要修正的时候把修正跳过了。
+该夹的是修正**之后**的结果：
+
+```ts
+if (reported === null) return 0;
+const corrected = Platform.OS === 'android' ? reported + insets.bottom : reported;
+return Math.max(0, corrected);
+```
+
+**收起状态改用 `null` 而不是 0**：0 是一个合法的测量值（就是上面这种悬浮键盘的情形），
+跟"没有键盘"必须分得开，否则收起时会平白加一条 `insets.bottom` 的偏移。
+
+### 走过的弯路
+
+**一度以为是模拟器的 `hw.keyboard=yes` 该关掉。** 不是。它只是让 bug 二更容易触发
+（真机上碰不到负高度），根因在 App 侧，关掉只会把症状藏起来。这台模拟器现在反而有用——
+它是唯一能跑到"负高度"那条分支的环境。
+
+**一度把 Gboard 每秒 40 行的 `BaseKeyboardSizeHelper` 当成回路的佐证。** 不成立：
+改完之后它还是 45 行/秒，而且键盘根本没弹出来的那段时间也照样在刷。那是输入法自己的
+日志噪音，跟两个 bug 都无关。
+
+### 没解决的：Modal 窗口的 IME 控制权交接
+
+日志里还剩 `onTimeout at PHASE_SERVER_GET_CONTROL_WITH_LEASH` 和反复的 `CONTROLS_CHANGED`，
+指向系统在 Activity 主窗口和 `Modal` 窗口之间反复交接 IME 控制权。跟上面两处都无关，
+表现为偶尔要多点一次才弹出键盘。
+
+**验证它之前不要动手改**：`set-budget` 是现成的对照组——它已经是路由型弹层
+（直接用 `ModalDialog`，不套 `ModalHost`，所以不开第二个窗口），里面同样有一个
+`autoFocus` 的 `TextInput`，条件跟出问题的分类对话框几乎一样。
+它不犯这个毛病 → 判断成立，重构值得做；一样犯 → 判断错了，改了也白改。
+
+真要改的话，`ModalDialog` / `ModalSheet` 两个壳一行都不用动，换的是外面那层
+`ModalHost` → 独立路由。但 `ModalHost` 的 17 个使用点里只有**带输入框的表单**
+（分类编辑、账户编辑）值得改；"选一个东西还给调用方"那类不能改（路由拿不回值，
+见 NOTES 第 8 条），纯展示/确认那类没有输入框也就没这个问题。
+
+验证：`tsc` / `eslint` 干净；bug 一用改前/改后各 60 秒 logcat 对比确认；
+bug 二用临时的 `console.log` 抓到原始数值确认，日志已撤。
+**真机还没回归测**——两处改动都碰了真机上已经调好的几何，需要再跑一遍。

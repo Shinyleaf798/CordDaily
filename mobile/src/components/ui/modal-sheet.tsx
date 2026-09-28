@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Dimensions, Easing, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ModalBackdrop } from '@/components/ui/modal-backdrop';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
 import { useTheme } from '@/hooks/use-theme';
 
 export type SheetTransition = {
@@ -80,10 +81,17 @@ type ModalSheetProps = {
  * - 对话框：只问一件事，一两个按钮就能答完
  *
  * 用拇指够得着的位置放内容，是它相对对话框唯一实打实的好处——所以别拿它装只有一行的东西。
+ *
+ * **键盘避让用 padding，不用 KeyboardAvoidingView**，理由同 modal-dialog：
+ * Android 分支原来走 behavior="height"，靠改容器高度让位，而改高度会让整棵子树
+ * 重新布局、里面的 TextInput 跟着重新测量；这一层又套在 RN Modal 的独立窗口里，
+ * 于是键盘弹出 → 缩高 → 重布局 → 焦点抖掉 → RN 发 hideSoftInput 的回路。
+ * 换成 paddingBottom 只是把可用区的下边界抬上去，尺寸不变，回路不成立。
  */
 export function ModalSheet({ title, transition, dismissOnBackdropPress = true, children }: ModalSheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { translateY, backdropOpacity, maxHeightRatio, close } = transition;
 
   return (
@@ -92,10 +100,7 @@ export function ModalSheet({ title, transition, dismissOnBackdropPress = true, c
         <ModalBackdrop onPress={dismissOnBackdropPress ? () => close() : undefined} />
       </Animated.View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.bottom}
-        pointerEvents="box-none">
+      <View style={[styles.bottom, { paddingBottom: keyboardHeight }]} pointerEvents="box-none">
         <Animated.View
           style={[
             styles.sheet,
@@ -106,7 +111,8 @@ export function ModalSheet({ title, transition, dismissOnBackdropPress = true, c
               // 底部安全区由弹层自己补，不靠外面包 SafeAreaView——包在外面弹层就贴不到屏幕最底下。
               // 取 max 而不是相加：edge-to-edge 下 insets.bottom 已经是导航栏那么高了，
               // 再加一个 Spacing.four 就会在按钮下面留出一条明显的空带
-              paddingBottom: Math.max(insets.bottom, Spacing.three),
+              // 键盘顶上来的时候弹层下面挨着的是键盘、不是导航栏，安全区那一截就不该再留
+              paddingBottom: keyboardHeight > 0 ? Spacing.three : Math.max(insets.bottom, Spacing.three),
             },
           ]}>
           {/* 顶部那道短横条：告诉用户这东西是从下面上来的、可以被打发走。
@@ -116,7 +122,7 @@ export function ModalSheet({ title, transition, dismissOnBackdropPress = true, c
           {title ? <ThemedText style={styles.title}>{title}</ThemedText> : null}
           {children}
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
