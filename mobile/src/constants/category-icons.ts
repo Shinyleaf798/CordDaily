@@ -88,12 +88,6 @@ export const BUILTIN_CATEGORY_ICONS: BuiltinCategoryIcon[] = [
   { key: 'gift', label: '人情', fallbackEmoji: '🎁' },
   { key: 'bill', label: '账单', fallbackEmoji: '🧾' },
   { key: 'refund', label: '退款', fallbackEmoji: '💵' },
-  // 平台 / 品牌图标。默认树里不会出现（换个人就是另一组平台，见 default-categories.ts 的说明），
-  // 放进来是为了让自建的「淘宝」也能挑到图，而不是只能配个 🛒
-  { key: 'taobao', label: '淘宝', fallbackEmoji: '🛒' },
-  { key: 'pinduoduo', label: '拼多多', fallbackEmoji: '🛒' },
-  { key: 'shopee', label: 'Shopee', fallbackEmoji: '🛒' },
-  { key: 'lazada', label: 'Lazada', fallbackEmoji: '🛒' },
 ];
 
 /**
@@ -124,10 +118,6 @@ export const BUILTIN_ICON_IMAGES: Record<string, ImageSourcePropType> = {
   savings: require('../../assets/categories/piggy-bank.png'),
   epf: require('../../assets/categories/provident-fund.png'),
   invest: require('../../assets/categories/revenues.png'),
-  taobao: require('../../assets/categories/taobao.png'),
-  pinduoduo: require('../../assets/categories/pinduoduo.png'),
-  shopee: require('../../assets/categories/shopee.png'),
-  lazada: require('../../assets/categories/lazada.jpg'),
 };
 
 const BUILTIN_BY_KEY = new Map(BUILTIN_CATEGORY_ICONS.map((icon) => [icon.key, icon]));
