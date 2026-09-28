@@ -1,14 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ModalHost } from '@/components/ui/modal-host';
 import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
+import { TaskDialog } from '@/components/ui/task-dialog';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import { type PendingCounts } from '@/db/backup';
-import { describeError } from '@/db/sync';
+import { describeError, type PushResult } from '@/db/sync';
 import { usePendingDeletions, usePushToCloud } from '@/hooks/use-backup';
+import { useTask } from '@/hooks/use-task';
 import { useTheme } from '@/hooks/use-theme';
 
 type CloudBackupSheetProps = {
@@ -55,22 +57,44 @@ export function CloudBackupSheet({ pending, builtins, onDismiss }: CloudBackupSh
   const sheet = useSheetTransition(onDismiss, 0.75);
   const { data: deletions = [] } = usePendingDeletions();
   const [withDeletions, setWithDeletions] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const pushToCloud = usePushToCloud();
+  const task = useTask();
   const lines = KIND_ORDER.filter((kind) => pending[kind.key] > 0);
   const nothingToDo = lines.length === 0 && deletions.length === 0;
 
   const handleConfirm = () => {
-    setError(null);
-    pushToCloud.mutate(
-      { withDeletions },
+    void task.run<PushResult>(
       {
-        onSuccess: () => sheet.close(),
-        onError: (pushError) => setError(describeError(pushError)),
+        running: '正在备份到云端…',
+        success: (result) => ({ message: '备份完成', detail: describePush(result) }),
+        // 同步失败的原因大半在网络和服务器那边，describeError 已经把它们翻成人话了
+        describeError,
       },
+      () => pushToCloud.mutateAsync({ withDeletions }),
     );
   };
+
+  // 成功之后关掉整个弹层：这件事已经做完了，退回那张清单没有任何意义
+  // （上面的数字全变成 0）。失败则只收掉这张结果卡，清单留在原地好让人直接重试。
+  const handleTaskDismiss = () => {
+    const succeeded = task.state?.status === 'success';
+    task.dismiss();
+    if (succeeded) onDismiss();
+  };
+
+  // 开跑之后这一层的内容**整个换成**结果卡，而不是在它上面再叠一层 Modal——
+  // 原生 Modal 套 Modal 在 iOS 上会让外层闪一下（见 transaction-detail-sheet 的注释）。
+  // 换掉之后顺带解决了"跑到一半点空白把它关了"：这张卡运行中不响应遮罩，
+  // 而 onRequestClose 挡住的是 Android 的实体返回键，两条退路都堵上了
+  if (task.state) {
+    const state = task.state;
+    return (
+      <ModalHost visible onRequestClose={() => (state.status === 'running' ? undefined : handleTaskDismiss())}>
+        <TaskDialog state={state} onDismiss={handleTaskDismiss} />
+      </ModalHost>
+    );
+  }
 
   return (
     <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
@@ -146,23 +170,13 @@ export function CloudBackupSheet({ pending, builtins, onDismiss }: CloudBackupSh
             </>
           ) : null}
 
-          {error ? (
-            <ThemedText type="small" style={{ color: theme.expense }}>
-              {error}
-            </ThemedText>
-          ) : null}
-
           <Pressable
             onPress={handleConfirm}
-            disabled={pushToCloud.isPending || nothingToDo}
+            disabled={nothingToDo}
             style={[styles.primary, { backgroundColor: theme.cardHighlight }, nothingToDo && styles.dimmed]}>
-            {pushToCloud.isPending ? (
-              <ActivityIndicator color={theme.onCardHighlight} />
-            ) : (
-              <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-                {nothingToDo ? '云端已经是最新的' : '开始备份'}
-              </ThemedText>
-            )}
+            <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
+              {nothingToDo ? '云端已经是最新的' : '开始备份'}
+            </ThemedText>
           </Pressable>
 
           {/* 骨架只在这里交代一句，**不给数字**：它不是用户能决定要不要传的东西，
@@ -181,6 +195,22 @@ export function CloudBackupSheet({ pending, builtins, onDismiss }: CloudBackupSh
 }
 
 const KIND_LABELS = { transaction: '账单', category: '分类', account: '账户' } as const;
+
+/**
+ * 备份完成那句话。只报**用户认得的东西**——账单、自己建的分类和账户、转账、周期规则，
+ * 内置分类那一批不提（理由跟上面清单里不列它们是同一条）。
+ * 一条都没动时给一句话而不是一串 0：那说明云端本来就是最新的。
+ */
+function describePush(result: PushResult): string {
+  const parts = [
+    result.transactions ? `${result.transactions} 笔账单` : null,
+    result.transfers ? `${result.transfers} 条转账` : null,
+    result.recurring ? `${result.recurring} 条周期规则` : null,
+  ].filter(Boolean);
+
+  const uploaded = parts.length ? `上传了 ${parts.join('、')}` : '没有新的记录要传';
+  return result.deletions ? `${uploaded}，从云端删掉 ${result.deletions} 条` : uploaded;
+}
 
 const styles = StyleSheet.create({
   body: { gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },

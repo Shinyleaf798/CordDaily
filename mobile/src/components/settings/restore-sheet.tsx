@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { RestorePreview, RestoreResult } from '@/components/settings/restore-summary';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
+import { TaskDialog } from '@/components/ui/task-dialog';
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import {
@@ -15,6 +16,7 @@ import {
 } from '@/db/backup';
 import { describeError } from '@/db/sync';
 import { useApplyImport } from '@/hooks/use-backup';
+import { useTask } from '@/hooks/use-task';
 import { useTheme } from '@/hooks/use-theme';
 
 type RestoreSheetProps = {
@@ -47,6 +49,7 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
   const theme = useTheme();
   const sheet = useSheetTransition(onDismiss, 0.8);
   const applyImport = useApplyImport();
+  const task = useTask();
 
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -70,19 +73,31 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!plan) return;
     setError(null);
-    applyImport.mutate(
-      { plan, source },
-      {
-        onSuccess: (applied) => setResult(applied),
-        onError: (applyError) => setError((applyError as Error).message),
-      },
+
+    // 成功不弹结果框（`success: () => null`）：下面那张 RestoreResult 才是真正的结果画面，
+    // 它逐类列出了恢复了多少条。再弹一个"恢复完成"等于把同一件事说两遍
+    const applied = await task.run<ImportResult>(
+      { running: `正在从${sourceLabel}恢复…`, success: () => null },
+      () => applyImport.mutateAsync({ plan, source }),
     );
+    if (applied) setResult(applied);
   };
 
   const isLoading = !plan && !result && !error;
+
+  // 写库的这几秒把整层换成状态卡：恢复是往库里成批写东西，中途放手会留下写了一半的状态。
+  // 失败时关掉它退回预览，用户可以直接再点一次确认
+  if (task.state) {
+    const state = task.state;
+    return (
+      <ModalHost visible onRequestClose={() => (state.status === 'running' ? undefined : task.dismiss())}>
+        <TaskDialog state={state} onDismiss={task.dismiss} />
+      </ModalHost>
+    );
+  }
 
   return (
     <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
@@ -108,16 +123,11 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
 
           {plan && !result ? (
             <Pressable
-              onPress={handleConfirm}
-              disabled={applyImport.isPending}
+              onPress={() => void handleConfirm()}
               style={[styles.primary, { backgroundColor: theme.cardHighlight }]}>
-              {applyImport.isPending ? (
-                <ActivityIndicator color={theme.onCardHighlight} />
-              ) : (
-                <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-                  确认恢复 {plan.newTransactions} 笔
-                </ThemedText>
-              )}
+              <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
+                确认恢复 {plan.newTransactions} 笔
+              </ThemedText>
             </Pressable>
           ) : null}
 
