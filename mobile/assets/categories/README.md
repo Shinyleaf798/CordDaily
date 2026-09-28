@@ -1,7 +1,10 @@
 # 分类图标图片
 
-这个文件夹放**内置分类**的图标图片。现在是空的——图片放进来之前，整个 App 会退回显示
-`src/constants/category-icons.ts` 里给每个 key 配的兜底 emoji，不会出现一片问号。
+这个文件夹放**内置分类**的图标图片。一张一张加就行：还没放图（或者放了图没登记）的 key，
+App 会退回显示 `src/constants/category-icons.ts` 里给每个 key 配的兜底 emoji，不会出现一片问号。
+
+> `setting.png` 不是分类图标，是记账页分类网格最后那个「管理分类」按钮用的图，
+> 由 `components/add-transaction/category-grid.tsx` 直接 require，不走登记表。
 
 ## 怎么加一张内置图标
 

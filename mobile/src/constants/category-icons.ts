@@ -36,38 +36,98 @@ export type BuiltinCategoryIcon = {
 };
 
 // 内置图标库。选图标的界面按这个顺序排，默认分类也从这里取 key。
-// 加一个新 key 只改这里 + 下面的 BUILTIN_ICON_IMAGES，不用动数据库
+// 加一个新 key 只改这里 + 下面的 BUILTIN_ICON_IMAGES，不用动数据库。
+//
+// 前半段跟 DEFAULT_CATEGORIES 那棵树一一对应（父在前、它的子紧随其后），
+// 后半段是**树上用不到、但留给用户自建分类挑**的——内置树覆盖不了每个人的消费习惯，
+// 用户建「宠物」「医疗」时总得有图可选，删掉它们只会逼人退回纯 emoji。
 export const BUILTIN_CATEGORY_ICONS: BuiltinCategoryIcon[] = [
   { key: 'food', label: '餐饮', fallbackEmoji: '🍜' },
-  { key: 'shopping', label: '购物', fallbackEmoji: '🛍️' },
+  { key: 'breakfast', label: '早餐', fallbackEmoji: '🍳' },
+  { key: 'lunch', label: '午餐', fallbackEmoji: '🍱' },
+  { key: 'dinner', label: '晚餐', fallbackEmoji: '🍽️' },
+  { key: 'takeout', label: '外卖', fallbackEmoji: '🛵' },
+  { key: 'drink', label: '饮料', fallbackEmoji: '🥤' },
+  { key: 'dessert', label: '甜品', fallbackEmoji: '🍰' },
+  { key: 'snack', label: '零食', fallbackEmoji: '🍪' },
   { key: 'transport', label: '交通', fallbackEmoji: '🚌' },
+  { key: 'taxi', label: '打车', fallbackEmoji: '🚕' },
+  { key: 'bus', label: '公交', fallbackEmoji: '🚏' },
+  { key: 'fuel', label: '加油', fallbackEmoji: '⛽' },
+  { key: 'parking', label: '停车', fallbackEmoji: '🅿️' },
+  { key: 'shopping', label: '购物', fallbackEmoji: '🛍️' },
+  { key: 'clothes', label: '服饰', fallbackEmoji: '👕' },
+  { key: 'daily-goods', label: '日用品', fallbackEmoji: '🧴' },
+  { key: 'online', label: '线上购物', fallbackEmoji: '🛒' },
+  { key: 'beauty', label: '美妆', fallbackEmoji: '💄' },
   { key: 'daily', label: '日常', fallbackEmoji: '🏠' },
-  { key: 'entertainment', label: '娱乐', fallbackEmoji: '🎮' },
-  { key: 'medical', label: '医疗', fallbackEmoji: '💊' },
+  { key: 'phone', label: '话费', fallbackEmoji: '📱' },
+  { key: 'tech', label: '科技', fallbackEmoji: '💻' },
   { key: 'study', label: '学习', fallbackEmoji: '📚' },
-  { key: 'social', label: '社交', fallbackEmoji: '🤝' },
+  { key: 'entertainment', label: '娱乐', fallbackEmoji: '🎡' },
+  { key: 'movie', label: '电影', fallbackEmoji: '🎬' },
   { key: 'travel', label: '旅行', fallbackEmoji: '✈️' },
-  { key: 'pet', label: '宠物', fallbackEmoji: '🐾' },
-  { key: 'gift', label: '人情', fallbackEmoji: '🎁' },
-  { key: 'bill', label: '账单', fallbackEmoji: '🧾' },
+  { key: 'game', label: '游戏', fallbackEmoji: '🎮' },
+  { key: 'love', label: '恋爱', fallbackEmoji: '💕' },
+  { key: 'family', label: '父母', fallbackEmoji: '👨‍👩‍👦' },
+  { key: 'savings', label: '储蓄', fallbackEmoji: '🐷' },
+  { key: 'epf', label: '公积金', fallbackEmoji: '🏦' },
   { key: 'other', label: '其他', fallbackEmoji: '📦' },
   { key: 'salary', label: '工资', fallbackEmoji: '💰' },
   { key: 'bonus', label: '奖金', fallbackEmoji: '🧧' },
   { key: 'parttime', label: '兼职', fallbackEmoji: '💼' },
-  { key: 'invest', label: '理财', fallbackEmoji: '📈' },
+  { key: 'invest', label: '投资收益', fallbackEmoji: '📈' },
+  { key: 'other-income', label: '其他收入', fallbackEmoji: '💵' },
+
+  // 以下不在默认树上，只在「给自建分类挑图标」时出现
+  { key: 'fruit', label: '水果', fallbackEmoji: '🍎' },
+  { key: 'renovation', label: '装修', fallbackEmoji: '🔨' },
+  { key: 'medical', label: '医疗', fallbackEmoji: '💊' },
+  { key: 'social', label: '社交', fallbackEmoji: '🤝' },
+  { key: 'pet', label: '宠物', fallbackEmoji: '🐾' },
+  { key: 'gift', label: '人情', fallbackEmoji: '🎁' },
+  { key: 'bill', label: '账单', fallbackEmoji: '🧾' },
   { key: 'refund', label: '退款', fallbackEmoji: '💵' },
+  // 平台 / 品牌图标。默认树里不会出现（换个人就是另一组平台，见 default-categories.ts 的说明），
+  // 放进来是为了让自建的「淘宝」也能挑到图，而不是只能配个 🛒
+  { key: 'taobao', label: '淘宝', fallbackEmoji: '🛒' },
+  { key: 'pinduoduo', label: '拼多多', fallbackEmoji: '🛒' },
+  { key: 'shopee', label: 'Shopee', fallbackEmoji: '🛒' },
+  { key: 'lazada', label: 'Lazada', fallbackEmoji: '🛒' },
 ];
 
 /**
- * key → 图片资源的登记表。现在全空，assets/categories/ 里还没有图。
+ * key → 图片资源的登记表。没登记的 key 走 fallbackEmoji，所以这张表可以一张一张往里加。
  *
  * 必须一个个手写 require，不能 `require('../../assets/categories/' + key + '.png')`：
  * Metro 在打包时静态扫描 require 的字面量来决定哪些资源要打进包，拼出来的路径它看不见，
  * 运行时必然报错。放图的步骤见 assets/categories/README.md。
+ *
+ * 左边的 key 才是数据库认的那个词，右边的文件名只是给人看的——两边取同名纯粹为了好找。
  */
 export const BUILTIN_ICON_IMAGES: Record<string, ImageSourcePropType> = {
-  // food: require('../../assets/categories/food.png'),
-  // shopping: require('../../assets/categories/shopping.png'),
+  food: require('../../assets/categories/food.png'),
+  shopping: require('../../assets/categories/shopping.png'),
+  online: require('../../assets/categories/mobile-shopping.png'),
+  breakfast: require('../../assets/categories/breakfast.png'),
+  lunch: require('../../assets/categories/lunch.png'),
+  dinner: require('../../assets/categories/dinner.png'),
+  drink: require('../../assets/categories/drink.png'),
+  dessert: require('../../assets/categories/dessert.png'),
+  snack: require('../../assets/categories/snack.png'),
+  // 左边的 key 才是数据库认的那个词；文件名叫什么随意，这里是唯一把两者绑起来的地方
+  phone: require('../../assets/categories/phone-bill.png'),
+  game: require('../../assets/categories/game.png'),
+  family: require('../../assets/categories/family.png'),
+  salary: require('../../assets/categories/salary.png'),
+  bonus: require('../../assets/categories/bonus.png'),
+  savings: require('../../assets/categories/piggy-bank.png'),
+  epf: require('../../assets/categories/provident-fund.png'),
+  invest: require('../../assets/categories/revenues.png'),
+  taobao: require('../../assets/categories/taobao.png'),
+  pinduoduo: require('../../assets/categories/pinduoduo.png'),
+  shopee: require('../../assets/categories/shopee.png'),
+  lazada: require('../../assets/categories/lazada.jpg'),
 };
 
 const BUILTIN_BY_KEY = new Map(BUILTIN_CATEGORY_ICONS.map((icon) => [icon.key, icon]));
