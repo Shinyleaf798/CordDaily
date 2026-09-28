@@ -28,12 +28,13 @@ type CategoryGridProps = {
   onSettingsPress?: () => void;
 };
 
-// 一格的高度写死。二级面板要浮在被点那一行的正下方，行高必须是确定的数才算得出位置
-const ITEM_HEIGHT = 72;
+// 一格的高度写死。二级面板要浮在被点那一行的正下方，行高必须是确定的数才算得出位置。
+// 这个数是下面三样加出来的：CIRCLE_SIZE + Spacing.one + 标签行高，改任何一个都要重算
+const ITEM_HEIGHT = 62;
 /** 图标本身的边长，网格和二级面板共用 */
-const ICON_SIZE = 28;
+const ICON_SIZE = 24;
 /** 选中时垫在图标后面那个圆的直径 */
-const CIRCLE_SIZE = 48;
+const CIRCLE_SIZE = 40;
 const ROW_GAP = Spacing.three;
 const COLUMNS = 5;
 const ARROW_SIZE = 8;
@@ -213,14 +214,14 @@ function IconCell({ icon, label, selected, hasChildren, onPress }: IconCellProps
             没有它，"有的格子点了会弹面板、有的不会"就变成要靠记忆的规则 */}
         {hasChildren ? (
           <View style={[styles.childDot, { backgroundColor: theme.backgroundSelected }]}>
-            <Ionicons name="ellipsis-horizontal" size={10} color={theme.textSecondary} />
+            <Ionicons name="ellipsis-horizontal" size={9} color={theme.textSecondary} />
           </View>
         ) : null}
       </View>
       <ThemedText
         type="small"
         themeColor={selected ? undefined : 'textSecondary'}
-        style={selected ? { color: theme.cardHighlight } : undefined}
+        style={[styles.label, selected ? { color: theme.cardHighlight } : null]}
         numberOfLines={1}>
         {label}
       </ThemedText>
@@ -297,13 +298,21 @@ const styles = StyleSheet.create({
     width: ICON_SIZE,
     height: ICON_SIZE,
   },
+  // 这一格的标签比全局的 small（14/20）再小一号。
+  // 压的是**这里**而不是 theme 里那个 token：小字号在一屏 19 格、每格只有五分之一屏宽的
+  // 网格里成立，放到账单列表那种一行一条的地方就成了"看不清"。
+  // 局部收窄一个 token 的适用范围，好过把全 App 的正文都拖小
+  label: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
   childDot: {
     position: 'absolute',
-    right: -2,
-    bottom: -2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    right: -1,
+    bottom: -1,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
