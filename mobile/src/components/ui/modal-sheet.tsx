@@ -12,7 +12,18 @@ export type SheetTransition = {
   translateY: Animated.Value;
   backdropOpacity: Animated.Value;
   maxHeightRatio: number;
-  /** 播完出场动画再执行 run（默认是 onDismiss）。重复调用只认第一次 */
+  /**
+   * 播完出场动画再执行 run（默认是 onDismiss）。重复调用只认第一次。
+   *
+   * **传了 run 就等于顶掉了默认的 onDismiss**，所以 run 里必须自己把弹层卸载掉
+   * （`sheet.close(() => { onSelect(x); onDismiss(); })`，或者让调用方的 onSelect 顺手
+   * 把那个 state 关掉——后者是全 App 现有的写法，见 transaction-form 里那几个 picker）。
+   *
+   * 漏了会**整屏卡死**，而且看不出是卡在哪：动画照常播完，遮罩淡到全透明，
+   * 但组件还挂着 → RN 的 Modal 还是 visible → 一层看不见的全屏窗口吃掉所有触摸；
+   * 与此同时 isClosing 已经置位，再点遮罩、再按返回键都会在第一行就 return。
+   * 于是屏幕上什么都没变，却什么都点不动了。
+   */
   close: (run?: () => void) => void;
 };
 

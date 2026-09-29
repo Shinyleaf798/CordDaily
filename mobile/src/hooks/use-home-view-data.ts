@@ -1,24 +1,13 @@
-import type { TransactionListItemData } from '@/components/transaction/transaction-list-item';
 import type { BudgetStatus } from '@/db/budgets';
 import type { MonthSummary, TransactionWithCategory } from '@/db/transactions';
 import { useBudgetStatus } from '@/hooks/use-budgets';
 import { useMonthSummary, useRecentTransactions } from '@/hooks/use-transactions';
-import { formatClockTime, formatDayGroupLabel, startOfDay } from '@/utils/date';
-import { formatCategoryPath } from '@/utils/format';
+import { groupTransactionsByDay, type DatedTransaction, type TransactionDayGroup } from '@/utils/transaction-view';
 
-export type HomeTransaction = TransactionListItemData & { date: Date };
-
-export type HomeDayGroup = {
-  key: string;
-  date: Date;
-  /** 主标签：今天 / 昨天 / 9月13日 */
-  label: string;
-  /** 副标签：主标签是相对说法时补具体日期，否则补星期 */
-  subLabel: string;
-  items: HomeTransaction[];
-  expense: number;
-  income: number;
-};
+// 「一行账单」和「按天分好的一堆」这两个形状全 App 共用一份（见 utils/transaction-view）。
+// 这里留两个别名是因为首页这边的调用方（两套布局）一直按这个名字在用
+export type HomeTransaction = DatedTransaction;
+export type HomeDayGroup = TransactionDayGroup;
 
 /** 预算花得比时间快还是慢 */
 export type BudgetPace = 'ahead' | 'behind' | 'even';
@@ -86,41 +75,7 @@ export function buildHomeViewData(input: {
 
   // 列表行显示全部交易（包括"不计入统计"的），汇总数字则由 getMonthSummary / getBudgetStatus
   // 过滤掉它们——账单是流水，统计是口径，两者故意不一致
-  const items: HomeTransaction[] = (recent ?? []).map((t) => ({
-    id: t.id,
-    date: new Date(t.date),
-    // 不在这里兜底成 emoji：icon 的三种写法怎么渲染、渲染不出来落回什么，
-    // 统一由 CategoryIcon / parseCategoryIcon 回答，这里原样传过去
-    icon: t.categoryIcon,
-    title: t.title,
-    categoryLabel: formatCategoryPath(t.categoryParentName, t.categoryName),
-    time: formatClockTime(new Date(t.date)),
-    note: t.remarks ?? undefined,
-    amount: t.amount,
-    type: t.type,
-  }));
-
-  const groups = new Map<string, HomeTransaction[]>();
-  for (const item of items) {
-    const key = startOfDay(item.date).toISOString();
-    const existing = groups.get(key);
-    if (existing) existing.push(item);
-    else groups.set(key, [item]);
-  }
-
-  const dayGroups: HomeDayGroup[] = [...groups.entries()]
-    .map(([key, groupItems]) => {
-      const date = groupItems[0].date;
-      return {
-        key,
-        date,
-        ...formatDayGroupLabel(date, now),
-        items: groupItems,
-        expense: groupItems.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0),
-        income: groupItems.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0),
-      };
-    })
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
+  const dayGroups = groupTransactionsByDay(recent, now);
 
   return {
     monthLabel: `${now.getFullYear()}年${now.getMonth() + 1}月`,

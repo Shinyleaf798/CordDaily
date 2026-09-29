@@ -15,10 +15,13 @@ import {
   listMonthTransactions,
   listRecentTransactions,
   listTagSummaries,
+  listTransactionsInRange,
+  searchTransactions,
   setReimbursed,
   suggestFieldValues,
   updateTransaction,
   type CreateTransactionInput,
+  type SearchFilter,
   type SuggestionField,
   type TransactionType,
   type UpdateTransactionInput,
@@ -63,6 +66,37 @@ export function useMonthTransactions(date: Date) {
   return useQuery({
     queryKey: [...TRANSACTIONS_KEY, 'month', formatMonthKey(date)],
     queryFn: () => listMonthTransactions(date),
+  });
+}
+
+/**
+ * 任意一段时间里的全部交易。账单预览页（总 / 年 / 月 / 周）用它。
+ *
+ * queryKey 里放的是 ISO 字符串而不是 Date 对象：React Query 比较 key 用的是深比较，
+ * 两个值相等的 Date 能比对，但每次渲染都 new 一个出来会让 key 在引用层面不停地变，
+ * 读起来也没法一眼看出缓存里存的是哪一段。`null` 表示这一头不设限（「总」那一档）。
+ */
+export function useTransactionsInRange(start: Date | null, end: Date | null) {
+  return useQuery({
+    queryKey: [...TRANSACTIONS_KEY, 'range', start?.toISOString() ?? 'all', end?.toISOString() ?? 'all'],
+    queryFn: () => listTransactionsInRange(start, end),
+  });
+}
+
+/**
+ * 搜账单。关键词和筛选条**两个都空**的时候不查——面板刚展开时就是这个状态，
+ * 没必要为了一个还没输入的词把整本账捞出来。
+ *
+ * queryKey 里是**已提交**的那个词，不是输入框里正在敲的字：
+ * 这个 App 的搜索是点一下键盘上那个「搜索」才执行的（见 components/search/search-overlay.tsx），
+ * 每敲一个字就查一次会让几百条结果的列表在打字过程中反复重排。
+ */
+export function useSearchTransactions(keyword: string, filter: SearchFilter | null) {
+  const trimmed = keyword.trim();
+  return useQuery({
+    queryKey: [...TRANSACTIONS_KEY, 'search', trimmed, filter ?? 'none'],
+    queryFn: () => searchTransactions(trimmed, filter),
+    enabled: trimmed.length > 0 || filter !== null,
   });
 }
 

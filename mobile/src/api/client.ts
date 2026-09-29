@@ -1,11 +1,15 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+// 具名引 create 而不是 `axios.create`：axios 的 ESM 入口把 create 从 default 上解构出来
+// 又原样具名导出了（node_modules/axios/index.js），两者是同一个函数。
+// 但 eslint 的 import/no-named-as-default-member 看到"从 default 上取一个同名具名导出"
+// 就会警告——它没法确定你要的是哪一个。既然两者等价，取那个没有歧义的写法。
+import { create, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 import { useAuthStore } from '@/store/auth.store';
 
 // Web 上跑在同一台机器，localhost 能直接连后端；真机/模拟器要换成开发机的局域网 IP，见 mobile/.env.example
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
 
-export const apiClient = axios.create({ baseURL: API_BASE_URL });
+export const apiClient = create({ baseURL: API_BASE_URL });
 
 apiClient.interceptors.request.use((config) => {
   const { accessToken } = useAuthStore.getState();

@@ -1,0 +1,81 @@
+import type { TransactionListItemData } from '@/components/transaction/transaction-list-item';
+import type { TransactionWithCategory } from '@/db/transactions';
+import { formatClockTime, formatDayGroupLabel, startOfDay } from '@/utils/date';
+import { formatCategoryPath } from '@/utils/format';
+
+/**
+ * 「库里的一条交易」→「列表里的一行」→「按天分好的几堆」这两步转换。
+ *
+ * 原来首页和分类下钻页各写了一遍，一字不差；搜索页和账单预览页要的是同一个东西，
+ * 再抄两遍就是四份要同步维护的映射。抽出来的真正理由不是行数，是**一致性**：
+ * 哪个字段当主题、时间写成什么样、一天的小计算不算收入，这些答案在四个页面上必须是同一个，
+ * 否则同一笔账在搜索结果里和在首页上会长得不一样，而那种差别没人查得出来是从哪冒出来的。
+ *
+ * 放 utils/ 而不是 hooks/：它不碰 React，给定输入永远给出同样的输出。
+ * 引一个组件的**类型**（TransactionListItemData）不破坏这一点——那是一份形状约定，不是依赖。
+ */
+
+export type DatedTransaction = TransactionListItemData & { date: Date };
+
+export type TransactionDayGroup = {
+  key: string;
+  date: Date;
+  /** 主标签：今天 / 昨天 / 9月13日 */
+  label: string;
+  /** 副标签：主标签是相对说法时补具体日期，否则补星期 */
+  subLabel: string;
+  items: DatedTransaction[];
+  expense: number;
+  income: number;
+};
+
+/** 一条交易 → 一行列表项。icon 原样传，三种写法（emoji / builtin: / file:）怎么渲染由 CategoryIcon 回答 */
+export function toDatedTransaction(t: TransactionWithCategory): DatedTransaction {
+  const date = new Date(t.date);
+  return {
+    id: t.id,
+    date,
+    icon: t.categoryIcon,
+    title: t.title,
+    categoryLabel: formatCategoryPath(t.categoryParentName, t.categoryName),
+    time: formatClockTime(date),
+    note: t.remarks ?? undefined,
+    amount: t.amount,
+    type: t.type,
+  };
+}
+
+/**
+ * 按天归堆，新的一天在最前面。
+ *
+ * 每天的小计**不跳过 excludeFromStats**：这里算的是"这一天的流水"，跟卡片里列出来的行一一对应。
+ * 「不计入统计」影响的是预算和统计页那些口径数字，不是一天的账面。
+ * 首页从一开始就是这么处理的（见 use-home-view-data 里那句"账单是流水，统计是口径"），
+ * 抽出来之后这条规矩才真正只有一处定义。
+ */
+export function groupTransactionsByDay(
+  transactions: TransactionWithCategory[] | undefined,
+  now: Date,
+): TransactionDayGroup[] {
+  const groups = new Map<string, DatedTransaction[]>();
+
+  for (const t of transactions ?? []) {
+    const item = toDatedTransaction(t);
+    // key 走 startOfDay 而不是切 ISO 字符串：后者切出来的是 UTC 日期（utils/date.ts 顶上那个坑）
+    const key = startOfDay(item.date).toISOString();
+    const existing = groups.get(key);
+    if (existing) existing.push(item);
+    else groups.set(key, [item]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, items]) => ({
+      key,
+      date: items[0].date,
+      ...formatDayGroupLabel(items[0].date, now),
+      items,
+      expense: items.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0),
+      income: items.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0),
+    }))
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
+}

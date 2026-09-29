@@ -42,18 +42,28 @@ export type TransactionWithCategory = Transaction & {
   categoryIcon: string | null;
   /** 叶子分类的**父**分类名。顶层分类是 null。账单行显示成「餐饮 · 早餐」要用它 */
   categoryParentName: string | null;
+  /** 叶子分类的父分类 id。顶层分类是 null。按分类汇总时靠它把子分类的钱卷到父分类头上 */
+  categoryParentId: string | null;
+  categoryParentIcon: string | null;
 };
 
 type TransactionRowWithCategory = TransactionRow & {
   categoryName: string | null;
   categoryIcon: string | null;
   categoryParentName: string | null;
+  categoryParentId: string | null;
+  categoryParentIcon: string | null;
 };
 
 // 「一条账单行在界面上需要的分类信息」只定义一次：叶子分类的名字和图标 + 父分类的名字。
 // 原来这两段在五条查询里各抄了一遍，加父分类那一次要同时改五处，漏一处就是某个页面
 // 的行少半截分类路径——而那种 bug 只有翻到那个页面才看得见。
-const TX_CATEGORY_COLUMNS = 't.*, c.name AS categoryName, c.icon AS categoryIcon, p.name AS categoryParentName';
+// 父分类的 id 和图标是后加的：账单预览页要在 JS 里把子分类的钱卷到父分类头上，
+// 而那一步既要知道"父是谁"（id），也要画父分类的图标。加在这个共享常量里等于五条查询一起有了，
+// 多带两列的代价可以忽略——它们本来就是同一个 LEFT JOIN 已经连上的那一行
+const TX_CATEGORY_COLUMNS =
+  't.*, c.name AS categoryName, c.icon AS categoryIcon, ' +
+  'p.name AS categoryParentName, c.parentId AS categoryParentId, p.icon AS categoryParentIcon';
 const TX_CATEGORY_JOIN = `FROM transactions t
      LEFT JOIN categories c ON c.id = t.categoryId
      LEFT JOIN categories p ON p.id = c.parentId`;
@@ -321,6 +331,148 @@ export async function listMonthTransactions(date = new Date()): Promise<Transact
      WHERE t.date >= ? AND t.date < ?
      ORDER BY t.date DESC`,
     [start, end],
+  );
+
+  return rows.map(mapRow);
+}
+
+/**
+ * 任意一段时间里的全部交易。账单预览页（全部 / 年 / 月 / 周）用它。
+ *
+ * 两头都可以是 null，表示"这一头不设限"——`总` 那一档两头都不传，取的就是整本账。
+ * 不为它单独写一条 `SELECT *`：范围查询和无范围查询只差 WHERE 里的两个条件，
+ * 分成两个函数就是两份要同步维护的 JOIN。
+ *
+ * 跟 listRecentTransactions / listMonthTransactions 一样**不**过滤 excludeFromStats：
+ * 明细列表显示全部账单，汇总数字要不要跳过它是派生层的事（见 buildBillOverviewData）。
+ *
+ * 一次把整段取回来、在 JS 里分组，而不是让 SQLite 按年/月/日 GROUP BY：
+ * 库里存的是带时区的 ISO 字符串，按字符串切出来的是 UTC 日期，东八区会把凌晨 8 点前的账
+ * 算到前一天/上个月去（utils/date.ts 顶上那个坑）。本地账本的量级（几百到几千条）
+ * 在 JS 里滚一遍的开销可以忽略，换来全 App 只有一套"哪天算哪个月"的算法。
+ */
+export async function listTransactionsInRange(
+  start: Date | null,
+  end: Date | null,
+): Promise<TransactionWithCategory[]> {
+  const db = await getDb();
+
+  const conditions: string[] = [];
+  const params: string[] = [];
+  if (start) {
+    conditions.push('t.date >= ?');
+    params.push(start.toISOString());
+  }
+  if (end) {
+    conditions.push('t.date < ?');
+    params.push(end.toISOString());
+  }
+
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
+     ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
+     ORDER BY t.date DESC`,
+    params,
+  );
+
+  return rows.map(mapRow);
+}
+
+/**
+ * 搜索的**筛选条**。跟关键词正交：可以单独用（点一个「仅支出」就搜），也可以叠在关键词上。
+ *
+ * 只列这个 App 真的答得上来的条件。参考界面上还有「转账」「优惠」「还款」「退款」「包含图片」
+ * 这几个——这个账本里没有转账、没有优惠券、也还没有图片，给它们做一个永远搜不出东西的
+ * 筛选条，比没有这个筛选条更糟：用户会以为是自己记错了。
+ */
+export type SearchFilter =
+  | 'expense'
+  | 'income'
+  | 'reimbursable'
+  | 'pendingReimbursement'
+  | 'settledReimbursement'
+  | 'excluded';
+
+export const SearchFilterLabels: Record<SearchFilter, string> = {
+  expense: '仅支出',
+  income: '仅收入',
+  reimbursable: '报销',
+  pendingReimbursement: '待报销',
+  settledReimbursement: '已报销',
+  excluded: '不计入统计',
+};
+
+// 每个筛选条对应的 WHERE 片段。全是写死的常量，不拼用户输入，所以不需要参数绑定
+const SEARCH_FILTER_CLAUSES: Record<SearchFilter, string> = {
+  expense: "t.type = 'EXPENSE'",
+  income: "t.type = 'INCOME'",
+  reimbursable: 't.isReimbursable = 1',
+  pendingReimbursement: 't.isReimbursable = 1 AND t.reimbursedAt IS NULL',
+  settledReimbursement: 't.isReimbursable = 1 AND t.reimbursedAt IS NOT NULL',
+  excluded: 't.excludeFromStats = 1',
+};
+
+/**
+ * 搜账单。首页顶上那个放大镜展开的下拉面板用它。
+ *
+ * **搜六个地方**：主题、店名、地点、备注、叶子分类名、父分类名。
+ * 前四个是用户自己打进去的字，后两个是因为"搜餐饮"是个非常自然的念头——
+ * 分类明明就写在每一行上，搜不到它会让人觉得这个搜索框是坏的。
+ *
+ * **金额也搜**：把金额格式化成两位小数再比，"12.90" 和 "12.9" 都能找到 RM12.90。
+ * 对账的时候手里往往只有一个数字（银行账单上那一笔是哪一笔？），
+ * 那是这个搜索框最实际的用途之一。用 amountInBase 而不是 amount，跟统计口径一致。
+ *
+ * 用 `printf('%.2f', ...)` 而不是 `CAST(... AS TEXT)`：金额在库里是 REAL，
+ * 12.90 存进去就是 12.9，CAST 出来也是 "12.9"——于是照着银行账单打 "12.90" 一条都搜不到，
+ * 而那恰好是最常见的输入方式（数字是抄来的，抄的时候带着分位）。
+ *
+ * 关键词一律走 `escapeLike`：用户搜 "100%" 时那个 % 是他要找的字符，不是通配符。
+ *
+ * **关键词和筛选条是 AND 的关系**，两个都可以单独成立：只点「仅支出」就是列出全部支出，
+ * 打字不点筛选就是全类型搜。两个都空才返回空——那时候"搜索"这个动作还没有内容。
+ *
+ * `limit` 是**防炸而不是分页**：本地库里搜一个常见词（"餐"）可能命中几百条，
+ * 一次全画出来只会让列表卡住，而没人会往下翻到第 300 条。够不够由界面提示
+ * （"只显示前 N 条"），要更精确就再多打两个字——那比翻页快。
+ */
+export async function searchTransactions(
+  keyword: string,
+  filter: SearchFilter | null = null,
+  limit = 200,
+): Promise<TransactionWithCategory[]> {
+  const db = await getDb();
+  const trimmed = keyword.trim();
+  if (!trimmed && !filter) return [];
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (trimmed) {
+    const pattern = `%${escapeLike(trimmed)}%`;
+    // 七个 OR 包在一对括号里：不包的话 OR 会跨过后面那个 AND，筛选条就形同虚设
+    conditions.push(`(
+         t.title LIKE ? ESCAPE '\\'
+      OR t.merchant LIKE ? ESCAPE '\\'
+      OR t.location LIKE ? ESCAPE '\\'
+      OR t.remarks LIKE ? ESCAPE '\\'
+      OR c.name LIKE ? ESCAPE '\\'
+      OR p.name LIKE ? ESCAPE '\\'
+      OR printf('%.2f', t.amountInBase) LIKE ? ESCAPE '\\'
+    )`);
+    params.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern);
+  }
+
+  if (filter) conditions.push(`(${SEARCH_FILTER_CLAUSES[filter]})`);
+
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY t.date DESC
+     LIMIT ?`,
+    [...params, limit],
   );
 
   return rows.map(mapRow);

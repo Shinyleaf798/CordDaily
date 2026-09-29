@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
+import { HomeHeaderActions } from '@/components/home/home-header-actions';
 import { EditBudgetLink, SetBudgetLink } from '@/components/home/set-budget-link';
 import { TransactionListItem } from '@/components/transaction/transaction-list-item';
 import { MonthChip } from '@/components/home/month-chip';
@@ -29,7 +30,7 @@ const RING_STROKE_RATIO = 14 / 188;
 
 // 布局 B「金环」：把"本月还能花多少"做成页面主角，月度收支退成一条三栏 pill，
 // 账单直接铺在页面底色上、只用细线分隔。信息比 A 少，但第一眼看到的就是最该看的那个数。
-export function RingLayout({ data, onSelectTransaction }: HomeLayoutProps) {
+export function RingLayout({ data, onSelectTransaction, onOpenSearch }: HomeLayoutProps) {
   const theme = useTheme();
 
   // useWindowDimensions 而不是 Dimensions.get：转屏和分屏时它会触发重渲染，后者拿到的是启动时的快照
@@ -46,8 +47,8 @@ export function RingLayout({ data, onSelectTransaction }: HomeLayoutProps) {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      {/* 这一行右侧同样留给以后的搜索和图表入口 */}
-      <PageHeader title="首页" />
+      {/* 右侧的搜索和账单预览跟节奏条布局共用同一个组件——换布局不该少掉一个功能 */}
+      <PageHeader title="首页" right={<HomeHeaderActions onOpenSearch={onOpenSearch} />} />
 
       {/* 这一页不用 gap 排版（每块自带 marginTop），所以这里自己报上跟标题的距离，
           数值取 12——跟节奏条布局那边的 content.gap 一致 */}

@@ -106,3 +106,48 @@ export async function markFileBackupDone(at = new Date().toISOString()): Promise
 export async function markSyncFailed(message: string): Promise<void> {
   await setSetting(Keys.lastSyncError, JSON.stringify({ at: new Date().toISOString(), message }));
 }
+
+// ---- 搜索历史 ----
+
+/**
+ * 记几条。十条是"一屏放得下、翻不动就该重新打字了"的量——
+ * 搜索历史的价值全在最近那三五条，留一百条只是把有用的那几条埋起来。
+ */
+const SEARCH_HISTORY_LIMIT = 10;
+
+const SEARCH_HISTORY_KEY = 'searchHistory';
+
+/** 最近搜过的词，最新的在最前面。存成 JSON 数组，脏值当作"没有历史"而不是让搜索页崩掉 */
+export async function getSearchHistory(): Promise<string[]> {
+  const raw = await getSetting(SEARCH_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 记一条搜索词。
+ *
+ * 搜过的词**先删后插**，不是"已经有了就跳过"：搜索历史排的是"最近用过"，
+ * 不是"第一次用过"。再搜一次「星巴克」它就该回到第一位，否则越常用的词反而沉得越深。
+ *
+ * 大小写不敏感地去重（`Starbucks` 和 `starbucks` 是同一个词），但**存用户刚打的那一份**——
+ * 他这次是怎么写的，下次点历史回去的就该是那一份。
+ */
+export async function pushSearchHistory(keyword: string): Promise<void> {
+  const trimmed = keyword.trim();
+  if (!trimmed) return;
+
+  const history = await getSearchHistory();
+  const deduped = history.filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
+  const next = [trimmed, ...deduped].slice(0, SEARCH_HISTORY_LIMIT);
+  await setSetting(SEARCH_HISTORY_KEY, JSON.stringify(next));
+}
+
+export async function clearSearchHistory(): Promise<void> {
+  await removeSetting(SEARCH_HISTORY_KEY);
+}

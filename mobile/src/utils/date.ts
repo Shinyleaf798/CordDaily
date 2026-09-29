@@ -120,3 +120,35 @@ export function formatDayGroupLabel(date: Date, now: Date = new Date()): { label
   if (diffDays === 1) return { label: '昨天', subLabel: `${monthDay} ${weekday}` };
   return { label: monthDay, subLabel: weekday };
 }
+
+/** 把任意日期收敛成"那一年的 1 月 1 日"。跟 startOfMonth 同一个路子，只是粒度是年 */
+export function startOfYear(date: Date): Date {
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+export function shiftYear(year: Date, delta: number): Date {
+  return new Date(year.getFullYear() + delta, 0, 1);
+}
+
+/**
+ * 把任意日期收敛成"那一周的周一"。
+ *
+ * **周一当起点**，不是周日。getDay() 给的是 0=周日 的美式编号（WEEKDAY_LABELS 也是按它排的），
+ * 所以这里要把它换算一次：周日的 (0 + 6) % 7 = 6，即往回退 6 天，落到上周一。
+ * 直接写 date - getDay() 会得到"周日开头"的一周，那在中文语境里读起来是错位的——
+ * 「本周花了多少」说的是周一到周日这一段。
+ */
+export function startOfWeek(date: Date): Date {
+  const day = (date.getDay() + 6) % 7;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - day);
+}
+
+/** 从某一周往前（负）或往后（正）翻几周，结果同样落在周一 */
+export function shiftWeek(week: Date, delta: number): Date {
+  return addDays(week, delta * 7);
+}
+
+/** 9月22日 - 9月28日。一周没法用一个名字叫出来，只能报首尾两天 */
+export function formatWeekLabel(weekStart: Date): string {
+  return `${formatMonthDay(weekStart)} - ${formatMonthDay(addDays(weekStart, 6))}`;
+}

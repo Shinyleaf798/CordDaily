@@ -10,4 +10,6 @@ import type { HomeViewData } from '@/hooks/use-home-view-data';
 export type HomeLayoutProps = {
   data: HomeViewData;
   onSelectTransaction: (id: string) => void;
+  /** 展开搜索层。跟 onSelectTransaction 同一个路子——布局只负责把"用户按了这里"报上去 */
+  onOpenSearch: () => void;
 };

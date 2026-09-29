@@ -5,9 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategoryIcon } from '@/components/category/category-icon';
 import { CategoryBreakdown } from '@/components/stats/category-breakdown';
-import { TransactionDateGroupHeader } from '@/components/transaction/transaction-date-group-header';
+import { TransactionDayCard } from '@/components/transaction/transaction-day-card';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
-import { TransactionListItem } from '@/components/transaction/transaction-list-item';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenPadding, Spacing } from '@/constants/theme';
@@ -100,26 +99,9 @@ export default function CategorySpendingScreen() {
           </ThemedView>
         ) : (
           <View style={styles.dayGroups}>
-            {/* 一天一张卡，跟首页的近 7 天账单是同一个排法 */}
+            {/* 一天一张卡，跟首页的近 7 天账单是同一个排法（共用 TransactionDayCard） */}
             {data.dayGroups.map((group) => (
-              <ThemedView key={group.key} type="backgroundElement" style={styles.dayCard}>
-                <TransactionDateGroupHeader
-                  label={group.label}
-                  subLabel={group.subLabel}
-                  totalExpense={group.expense}
-                  totalIncome={group.income}
-                />
-                {group.items.map((item, index) => (
-                  <View key={item.id}>
-                    {index > 0 ? (
-                      <View style={[styles.rowDivider, { backgroundColor: theme.backgroundSelected }]} />
-                    ) : null}
-                    <View style={styles.itemWrap}>
-                      <TransactionListItem {...item} surface="card" onPress={() => setDetailId(item.id)} />
-                    </View>
-                  </View>
-                ))}
-              </ThemedView>
+              <TransactionDayCard key={group.key} group={group} onSelect={setDetailId} />
             ))}
           </View>
         )}
@@ -215,19 +197,6 @@ const styles = StyleSheet.create({
   },
   dayGroups: {
     gap: 10,
-  },
-  dayCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  // 分隔线从文字开始（缩进 66 = 16 内距 + 38 图标 + 12 间距），不切过图标
-  rowDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 66,
-  },
-  itemWrap: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
   },
   emptyCard: {
     borderRadius: 16,

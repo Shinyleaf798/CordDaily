@@ -4,6 +4,7 @@ import { Stack } from 'expo-router/js-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
+import { LogBox } from 'react-native';
 
 import { RestorePrompt } from '@/components/settings/restore-prompt';
 import { ScreenTransitions } from '@/constants/screen-transitions';
@@ -15,6 +16,26 @@ import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
 import { useThemeStore } from '@/store/theme.store';
+
+/**
+ * 压掉一条**库里发出来、我们改不了**的过期警告。
+ *
+ * 出处：`expo-router/build/react-navigation/stack/views/Stack/Card.js:87,92`——
+ * expo-router 内置的那份 `@react-navigation/stack` 卡片转场，在转场开始时用
+ * `InteractionManager.createInteractionHandle()` 告诉 RN"有动画在跑，后台任务先等等"。
+ * RN 把这套 API 标成了过期，推荐换 `requestIdleCallback`。
+ * 也就是说它是 2026-09-17 那条"改用 JS 栈"的直接副产品（那次是为了修 pop 时滑走一个空壳）。
+ *
+ * **只是 deprecation 警告，行为没变**，而且拉了 57.x 最新的 57.0.23 解包看过，同样两处还在，
+ * 所以升级也躲不掉；patch-package 改 node_modules 则是为一条警告去维护一份转场动画的私货分支。
+ *
+ * 匹配串写得**尽量长**：`ignoreLogs` 是按子串匹配的，只写 "InteractionManager"
+ * 会把以后任何一条提到它的消息一起吃掉——包括真该处理的那种。
+ *
+ * **expo-router 哪天换掉了这个调用，这三行就该删**。判断方法：注释掉之后启动 App，
+ * 控制台不再出现这条警告，就说明上游修了。
+ */
+LogBox.ignoreLogs(['InteractionManager has been deprecated and will be removed in a future release']);
 
 SplashScreen.preventAutoHideAsync();
 
@@ -124,6 +145,11 @@ export default function RootLayout() {
               name="add"
               options={{ ...ScreenTransitions.push, title: '记一笔', headerTitleAlign: 'center' }}
             />
+            {/* 首页标题右边那个饼图。**搜索不在这里**——它不是一个地方，是首页上就地展开的一层
+                （见 components/search/search-overlay）。
+                这一页自己画顶栏（返回 + 总/年/月/周 分段控件 + 排序），所以导航栏整条关掉；
+                关在路由这一层而不是页面里，页面组件还没渲染的那几帧才不会先闪一条 header 出来。 */}
+            <Stack.Screen name="bill-overview" options={{ ...ScreenTransitions.push, headerShown: false }} />
             <Stack.Screen name="set-budget" options={ScreenTransitions.dialog} />
             {/* 新建/编辑账户跟记一笔同一类：进去做完事再出来，所以同一种 push 转场。
                 标题写在路由这一层（页面组件还没渲染的那几帧才不会退回路由名 "Account-editor"），

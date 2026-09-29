@@ -1,4 +1,3 @@
-import type { TransactionListItemData } from '@/components/transaction/transaction-list-item';
 import type { CategorySpending, MonthlyExpense, MonthSummary, TagSummary, TransactionWithCategory } from '@/db/transactions';
 import {
   useCategorySpending,
@@ -8,8 +7,8 @@ import {
   usePendingReimbursementTotal,
   useTagSummaries,
 } from '@/hooks/use-transactions';
-import { formatClockTime, formatDayGroupLabel, formatMonthKey, shiftMonth, startOfDay, startOfMonth } from '@/utils/date';
-import { formatCategoryPath } from '@/utils/format';
+import { formatMonthKey, shiftMonth, startOfMonth } from '@/utils/date';
+import { groupTransactionsByDay, type DatedTransaction, type TransactionDayGroup } from '@/utils/transaction-view';
 
 /** 趋势图最多回看几个月。数据不够就只画有账的那几个月，见 buildStatsViewData */
 const TREND_MAX_MONTHS = 6;
@@ -234,17 +233,10 @@ export function useStatsViewData(month: Date): StatsViewData {
 
 // ---- 分类下钻：点主屏构成图里的一行进来 ----
 
-export type CategoryDetailTransaction = TransactionListItemData & { date: Date };
-
-export type CategoryDetailDayGroup = {
-  key: string;
-  date: Date;
-  label: string;
-  subLabel: string;
-  items: CategoryDetailTransaction[];
-  expense: number;
-  income: number;
-};
+// 跟首页共用同一个形状（见 utils/transaction-view）：两边列的都是"一天的账"，
+// 长得不一样只会让人觉得是两个不同的东西
+export type CategoryDetailTransaction = DatedTransaction;
+export type CategoryDetailDayGroup = TransactionDayGroup;
 
 export type CategoryDetailViewData = {
   monthLabel: string;
@@ -313,36 +305,7 @@ export function buildCategoryDetailViewData(input: {
     isOther: false,
   }));
 
-  const items: CategoryDetailTransaction[] = (transactions ?? []).map((t) => ({
-    id: t.id,
-    date: new Date(t.date),
-    icon: t.categoryIcon,
-    title: t.title,
-    categoryLabel: formatCategoryPath(t.categoryParentName, t.categoryName),
-    time: formatClockTime(new Date(t.date)),
-    note: t.remarks ?? undefined,
-    amount: t.amount,
-    type: t.type,
-  }));
-
-  const groups = new Map<string, CategoryDetailTransaction[]>();
-  for (const item of items) {
-    const key = startOfDay(item.date).toISOString();
-    const existing = groups.get(key);
-    if (existing) existing.push(item);
-    else groups.set(key, [item]);
-  }
-
-  const dayGroups: CategoryDetailDayGroup[] = [...groups.entries()]
-    .map(([key, groupItems]) => ({
-      key,
-      date: groupItems[0].date,
-      ...formatDayGroupLabel(groupItems[0].date, now),
-      items: groupItems,
-      expense: groupItems.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0),
-      income: groupItems.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0),
-    }))
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
+  const dayGroups = groupTransactionsByDay(transactions, now);
 
   return {
     monthLabel: `${month.getFullYear()}年${month.getMonth() + 1}月`,
