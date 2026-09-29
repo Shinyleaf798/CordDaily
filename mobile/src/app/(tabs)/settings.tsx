@@ -18,7 +18,7 @@ import { parseBundle, type BackupBundle, type ImportSource, type PendingCounts }
 import { pickBackupFile } from '@/db/backup-file';
 import { AutoSyncPeriodLabels } from '@/db/settings';
 import { useAutoSyncPeriod, useBackupState, useLocalStats } from '@/hooks/use-backup';
-import { useHasRemote } from '@/hooks/use-cloud';
+import { useCloudSession, useHasRemote } from '@/hooks/use-cloud';
 import { useAuthStore } from '@/store/auth.store';
 
 /**
@@ -52,10 +52,13 @@ export default function SettingsScreen() {
   const { data: backupState } = useBackupState();
   const { data: autoSyncPeriod } = useAutoSyncPeriod();
   const { data: hasRemote } = useHasRemote();
+  const { data: cloudSession } = useCloudSession();
 
   // 云端通不通有**两条路**：登录了自己那台服务器，或者填了自己的 Neon 连接串。
   // 这一页只关心"通不通"，不关心是哪一条——走哪条是 api/cloud-transport.ts 的事
-  const cloudReady = !!user || !!hasRemote;
+  // 「备份这条路通了」= 走我的后端登录了，或者自己的库**连上了并且登进了某一本账**。
+  // 光把库连上不算：不知道该往哪本账里写（见 db/neon/client.ts 的 requireBookId）
+  const cloudReady = !!user || !!cloudSession;
 
   // 云端备份和导出文件是**两个入口**，不是一个弹层里的两步：
   // 每次备份都先答一道"去云端还是导成文件"的选择题太烦，而那道题的答案几乎永远是云端
@@ -126,11 +129,13 @@ export default function SettingsScreen() {
               icon="server-outline"
               label="云端备份"
               hint={
-                hasRemote
-                  ? '备份到你自己的 Neon 数据库'
-                  : '填一条自己的 Neon 连接串，账就有地方备份了'
+                cloudSession
+                  ? `备份到你自己的 Neon 数据库 · ${cloudSession.email}`
+                  : hasRemote
+                    ? '库已经连上了，还差在库里登录一个账号'
+                    : '填一条自己的 Neon 连接串，账就有地方备份了'
               }
-              value={hasRemote ? '已连接' : undefined}
+              value={cloudSession ? '已连接' : hasRemote ? '待登录' : undefined}
               href="/settings/cloud"
             />
             <SettingsRow
@@ -163,7 +168,7 @@ export default function SettingsScreen() {
             <SettingsRow
               icon="person-outline"
               label="账号"
-              hint={user?.email ?? '未登录 · 备份到自己的数据库不需要账号'}
+              hint={user?.email ?? '未登录 · 记账不需要账号，备份到自己的库也不走这里'}
               href="/settings/account"
             />
             <SettingsRow icon="information-circle-outline" label="关于" href="/settings/about" />

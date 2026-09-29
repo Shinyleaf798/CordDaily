@@ -12,7 +12,7 @@ import { ThemeScheme } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { seedDefaultAccounts } from '@/db/accounts';
 import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories';
-import { hasRemote } from '@/db/neon/client';
+import { getCloudSession } from '@/db/neon/session';
 import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
@@ -92,7 +92,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (!isHydrated) return;
     void (async () => {
-      if (user || (await hasRemote())) void maybeAutoSync();
+      if (user || (await getCloudSession())) void maybeAutoSync();
     })();
   }, [isHydrated, user]);
 

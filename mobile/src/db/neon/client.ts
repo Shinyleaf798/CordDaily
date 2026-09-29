@@ -1,15 +1,17 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
-import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
 import { BOOTSTRAP_SQL, REMOTE_MIGRATIONS, REMOTE_SCHEMA_VERSION, REQUIRED_COLUMNS } from './schema';
+import { clearCloudSession, getCloudSession } from './session';
 
 /**
  * 用户自己那个 Neon 库的连接、建表和身份。
  *
- * **连接串就是凭证**，没有注册也没有登录。用户在 Neon 控制台建 project 拿到的那一条
- * `postgresql://...` 既是地址也是密码，能拿到它的人对这个库有完全权限（包括 DDL——
- * 自动建表正是靠这个）。所以这里不再存密码：同一个库里的密码哈希保护不了任何东西。
+ * **要两步才能备份：先连库，再登录库里的账号。** 这一份只管第一步。
+ * 用户在 Neon 控制台建 project 拿到的那一条 `postgresql://...` 既是地址也是密码，
+ * 能拿到它的人对这个库有完全权限（包括 DDL——自动建表正是靠这个）。第二步在
+ * `./account.ts`：那道门挡不住已经拿到连接串的人，它买的是"一个库放几本账"和
+ * "换手机时确认身份"，理由写在那边的文件头。
  *
  * 它存在 **SecureStore**，不是 app_settings 那张 SQLite 表：那张表会被导出进备份包，
  * 而备份文件是用户会往聊天窗口和网盘里丢的东西。一条带 DDL 权限的活凭证不能跟着它走。
@@ -21,17 +23,12 @@ import { BOOTSTRAP_SQL, REMOTE_MIGRATIONS, REMOTE_SCHEMA_VERSION, REQUIRED_COLUM
 
 const CONNECTION_KEY = 'neonConnectionString';
 
-/** 自动建表时往 `User` 里写的那一行的占位值。它不是账号，只是外键的落脚点 */
-const PLACEHOLDER_EMAIL = 'owner@corddaily.local';
-const PLACEHOLDER_PASSWORD_HASH = 'no-auth:byo-neon';
-
 type Sql = NeonQueryFunction<false, false>;
 
 // 连接串和 sql 实例都缓存着：一次备份要发几十个请求，每次都去 SecureStore 读一遍
 // 再重建一个 neon() 是白费的。断开连接时两个一起清（见 disconnectRemote）
 let cachedConnectionString: string | null | undefined;
 let cachedSql: Sql | null = null;
-let cachedBookId: string | null = null;
 
 // ---- 连接串的存取 ----
 
@@ -50,7 +47,6 @@ async function saveConnectionString(value: string): Promise<void> {
   await SecureStore.setItemAsync(CONNECTION_KEY, value);
   cachedConnectionString = value;
   cachedSql = null;
-  cachedBookId = null;
 }
 
 /**
@@ -61,9 +57,11 @@ async function saveConnectionString(value: string): Promise<void> {
  */
 export async function disconnectRemote(): Promise<void> {
   await SecureStore.deleteItemAsync(CONNECTION_KEY);
+  // 登录态跟着一起清：它记的是「那个库里的某一行」，库都不连了，留着只会在下次连上
+  // 另一个库时指向一个不存在的 userId
+  await clearCloudSession();
   cachedConnectionString = null;
   cachedSql = null;
-  cachedBookId = null;
 }
 
 /**
@@ -109,16 +107,21 @@ export function checkConnectionString(raw: string): ConnectionProblem | null {
  * 当前云端目标的一个身份标记，**不发请求**。
  *
  * 给「重装后问一次要不要恢复」那个弹窗用（components/settings/restore-prompt.tsx）：
- * 它要记住"这个云端我已经跳过了"，而换一个云端时应该重新问一次。
- * 登录那条路用 userId 回答这件事，这条路没有 userId 可用。
+ * 它要记住"这个云端我已经跳过了"，而换一个云端、或者在同一个库里换一本账时应该重新问一次。
  *
- * 用主机名而不是 `app_meta.bookId`：bookId 更准，但取它要连一次网，
- * 而这个判断跑在**每次启动**上。跳过标记记错的代价只是多问一次，
- * 为它在冷启动路径上加一个网络请求不划算。
+ * 主机名 + userId 两段都要：同一个库里可以有好几本账（见 account.ts），
+ * 只认主机名的话，换账号登进来会沿用上一本账的"已跳过"标记，于是那本账的恢复入口不出现。
+ *
+ * 没登录就返回 null，跟没连库一个待遇：**恢复这件事这时候根本做不了**
+ * （不知道从哪本账拉），弹窗问了也只会在点下去之后报错。
+ * 两段都来自 SecureStore，**不发请求**——这个判断跑在每次启动上。
  */
 export async function getRemoteIdentity(): Promise<string | null> {
   const connectionString = await getConnectionString();
-  return connectionString ? `neon:${describeHost(connectionString)}` : null;
+  if (!connectionString) return null;
+  const session = await getCloudSession();
+  if (!session) return null;
+  return `neon:${describeHost(connectionString)}#${session.userId}`;
 }
 
 /** 给界面显示用的主机名，不带用户名密码。「已连接到 ep-xxx.ap-southeast-1.aws.neon.tech」 */
@@ -156,17 +159,27 @@ export type RemoteStatus = {
   lastPushAt: string | null;
 };
 
+export type ConnectResult = {
+  host: string;
+  /** 建完表之后库里的结构版本 */
+  schemaVersion: number;
+};
+
 /**
- * 连接（或重连）一个库：建表 → 补迁移 → 确认账本身份 → 存凭证。
+ * 连接（或重连）一个库：建表 → 补迁移 → 存凭证。**到这里就结束了，不碰账号。**
  *
  * **四种情况走的是同一条路**，因为每一步都是幂等的：全新的空库、另一台手机已经建好的库、
  * 以前用后端注册过的库、App 升级后表结构落后一版的库。分成「初始化」和「连接」两个按钮的话，
  * 用户得先自己判断属于哪一种——而他判断不了。
  *
+ * 原来最后还有一步「确认账本身份」，会往空库里自动塞一行占位 `User`。现在那一步归
+ * account.ts 管，由用户注册或登录来完成：自动塞的那行谁都能用，等于这个库里
+ * 第一个连上来的人拿走整本账。
+ *
  * 凭证**最后才存**：中途任何一步失败，手机上就不会留下一条连不上的连接串，
  * 「我的」页那张卡也不会变成"已连接"却每次备份都报错的样子。
  */
-export async function connectRemote(raw: string): Promise<RemoteStatus> {
+export async function connectRemote(raw: string): Promise<ConnectResult> {
   const connectionString = normalizeConnectionString(raw);
   const problem = checkConnectionString(connectionString);
   if (problem) throw new Error(problem.message);
@@ -186,12 +199,10 @@ export async function connectRemote(raw: string): Promise<RemoteStatus> {
 
   const version = await migrateRemote(sql);
   await verifySchema(sql);
-  const bookId = await ensureBook(sql);
 
   await saveConnectionString(connectionString);
-  cachedBookId = bookId;
 
-  return { ...(await readRemoteStatus(sql, bookId)), host: describeHost(connectionString), schemaVersion: version };
+  return { host: describeHost(connectionString), schemaVersion: version };
 }
 
 /**
@@ -279,44 +290,19 @@ async function verifySchema(sql: Sql): Promise<void> {
 }
 
 /**
- * 这个库的账本 id，也就是所有业务表 `userId` 那一列要填的值。
+ * 当前账本 id，也就是所有业务表 `userId` 那一列要填的值。**它就是登录账号的 `User.id`。**
  *
- * **换手机时从库里读出来，不重新生成**——这正是"第二台手机认得出第一台的账"的全部机制。
- * 生成一个新的话，两台手机的数据会在同一个库里各自成一摊，而且因为内置分类的 id 是写死的
- * （每个 userId 下都有同一批），新的那摊还会把分类整个复制一遍。
+ * 换手机时"第二台认得出第一台的账"靠的是：同一条连接串 + 同一个账号登进去，拿到同一个 id。
+ * 这里不生成新 id——生成一个新的话，两台手机的数据会在同一个库里各自成一摊，
+ * 而且因为内置分类的 id 是写死的（每个 userId 下都有同一批），新的那摊还会把分类整个复制一遍。
  *
- * 库里已经有 `User` 行（以前用后端注册过、或者另一台手机建的）就认那一行；
- * 一行都没有才生成新的。多于一行时取最早的那个：那是这个库的主人。
+ * 只连了库、没登录账号时**直接报错**。传输层每条 SQL 的 userId 都取这个值，
+ * 拿不到就意味着不知道该往哪本账里写——这时候宁可什么都不做。
  */
-async function ensureBook(sql: Sql): Promise<string> {
-  const meta = await sql.query('SELECT "bookId" FROM "app_meta" WHERE "id" = 1');
-  const recorded = meta[0]?.bookId as string | null | undefined;
-  if (recorded) return recorded;
-
-  const existing = await sql.query('SELECT "id" FROM "User" ORDER BY "createdAt" ASC LIMIT 1');
-  let bookId = existing[0]?.id as string | undefined;
-
-  if (!bookId) {
-    bookId = Crypto.randomUUID();
-    await sql.query(
-      'INSERT INTO "User" ("id", "email", "passwordHash") VALUES ($1, $2, $3) ON CONFLICT ("id") DO NOTHING',
-      [bookId, PLACEHOLDER_EMAIL, PLACEHOLDER_PASSWORD_HASH],
-    );
-  }
-
-  await sql.query('UPDATE "app_meta" SET "bookId" = $1 WHERE "id" = 1', [bookId]);
-  return bookId;
-}
-
-/** 当前账本 id。传输层每条 SQL 的 userId 都取它 */
 export async function requireBookId(): Promise<string> {
-  if (cachedBookId) return cachedBookId;
-  const sql = await getSql();
-  const rows = await sql.query('SELECT "bookId" FROM "app_meta" WHERE "id" = 1');
-  const bookId = rows[0]?.bookId as string | undefined;
-  if (!bookId) throw new Error('云端还没初始化，去「云端备份」里重新连一次');
-  cachedBookId = bookId;
-  return bookId;
+  const session = await getCloudSession();
+  if (!session) throw new Error('还没登录云端账号，去「云端备份」里登录一次');
+  return session.userId;
 }
 
 /** 备份成功之后盖一个时间戳，纯粹是为了在别的设备上也看得到「上次是什么时候推的」 */
@@ -350,9 +336,12 @@ async function readRemoteStatus(sql: Sql, bookId: string): Promise<RemoteStatus>
 export async function fetchRemoteStatus(): Promise<RemoteStatus | null> {
   const connectionString = await getConnectionString();
   if (!connectionString) return null;
+  // 连了库但没登录也返回 null：那张卡说的是「这本账里有多少条」，
+  // 还没选中哪本账的时候这个问题没有答案，页面该显示登录表单而不是一堆 0
+  const session = await getCloudSession();
+  if (!session) return null;
   const sql = await getSql();
-  const bookId = await requireBookId();
-  return { ...(await readRemoteStatus(sql, bookId)), host: describeHost(connectionString) };
+  return { ...(await readRemoteStatus(sql, session.userId)), host: describeHost(connectionString) };
 }
 
 /**

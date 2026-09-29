@@ -3161,3 +3161,74 @@ SQLite 上几乎撞不到，但远端是常态（网络断在两组之间），�
 
 后端、JWT、登录注册页**一个字都没动**。两条通道并存，用户配了 Neon 就走 Neon。
 以后要不要让后端退休（网页端也自己填连接串），是另一个决定。
+
+## 2026-09-29 云端加第二道门：账号建在用户自己那个 Neon 库里
+
+### 起因
+
+上一条决定的说法是「连接串就是凭证，没有注册也没有登录」，`connectRemote` 连上空库
+就自动塞一行占位 `User`（`owner@corddaily.local` / `no-auth:byo-neon`）当外键落脚点。
+能用，但有两件事做不了，而这两件事都不是安全问题：
+
+- **一个库只能放一本账。** 家里两个人想共用一个免费 Neon project 就不行了——
+  自动塞的那行谁都能用，第一个连上来的人拿走整本账。
+- **换手机时没有任何确认。** 连接串粘错成别人的（或者同一个人两个 project 搞混），
+  连上就直接把那本账认领下来了。
+
+所以加一道账号门。**它挡不住已经拿到连接串的人**——那人能直接读表，库里的密码哈希
+拦不住任何东西。清楚这一点很重要：这不是第二把锁，是「选哪本账」的界面。
+
+### 决定一：账号建在用户自己的库里，不走我的后端
+
+备份这条路已经绕开我的服务器了（手机直连 Neon）。登录再走 Render 实例的话，就变成
+「备份自己的数据库，得先指望别人的服务器活着」——一个可以随时消失的单点，
+卡在一条本来完全自给自足的链路中间。
+
+所以 `db/neon/account.ts` 直接对着用户的库跑 SQL：注册是一条 `INSERT INTO "User"`，
+登录是 `SELECT` 出来 `bcrypt.compare`。手机自己算哈希，我这边一无所知。
+
+### 决定二：bcryptjs，格式跟后端逐字节兼容
+
+`$2b$`、cost 10，跟 `backend/src/services/auth.service.js` 的 `SALT_ROUNDS = 10` 一致。
+同一个库既能被手机登，也能被那套 Express + Prisma 后端登，以后网页端只读那条路接上来
+不用再迁移一次密码。
+
+`bcryptjs` 是纯 JS（`bcrypt` 是原生模块，Expo 里用不了）。它顶上有一句
+`import nodeCrypto from "crypto"`，但 package.json 里带 `"browser": {"crypto": false}`，
+Metro 认这个字段——跑了一次 `expo export --platform android` 确认能打包，不是推断。
+生成盐的随机数用 `setRandomFallback` 接到 expo-crypto 的 `getRandomBytes` 上：
+RN 里全局 `crypto.getRandomValues` 不保证存在，而盐不随机的 bcrypt 等于没加盐。
+
+### 决定三：旧库走「认领」，不走「注册」
+
+上一版连过的库里有那行占位 `User`，名下挂着已经推上去的账单。这时候引导用户注册新账号，
+会开出第二本空账，而原来那些看着像丢了。所以 `probeAccounts()` 认出占位行（按
+`passwordHash === 'no-auth:byo-neon'`），页面默认落在「给旧账本设个密码」那一档，
+还把那本账有多少笔显示出来。
+
+认领是 **id 原地不动**，只 UPDATE 邮箱和密码两列。新建一个账号再搬数据的话，
+等于在别人的库里做一次跨表更新，还要改 `Category` 那个 `@@id([userId, id])` 复合主键。
+
+### 决定四：`requireBookId()` 改成读登录态，`app_meta.bookId` 退休
+
+原来账本 id 从 `app_meta.bookId` 读（一个库一本账，所以那个字段成立）。现在
+`userId` 就是登录账号的 `User.id`，一个库好几本账，那个字段没有意义了。
+没登录时 `requireBookId()` 直接抛错——传输层每条 SQL 都取它，拿不到就是不知道
+该往哪本账里写，这时候宁可什么都不做。
+
+`app_meta.bookId` 那一列**留着不删**（见 DECISIONS 里「用不上的列先留着」那条），
+建表 DDL 不动，只是不再有人写它。
+
+### 顺带
+
+- 「云端通了」的判断从 `hasRemote`（有没有连接串）改成 `cloudSession`（登没登账号）。
+  光连上库不算通：备份按钮亮着但一点就报错，比灰着更糟。
+- `getRemoteIdentity()` 从 `neon:${host}` 改成 `neon:${host}#${userId}`，没登录返回 null。
+  同一个库里换一本账时，恢复弹窗的"已跳过"标记要跟着换。
+- 退出账号和断开库是两个按钮：换一本账是日常操作，不该逼人把连接串再粘一遍。
+
+### 没做
+
+后端、JWT、`app/login.tsx`、`app/register.tsx` 还是一个字没动。它们走的是我的 Express
+那条路，跟这条并存。**记账、统计、导出、从文件恢复全都不看这两道门**（CLAUDE.md 原则 1），
+两道门只挡云端那一条通道。

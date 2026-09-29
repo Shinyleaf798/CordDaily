@@ -42,8 +42,8 @@ export function RestorePrompt() {
 
   // 只在"登录了而且本地是空的"时才去问云端：这一句会跟着每次启动跑，
   // 平时（本地有账）根本不该发请求
-  // 云端目标的身份：登录那条路是 userId，Neon 那条路是主机名。
-  // 两条都拿不到就说明还没连上云端，这个弹窗整个不该出现
+  // 云端目标的身份：走后端那条路是 userId，自己的库那条路是「主机名 + 账本 id」。
+  // 两条都拿不到就说明云端还没通（没连库、或者连了库没登账号），这个弹窗整个不该出现
   const { data: remoteIdentity } = useRemoteIdentity();
   const cloudKey = user?.id ?? remoteIdentity ?? null;
 
