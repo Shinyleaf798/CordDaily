@@ -1,4 +1,4 @@
-import { fetchCategoryIconBlobs, fetchCloudAccounts, fetchCloudCategories } from '@/api/sync';
+import { getCloudTransport, type CloudTransport } from '@/api/cloud-transport';
 import { customIconFileName } from '@/constants/category-icons';
 
 import { isAccountAsShipped, isCategoryAsShipped } from './backup';
@@ -85,7 +85,14 @@ export async function mergeFromCloud(): Promise<MergeResult> {
   const db = await getDb();
   const result: MergeResult = { adopted: 0, added: 0, conflicts: [], icons: 0 };
 
-  const [remoteCategories, remoteAccounts] = await Promise.all([fetchCloudCategories(), fetchCloudAccounts()]);
+  // 目的地跟推送那一步是同一个（见 api/cloud-transport.ts）。这里再问一次而不是让
+  // pushUnsynced 传进来：mergeFromCloud 也可能被单独调，而它自己就该知道去哪儿取数
+  const cloud = await getCloudTransport();
+
+  const [remoteCategories, remoteAccounts] = await Promise.all([
+    cloud.fetchCloudCategories(),
+    cloud.fetchCloudAccounts(),
+  ]);
 
   // 墓碑：本地删过的 id 不能被云端再拉回来（删除本身会在推送阶段执行）
   const deletedCategoryIds = new Set(await listDeletedIds('category'));
@@ -250,7 +257,7 @@ export async function mergeFromCloud(): Promise<MergeResult> {
     result.adopted += 1;
   }
 
-  result.icons = await downloadMissingIcons();
+  result.icons = await downloadMissingIcons(cloud);
   return result;
 }
 
@@ -268,7 +275,7 @@ export async function mergeFromCloud(): Promise<MergeResult> {
  * **失败了不抛**：图没补上，分类的名字和层级已经合并好了，那部分成果不该被一次图片请求
  * 作废。下次备份会重新算一遍、再补一次——跟上传那条路一样，它自己会愈合。
  */
-async function downloadMissingIcons(): Promise<number> {
+async function downloadMissingIcons(cloud: CloudTransport): Promise<number> {
   try {
     const db = await getDb();
     const rows = await db.getAllAsync<{ icon: string | null }>(
@@ -286,7 +293,7 @@ async function downloadMissingIcons(): Promise<number> {
     let restored = 0;
     // 一批 50 个名字，服务器那边的上限
     for (let i = 0; i < missing.length; i += 50) {
-      restored += await restoreCategoryIconBlobs(await fetchCategoryIconBlobs(missing.slice(i, i + 50)));
+      restored += await restoreCategoryIconBlobs(await cloud.fetchCategoryIconBlobs(missing.slice(i, i + 50)));
     }
     return restored;
   } catch {

@@ -12,6 +12,7 @@ import { ThemeScheme } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { seedDefaultAccounts } from '@/db/accounts';
 import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories';
+import { hasRemote } from '@/db/neon/client';
 import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
 import { useHomeLayoutStore } from '@/store/home-layout.store';
@@ -84,10 +85,15 @@ export default function RootLayout() {
   // 自动同步就挂在这里：App 打开时检查一次「上次备份过去多久了」，够了就把没备份的推上去。
   // 不跑后台任务——跟周期交易的补生成同一个时机（CLAUDE.md 原则#1/#4）。
   //
-  // 要等 user 有值：没登录时推了也是 401。里面自己吞掉所有失败（记进 lastSyncError），
-  // 所以这里不用 catch——拦住启动是不能接受的。
+  // **两条通道都算"有地方可去"**：登录了自己那台服务器，或者配了自己的 Neon 连接串。
+  // 一条都没有时不跑——没登录推上去是 401，没连 Neon 则根本不知道往哪发，
+  // 两种都只会白白在 lastSyncError 里留一行看不懂的红字。
+  // 里面自己吞掉所有失败，所以这里不用 catch——拦住启动是不能接受的。
   useEffect(() => {
-    if (isHydrated && user) void maybeAutoSync();
+    if (!isHydrated) return;
+    void (async () => {
+      if (user || (await hasRemote())) void maybeAutoSync();
+    })();
   }, [isHydrated, user]);
 
   // 根视图底色：整棵 React 树后面那块原生窗口，启动图收掉到首屏之间、透明屏底下会露出来。
@@ -189,6 +195,7 @@ export default function RootLayout() {
             <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
             <Stack.Screen name="settings/auto-sync" options={{ ...ScreenTransitions.push, title: '自动同步' }} />
+            <Stack.Screen name="settings/cloud" options={{ ...ScreenTransitions.push, title: '云端备份' }} />
             <Stack.Screen name="settings/about" options={{ ...ScreenTransitions.push, title: '关于' }} />
             <Stack.Screen name="login" options={{ ...ScreenTransitions.push, title: '登录' }} />
             <Stack.Screen name="register" options={{ ...ScreenTransitions.push, title: '注册' }} />

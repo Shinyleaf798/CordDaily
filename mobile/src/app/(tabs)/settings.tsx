@@ -13,11 +13,12 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { PageHeader } from '@/components/ui/page-header';
 import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenPadding, Spacing } from '@/constants/theme';
-import { fetchCloudBundle } from '@/api/sync';
+import { getCloudTransport } from '@/api/cloud-transport';
 import { parseBundle, type BackupBundle, type ImportSource, type PendingCounts } from '@/db/backup';
 import { pickBackupFile } from '@/db/backup-file';
 import { AutoSyncPeriodLabels } from '@/db/settings';
 import { useAutoSyncPeriod, useBackupState, useLocalStats } from '@/hooks/use-backup';
+import { useHasRemote } from '@/hooks/use-cloud';
 import { useAuthStore } from '@/store/auth.store';
 
 /**
@@ -50,6 +51,11 @@ export default function SettingsScreen() {
   const { data: stats } = useLocalStats();
   const { data: backupState } = useBackupState();
   const { data: autoSyncPeriod } = useAutoSyncPeriod();
+  const { data: hasRemote } = useHasRemote();
+
+  // 云端通不通有**两条路**：登录了自己那台服务器，或者填了自己的 Neon 连接串。
+  // 这一页只关心"通不通"，不关心是哪一条——走哪条是 api/cloud-transport.ts 的事
+  const cloudReady = !!user || !!hasRemote;
 
   // 云端备份和导出文件是**两个入口**，不是一个弹层里的两步：
   // 每次备份都先答一道"去云端还是导成文件"的选择题太烦，而那道题的答案几乎永远是云端
@@ -101,20 +107,39 @@ export default function SettingsScreen() {
             transactions={stats?.transactions ?? 0}
             unsynced={stats?.unsyncedTotal ?? 0}
             lastBackupAt={lastBackupAt}
-            isSignedIn={!!user}
-            onSignIn={() => router.push('/login')}
+            cloudReady={cloudReady}
+            onConnect={() => router.push('/settings/cloud')}
             onBackup={() => setSheet('backup')}
-            onRestore={() => setRestoreSource({ label: '云端', load: fetchCloudBundle, source: 'cloud' })}
+            onRestore={() =>
+              setRestoreSource({
+                label: '云端',
+                load: async () => (await getCloudTransport()).fetchCloudBundle(),
+                source: 'cloud',
+              })
+            }
           />
 
           <SettingsSection label="数据">
+            {/* 云端那条通道自己占一行，排在自动同步**前面**：得先有地方去，
+                "多久去一次"才是个有意义的问题 */}
+            <SettingsRow
+              icon="server-outline"
+              label="云端备份"
+              hint={
+                hasRemote
+                  ? '备份到你自己的 Neon 数据库'
+                  : '填一条自己的 Neon 连接串，账就有地方备份了'
+              }
+              value={hasRemote ? '已连接' : undefined}
+              href="/settings/cloud"
+            />
             <SettingsRow
               icon="cloud-outline"
               label="自动同步"
-              hint={user ? '打开 App 时检查，只上传、不下载' : '登录后可用'}
-              value={user ? AutoSyncPeriodLabels[autoSyncPeriod ?? 'off'] : undefined}
-              // 没登录就直接去登录页：进到一个按了也不会生效的开关面前更让人困惑
-              href={user ? '/settings/auto-sync' : '/login'}
+              hint={cloudReady ? '打开 App 时检查，只上传、不下载' : '先连上云端才能用'}
+              value={cloudReady ? AutoSyncPeriodLabels[autoSyncPeriod ?? 'off'] : undefined}
+              // 云端还没通就直接去云端页：进到一个按了也不会生效的开关面前更让人困惑
+              href={cloudReady ? '/settings/auto-sync' : '/settings/cloud'}
             />
             {/* 导出成文件从「备份」里拆出来单独站一行。恢复不在这里再开一个门——
                 它就是卡上那个「恢复」，同一个页面开两扇门会被当成两个功能 */}
@@ -138,7 +163,7 @@ export default function SettingsScreen() {
             <SettingsRow
               icon="person-outline"
               label="账号"
-              hint={user?.email ?? '未登录 · 登录后才能用云端备份'}
+              hint={user?.email ?? '未登录 · 备份到自己的数据库不需要账号'}
               href="/settings/account"
             />
             <SettingsRow icon="information-circle-outline" label="关于" href="/settings/about" />

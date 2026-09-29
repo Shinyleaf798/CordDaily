@@ -1,13 +1,4 @@
-import {
-  deleteRemote,
-  fetchCloudIconNames,
-  pushAccounts,
-  pushCategories,
-  pushCategoryIcons,
-  pushRecurring,
-  pushTransactions,
-  pushTransfers,
-} from '@/api/sync';
+import { getCloudTransport, type CloudTransport } from '@/api/cloud-transport';
 
 import { getLocalStats } from './backup';
 import { listUsedCategoryIconNames, readCategoryIconBlobs } from './category-icon-files';
@@ -112,6 +103,12 @@ async function markSyncedWithFingerprint(table: string, rows: { id: string; fing
  */
 export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   const db = await getDb();
+
+  // 这次备份往哪儿发：用户自己的 Neon，还是自己那台服务器（见 api/cloud-transport.ts）。
+  // **整次备份只问一次**，而不是每个步骤各问一遍：中途要是换了目的地，
+  // 已经标成"已备份"的那几批就指着另一个库了
+  const cloud = await getCloudTransport();
+
   const result: PushResult = {
     merged: 0,
     pulled: 0,
@@ -139,7 +136,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   // 而 listPendingDeletions 已经把账单排在分类和账户前面了（外键顺序）
   if (withDeletions) {
     for (const deletion of await listPendingDeletions()) {
-      await deleteRemote(deletion.kind, deletion.id);
+      await cloud.deleteRemote(deletion.kind, deletion.id);
       await clearDeletion(deletion.kind, deletion.id);
       result.deletions += 1;
     }
@@ -148,7 +145,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   // 图标先于分类上去，理由跟恢复时"先落图后写库"是同一条：这两样凑不成一个原子操作，
   // 只能挑错得轻的顺序。先图后行，崩在中间留下的是一张没人引用的图（占几 KB）；
   // 反过来则是云端一行分类指着一张不存在的图，而那正是重装恢复时会显形的坏
-  result.icons = await pushMissingIcons();
+  result.icons = await pushMissingIcons(cloud);
 
   // 父在前、子在后：子分类的 parentId 指向父，父还没到服务器的话那一条会被打回。
   //
@@ -167,7 +164,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     // 一个请求推整批，服务器按数组顺序写——上面那个 ORDER BY 已经把父排在前面了。
     // 整批成功才写标记：半途失败时这些行的指纹留在旧值上，下次重推，
     // 而服务器那边全是按 (userId, id) 的 upsert，重推一次结果完全一样
-    await pushCategories(
+    await cloud.pushCategories(
       categories.map(({ syncedFingerprint: _ignored, ...category }) => ({
         ...category,
         isActive: !!category.isActive,
@@ -188,7 +185,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   );
   const accounts = allAccounts.filter((account) => account.syncedFingerprint !== accountFingerprint(account));
   if (accounts.length) {
-    await pushAccounts(accounts.map(({ syncedFingerprint: _ignored, ...account }) => account));
+    await cloud.pushAccounts(accounts.map(({ syncedFingerprint: _ignored, ...account }) => account));
     await markSyncedWithFingerprint(
       'accounts',
       accounts.map((account) => ({ id: account.id, fingerprint: accountFingerprint(account) })),
@@ -215,7 +212,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
 
     // 这里的 null 尤其有含义：reimbursedAt 为空是「还没收回来」，
     // merchant / location / remarks 为空是「用户清掉了」——都得原样送上去
-    await pushTransactions(
+    await cloud.pushTransactions(
       batch.map((transaction) => ({
         ...transaction,
         // 本地存的是一段 JSON 文本和 0/1，后端要的是数组和布尔
@@ -236,7 +233,7 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
   );
   if (transfers.length) {
     // 同账单：整行推，note 清空了也要让云端跟着空
-    await pushTransfers(transfers);
+    await cloud.pushTransfers(transfers);
     await markSynced(
       'transfers',
       transfers.map((transfer) => transfer.id as string),
@@ -250,9 +247,18 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
        FROM recurring_transactions WHERE synced = 0`,
   );
   for (const rule of recurring) {
-    await pushRecurring({ ...rule, isActive: !!rule.isActive });
+    await cloud.pushRecurring({ ...rule, isActive: !!rule.isActive });
     await markSynced('recurring_transactions', [rule.id as string]);
     result.recurring += 1;
+  }
+
+  // 云端那一侧的时间戳（只有 Neon 那条路有：它没有服务器替它记这件事）。
+  // 放在 markCloudBackupDone 前面但**不让它拖垮整次备份**——账已经全推上去了，
+  // 为一个"上次什么时候推的"显示值把成功报成失败，是拿真正重要的那件事去赌一个次要的
+  try {
+    await cloud.finishPush?.();
+  } catch {
+    // 故意咽掉：这一行失败的唯一后果是别的设备上那个时间戳偏旧
   }
 
   await markCloudBackupDone();
@@ -272,11 +278,11 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
  * 失败**不吞**：图没上去而分类上去了，就是云端存着一个指向空气的引用，
  * 那正是这一步要防的事。让整次备份失败、下次重来，比留下一个坏掉的云端状态好。
  */
-async function pushMissingIcons(): Promise<number> {
+async function pushMissingIcons(cloud: CloudTransport): Promise<number> {
   const used = await listUsedCategoryIconNames();
   if (!used.length) return 0;
 
-  const remote = new Set(await fetchCloudIconNames());
+  const remote = new Set(await cloud.fetchCloudIconNames());
   const missing = used.filter((name) => !remote.has(name));
   if (!missing.length) return 0;
 
@@ -289,7 +295,7 @@ async function pushMissingIcons(): Promise<number> {
   let uploaded = 0;
   for (let offset = 0; offset < blobs.length; offset += BATCH_SIZE) {
     const batch = blobs.slice(offset, offset + BATCH_SIZE);
-    const { inserted } = await pushCategoryIcons(batch);
+    const { inserted } = await cloud.pushCategoryIcons(batch);
     uploaded += inserted;
   }
   return uploaded;
@@ -353,5 +359,13 @@ export function describeError(error: unknown): string {
     const detail = response.status < 500 ? response.data?.error?.message : undefined;
     return detail ? `服务器返回 ${response.status}：${detail}` : `服务器返回 ${response.status}`;
   }
+
+  // Neon 那条路上根本没有 HTTP 状态码可看，而它抛出来的消息**已经是一句人话**了
+  // （api/neon-transport.ts 的 describeSqlError 翻过一道）。不先认出来的话，
+  // 「云端还没有这条账单用的分类」会被下面那句笼统的兜底盖掉，用户拿不到任何线索
+  if (!(error as { isAxiosError?: boolean })?.isAxiosError && error instanceof Error && error.message) {
+    return error.message;
+  }
+
   return '连不上服务器，可能是没网络或服务器在休眠';
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { fetchCloudSummary } from '@/api/sync';
+import { getCloudTransport } from '@/api/cloud-transport';
 import {
   applyImport,
   getLocalStats,
@@ -86,7 +86,12 @@ export function usePendingDeletions() {
 
 /** 云端有没有这个账号的数据。只在恢复那一屏用，所以不跟着「我的」页一起常驻请求 */
 export function useCloudSummary(enabled = true) {
-  return useQuery({ queryKey: ['cloudSummary'], queryFn: fetchCloudSummary, enabled, retry: false });
+  return useQuery({
+    queryKey: ['cloudSummary'],
+    queryFn: async () => (await getCloudTransport()).fetchCloudSummary(),
+    enabled,
+    retry: false,
+  });
 }
 
 /** 导出成文件。成功之后要刷备份状态——那张卡上的「文件上次」就是它 */

@@ -11,11 +11,18 @@ type BackupCardProps = {
    *  这里说"全部已备份"、点进去却列出一堆要上传的，比数字大一点更让人不信任 */
   unsynced: number;
   lastBackupAt: string | null;
-  /** 没登录时这张卡只剩三个数字和一个「去登录」——云端那两件事没有账号做不了 */
-  isSignedIn: boolean;
+  /**
+   * 云端那条通道通不通。**两种情况都算通**：登录了自己那台服务器，
+   * 或者填了自己的 Neon 连接串（见 app/settings/cloud.tsx）。
+   *
+   * 这里刻意不区分是哪一种——这张卡要回答的是"我的账能不能出门"，
+   * 而"它出门去了谁的库"是设置页的事。不通的时候只剩三个数字和一个「去连接」。
+   */
+  cloudReady: boolean;
   onBackup: () => void;
   onRestore: () => void;
-  onSignIn: () => void;
+  /** 云端还没通时那个按钮。带去「云端备份」页，两条路（登录 / 填 Neon）都从那儿进 */
+  onConnect: () => void;
 };
 
 /**
@@ -32,10 +39,10 @@ export function BackupCard({
   transactions,
   unsynced,
   lastBackupAt,
-  isSignedIn,
+  cloudReady,
   onBackup,
   onRestore,
-  onSignIn,
+  onConnect,
 }: BackupCardProps) {
   const theme = useTheme();
   const hasPending = unsynced > 0;
@@ -57,7 +64,7 @@ export function BackupCard({
         <Stat label="上次备份" value={lastBackupAt ? formatDay(lastBackupAt) : '从没'} />
       </View>
 
-      {isSignedIn ? (
+      {cloudReady ? (
         <View style={styles.buttons}>
           <Pressable onPress={onBackup} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
             <Ionicons name="arrow-up-circle-outline" size={18} color={theme.onCardHighlight} />
@@ -71,21 +78,21 @@ export function BackupCard({
           </Pressable>
         </View>
       ) : (
-        <Pressable onPress={onSignIn} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
-          <Ionicons name="log-in-outline" size={18} color={theme.onCardHighlight} />
+        <Pressable onPress={onConnect} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
+          <Ionicons name="cloud-outline" size={18} color={theme.onCardHighlight} />
           <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-            登录后备份到云端
+            连接云端后可备份
           </ThemedText>
         </Pressable>
       )}
 
       {/* 说清楚这两个按钮的去处都是云端，以及文件那条在哪儿——
           不写的话用户会在这张卡上找"导入文件"，找不到就以为功能没做。
-          没登录时更要说：文件那条**不需要账号**，现在就能用 */}
+          没连云端时更要说：文件那条**不需要任何账号或数据库**，现在就能用 */}
       <ThemedText type="small" themeColor="textSecondary">
-        {isSignedIn
+        {cloudReady
           ? '这两个按钮都走云端。要用文件，看下面「数据」里的导出和恢复。'
-          : '不登录也能记账。下面「数据」里的导出成文件和从文件恢复，现在就能用。'}
+          : '不连云端也能记账。下面「数据」里的导出成文件和从文件恢复，现在就能用。'}
       </ThemedText>
     </View>
   );

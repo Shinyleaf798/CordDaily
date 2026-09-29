@@ -48,14 +48,22 @@ async function migrate(db: SQLite.SQLiteDatabase) {
   if (currentVersion >= MIGRATIONS.length) return;
 
   for (let version = currentVersion; version < MIGRATIONS.length; version++) {
-    // 一组语句包在事务里：中途失败就整组回滚，不会留下"加了一半列"的库
+    // 一组语句**连同它的版本号**包在同一个事务里，一组一提交。
+    //
+    // 原来是整个循环跑完才在外面写一次 `user_version`。那留了一条缝：三组迁移里第二组失败，
+    // 第一组已经提交而版本号还停在旧值，下次启动会把第一组重跑一遍——
+    // `CREATE TABLE IF NOT EXISTS` 扛得住，`ALTER TABLE ADD COLUMN` 扛不住（列已存在会报错），
+    // 于是库永远卡在那一版上，而且每次启动都以同样的方式失败。
+    //
+    // 本地 SQLite 上这个缝几乎撞不到，真正逼出这个改动的是远端那份同构实现
+    // （db/neon/client.ts）：那边跑在手机网络上，断在两组之间是常态。
+    // 两份都按同一条规则写，以后照着任一份加迁移都不会踩到。
     await db.withTransactionAsync(async () => {
       for (const statement of MIGRATIONS[version]) {
         await db.execAsync(statement);
       }
+      // PRAGMA 不支持参数绑定，这里拼的是循环下标（内部整数），没有注入风险
+      await db.execAsync(`PRAGMA user_version = ${version + 1}`);
     });
   }
-
-  // PRAGMA 不支持参数绑定，这里拼的是数组长度（内部整数），没有注入风险
-  await db.execAsync(`PRAGMA user_version = ${MIGRATIONS.length}`);
 }
