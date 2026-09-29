@@ -145,21 +145,8 @@ export default function SettingsScreen() {
           />
 
           <SettingsSection label="数据">
-            {/* 云端那条通道自己占一行，排在自动同步**前面**：得先有地方去，
-                "多久去一次"才是个有意义的问题 */}
-            <SettingsRow
-              icon="server-outline"
-              label="云端备份"
-              hint={
-                cloudSession
-                  ? `备份到你自己的 Neon 数据库 · ${cloudSession.email}`
-                  : hasRemote
-                    ? '库已经连上了，还差在库里登录一个账号'
-                    : '填一条自己的 Neon 连接串，账就有地方备份了'
-              }
-              value={cloudSession ? '已连接' : hasRemote ? '待登录' : undefined}
-              href="/settings/cloud"
-            />
+            {/* 「云端备份」那一行挪进上面的功能网格了。这一组因此只剩"账怎么出门"这一件事：
+                自动去、导出成文件、从文件回来。连去哪儿是上面那张卡和网格的事 */}
             <SettingsRow
               icon="cloud-outline"
               label="自动同步"
@@ -187,6 +174,8 @@ export default function SettingsScreen() {
           </SettingsSection>
 
           <SettingsSection label="其他">
+            {/* 「货币汇率」也进网格了——它跟主题、首页布局是同一类东西（记账本身的设定），
+                那三个既然都在网格里，它单独留一行只会让人以为它是另一种东西 */}
             <SettingsRow
               icon="person-outline"
               label="账号"
