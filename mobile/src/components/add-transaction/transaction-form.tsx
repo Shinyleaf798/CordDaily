@@ -511,11 +511,13 @@ const styles = StyleSheet.create({
   },
   // 圆角跟底部面板的 20 对齐。不描边：深色主题下底色差已经把卡和页面分开了，
   // 再画一圈线是同一件事说两遍
+  // 上下不对称是故意的：每一格底下都留着"名字第二行"的位置，最后一行的那段空白
+  // 已经顶在卡片底边了，这里再补一个 16 就成了两段叠在一起的留白
   categoryCard: {
     borderRadius: 20,
     paddingHorizontal: Spacing.half,
     paddingTop: Spacing.two,
-    paddingBottom: Spacing.three,
+    paddingBottom: Spacing.half,
   },
   // 圆角画在这里：不管它在原位还是被钉到键盘顶边，顶部永远是它，圆角就永远在对的地方。
   // 不用 elevation：Android 上它会在底边拖一道投影，而两块之间本来就有 margin 隔开，

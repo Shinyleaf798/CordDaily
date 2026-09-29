@@ -28,21 +28,26 @@ type CategoryGridProps = {
   onSettingsPress?: () => void;
 };
 
-// 一格的高度写死。二级面板要浮在被点那一行的正下方，行高必须是确定的数才算得出位置。
-// 这个数是下面三样加出来的：CIRCLE_SIZE + Spacing.one + 标签行高，改任何一个都要重算
-/**
- * 一格的高度：图标框 + Spacing.one + **两行**标签（16 × 2）。
- *
- * 标签从一行改成两行之后这个数必须跟着长，两个理由：
- * 1. `styles.item` 直接用它当定高，不加高第二行会被裁掉，反而比截断更难看
- * 2. 子分类浮层的落点是拿它算出来的（见 PanelAnchor），对不上的话小三角会指偏
- */
-const ITEM_HEIGHT = 62 + 16;
 /** 图标本身的边长，网格和二级面板共用 */
 const ICON_SIZE = 24;
 /** 选中时垫在图标后面那个圆的直径 */
 const CIRCLE_SIZE = 40;
-const ROW_GAP = Spacing.three;
+/** 标签的行高，跟 styles.label 里那个数是同一个 */
+const LABEL_LINE = 18;
+
+/**
+ * 一格的高度写死。二级面板要浮在被点那一行的正下方，行高必须是确定的数才算得出位置。
+ *
+ * 不再手写一个字面量，而是把三样加起来：图标框 + Spacing.one + **两行**标签。
+ * 原来写死的 78 比实际内容多出 2 点，那 2 点又压在每一行下面，白白撑开了整张网格；
+ * 算出来就不会再有这种对不上的余量，改动其中任何一个数它也自动跟上。
+ *
+ * 标签留两行的位置是有意的（长名字要装得下），代价是名字只有一行的格子——
+ * 也就是绝大多数——底下空着一行的高度。这段空白本身已经是行与行之间的缝了，
+ * 所以 ROW_GAP 不需要再给一大截。
+ */
+const ITEM_HEIGHT = CIRCLE_SIZE + Spacing.one + LABEL_LINE * 2;
+const ROW_GAP = Spacing.one;
 const COLUMNS = 5;
 const ARROW_SIZE = 8;
 
@@ -307,13 +312,13 @@ const styles = StyleSheet.create({
     width: ICON_SIZE,
     height: ICON_SIZE,
   },
-  // 这一格的标签比全局的 small（14/20）再小一号。
-  // 压的是**这里**而不是 theme 里那个 token：小字号在一屏 19 格、每格只有五分之一屏宽的
-  // 网格里成立，放到账单列表那种一行一条的地方就成了"看不清"。
-  // 局部收窄一个 token 的适用范围，好过把全 App 的正文都拖小
+  // 字号跟全局的 small 一样是 14，只把行高从 20 收到 18：
+  // 每格留两行的位置，行高每多 1 点，整张网格就跟着长 2 点，而分类名多是两三个汉字，
+  // 行与行挨得近一点不影响读。压的是**这里**而不是 theme 里那个 token——
+  // 行距收紧在一屏 19 格的网格里成立，放到账单列表那种一行一条的地方就太挤了
   label: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 14,
+    lineHeight: LABEL_LINE,
     // 换行之后每一行各自居中。不写的话文本块整体居中、行内却是左对齐的，
     // 短的那一行（多半是第二行）会贴在左边，看着像没对齐
     textAlign: 'center',
@@ -344,7 +349,7 @@ const styles = StyleSheet.create({
   },
   panel: {
     rowGap: ROW_GAP,
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.two,
     borderRadius: 16,
     borderWidth: 1,
     // 浮起来的层要有阴影，否则跟底下糊成一片，看不出这是盖在上面的一层

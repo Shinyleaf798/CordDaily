@@ -15,9 +15,21 @@ const TABS: { key: BillTab; label: string }[] = [
   { key: 'tag', label: '标签' },
 ];
 
+/**
+ * 分页的先后。页面那边的左右滑动要跟这一排的顺序严格一致，所以两边读的是同一个数组——
+ * 各写一份的话，以后谁调了这里的顺序，滑动就会跟指示条指的方向相反，而且不会有任何报错。
+ */
+export const BILL_TAB_KEYS: BillTab[] = TABS.map((tab) => tab.key);
+
 type BillTabBarProps = {
   value: BillTab;
   onChange: (value: BillTab) => void;
+  /**
+   * 现在停在第几页，**可以是小数**——页面把横向滚动位置换算成页码喂进来，
+   * 指示条就跟着手指走，而不是等滑完了才跳过去。
+   * 不传就退回自己按 value 补一段动画（这个组件单独用时还是能动的）。
+   */
+  progress?: Animated.AnimatedInterpolation<number>;
 };
 
 /**
@@ -34,7 +46,7 @@ type BillTabBarProps = {
  * 参考界面上还有第四格「成员」。这本账没有多人协作这回事，做一个点进去永远是空的分页
  * 比少一个分页更糟——所以是三格。
  */
-export function BillTabBar({ value, onChange }: BillTabBarProps) {
+export function BillTabBar({ value, onChange, progress }: BillTabBarProps) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
 
@@ -46,19 +58,24 @@ export function BillTabBar({ value, onChange }: BillTabBarProps) {
   const [slide] = useState(() => new Animated.Value(activeIndex));
 
   useEffect(() => {
+    // 页面给了滚动位置就不要自己再补一段：两个动画源同时往 translateX 上写，
+    // 会在点分页栏的那一刻互相打架（一个直奔目标、一个跟着滚动走）
+    if (progress) return;
     Animated.timing(slide, {
       toValue: activeIndex,
       duration: 180,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [activeIndex, slide]);
+  }, [activeIndex, slide, progress]);
 
   const tabWidth = width > 0 ? width / TABS.length : 0;
-  const translateX = slide.interpolate({
+  const translateX = (progress ?? slide).interpolate({
     inputRange: TABS.map((_, index) => index),
     // 落在每一格的正中：先走到这一格的左边缘，再补上"格宽减指示条宽"的一半
     outputRange: TABS.map((_, index) => index * tabWidth + (tabWidth - INDICATOR_WIDTH) / 2),
+    // 首尾两页回弹时页码会越界（iOS 往左拉出负数），不夹住的话指示条会跟着滑出分页栏
+    extrapolate: 'clamp',
   });
 
   return (

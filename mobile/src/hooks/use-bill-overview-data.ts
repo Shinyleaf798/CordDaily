@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+
 import type { TransactionWithCategory } from '@/db/transactions';
 import { useTransactionsInRange } from '@/hooks/use-transactions';
 import type { CategorySlice } from '@/hooks/use-stats-view-data';
@@ -546,6 +548,11 @@ export function buildBillOverviewData(input: {
  *
  * 换粒度、翻页时变的是 period，查询的 key 跟着起止时间走，看过的段直接命中缓存。
  * 切收支筛选、换排序、换趋势指标都**不重新打库**——那些只是对同一份数据换个算法。
+ *
+ * 派生**必须**缓存住。「总」那一档手里是整本账，而这一页除了明细还有四块全量聚合
+ * （总览卡、趋势图、分类构成、标签榜）——它们要的就是全部行，没法靠少列几条明细省掉。
+ * 不缓存的话，开一次详情层、切一次分页、点一下漏斗，都会把几千行重新排序、分组、聚合一遍：
+ * 这一页真正会让人等的是这个，不是列表滚动（列表是 FlatList，本来就只渲染看得见的那几屏）。
  */
 export function useBillOverviewData(
   period: BillPeriod,
@@ -555,7 +562,15 @@ export function useBillOverviewData(
   const { start, end } = billPeriodRange(period);
   const { data: transactions } = useTransactionsInRange(start, end);
 
-  // 每次渲染重新取"现在"：App 挂在后台跨过零点再回来，"今天/昨天"和"看的是不是本月"
-  // 都得跟着变（同 useHomeViewData / useStatsViewData）
-  return buildBillOverviewData({ now: new Date(), period, typeFilter, sortAscending, transactions });
+  // 依赖里放的是"今天是哪天"，不是"此刻几点"。派生里每一处用到 now 的地方
+  // （今天/昨天的标签、看的是不是本月、日均的分母、趋势图的年份上界）都只看到日期那一级，
+  // 所以同一天内重算出来的东西是一样的，缓存住不会看到过期的结果。
+  // App 挂在后台跨过零点再回来，这个数变了 memo 自然失效——原来那句"每次渲染重新取现在"
+  // 要保的就是这个行为，用日期当 key 一样保得住（同 useHomeViewData / useStatsViewData）。
+  const today = startOfDay(new Date()).getTime();
+
+  return useMemo(
+    () => buildBillOverviewData({ now: new Date(today), period, typeFilter, sortAscending, transactions }),
+    [today, period, typeFilter, sortAscending, transactions],
+  );
 }
