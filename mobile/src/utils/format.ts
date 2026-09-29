@@ -1,3 +1,5 @@
+import { BASE_CURRENCY, getCurrency } from '@/constants/currencies';
+
 // 金额显示统一走这里：千分位 + 固定两位小数。
 // 之前各处直接 toFixed(2)，RM1842.50 这种四位以上的数字在账本里很难一眼读出量级。
 //
@@ -56,6 +58,54 @@ export function formatCurrency(value: number): string {
  */
 export function formatSignedAmount(value: number, type: 'INCOME' | 'EXPENSE'): string {
   return `${type === 'INCOME' ? '+' : '-'}${formatCurrency(Math.abs(value))}`;
+}
+
+/**
+ * 外币金额：500 日元 → "J¥500"，12.5 新币 → "S$12.50"。
+ *
+ * 跟 formatCurrency 分开而不是给它加个参数，是因为两者的读者不一样：
+ * formatCurrency 出来的数字要**互相比大小**（一屏账单、统计里的总额），所以口径必须完全统一，
+ * 包括六位数缩写成 k 那条规则；而外币金额是**照抄收据上的那个数**，它只跟收据比，
+ * 不跟别的行比。500 日元写成 "500" 而不是 "0.5k"，因为收据上就是 500。
+ *
+ * 小数位跟着币种走（日元/韩元没有分，见 constants/currencies.ts 的 decimals），
+ * 千分位照留——1,842 比 1842 好读，这一点跟本位币没有分别。
+ */
+export function formatForeignAmount(value: number, code: string): string {
+  const { sign, symbol, digits } = splitMoney(value, code);
+  return `${sign}${symbol}${digits}`;
+}
+
+/**
+ * 同一个金额，但**符号和数字分开返回**，给需要把两截染成不同颜色的地方用
+ * （记账页那个大金额：符号走主题强调色，数字保持正文色）。
+ *
+ * 拆在这里而不是让调用方自己 slice 一下字符串：符号可能是一个字（RM）、两个字（J¥、HK$）
+ * 或者一个目录外代码的兜底写法（"SGD "），按长度切会切错。
+ * 更要紧的是，这样"金额长什么样"仍然只有这一处定义——上面那个函数直接拼这三段。
+ */
+export function splitMoney(value: number, code: string): { sign: string; symbol: string; digits: string } {
+  const currency = getCurrency(code);
+  const abs = Math.abs(value);
+  const [integerPart, decimalPart] = abs.toFixed(currency.decimals).split('.');
+  const grouped = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return {
+    sign: value < 0 ? '-' : '',
+    symbol: currency.symbol,
+    digits: decimalPart ? `${grouped}.${decimalPart}` : grouped,
+  };
+}
+
+/**
+ * 账单行里的外币金额：-J¥500 / +¥120.00。正负号在货币符号外面，跟 formatSignedAmount 一致。
+ *
+ * 本位币直接转回 formatSignedAmount，不走上面那条：本位币的金额要参与"跟别的行比大小"，
+ * 该有的缩写规则一条都不能少。一个函数两种口径听起来别扭，但它对应的正是一件真事——
+ * 「这笔账花了多少」和「这笔账在我的账本里算多少」是两个问题。
+ */
+export function formatSignedMoney(value: number, code: string, type: 'INCOME' | 'EXPENSE'): string {
+  if (code === BASE_CURRENCY) return formatSignedAmount(value, type);
+  return `${type === 'INCOME' ? '+' : '-'}${formatForeignAmount(Math.abs(value), code)}`;
 }
 
 /**

@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AccountPickerSheet } from '@/components/add-transaction/account-picker-sheet';
 import { AmountKeypad } from '@/components/add-transaction/amount-keypad';
 import { CategoryGrid, type CategoryGridItem } from '@/components/add-transaction/category-grid';
+import { CurrencyPickerSheet } from '@/components/add-transaction/currency-picker-sheet';
 import { SuggestionPopup, type SuggestionCategory } from '@/components/add-transaction/suggestion-popup';
 import { TransactionNoteFields, type FieldAnchor } from '@/components/add-transaction/transaction-note-fields';
 import { TransactionOptionsRow } from '@/components/add-transaction/transaction-options-row';
@@ -14,11 +15,14 @@ import { TransactionTypeTabs, type TransactionTypeTab } from '@/components/trans
 import { DateTimePickerSheet } from '@/components/ui/datetime-picker-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
+import { BASE_CURRENCY, getCurrency } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { isPickable } from '@/db/categories';
+import { convertToBase, toBaseRate } from '@/db/exchange-rates';
 import type { SuggestionField, TransactionDetail } from '@/db/transactions';
 import { useAccounts, useLastUsedAccountId } from '@/hooks/use-accounts';
 import { useCategories } from '@/hooks/use-categories';
+import { getPerBaseRate, useExchangeRates } from '@/hooks/use-exchange-rates';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/use-transactions';
 import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
 import { useTheme } from '@/hooks/use-theme';
@@ -146,6 +150,18 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(initial?.accountId ?? null);
   const [date, setDate] = useState(() => (initial ? new Date(initial.date) : new Date()));
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '0');
+  const [currency, setCurrency] = useState(initial?.currency ?? BASE_CURRENCY);
+
+  /**
+   * 改一笔旧账时，用的是**它当初存下来的那个汇率**，不是今天的。
+   *
+   * 一笔三个月前的日元账单，今天只改一下备注，折算值就跟着今天的汇率跳一下——
+   * 那不是修正，是把一笔已经发生的支出改写成别的数。只有用户**重新选了币种**
+   * （下面 selectCurrency 会把它清成 null）才回到当前汇率，因为那时他确实在重填这笔账的钱。
+   */
+  const [lockedRate, setLockedRate] = useState<number | null>(
+    initial && initial.currency !== BASE_CURRENCY ? initial.exchangeRate : null,
+  );
   // 编辑时用存下来的 title 回填主题。title 可能是当初从店名或分类名兜底来的，
   // 回填后看着像是用户填过主题——但这是唯一存下来的那个字符串，分不出它当初的来源
   const [topic, setTopic] = useState(initial?.title ?? '');
@@ -157,7 +173,7 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const [excludeFromStats, setExcludeFromStats] = useState(initial?.excludeFromStats ?? false);
   // 同一时刻最多开一个选择器，所以存"哪个开着"而不是两个 boolean——
   // 两个 boolean 就存在"两个都为 true"这种本不该存在的状态
-  const [openSheet, setOpenSheet] = useState<'date' | 'account' | null>(null);
+  const [openSheet, setOpenSheet] = useState<'date' | 'account' | 'currency' | null>(null);
 
   const isEditing = !!initial;
   const mutation = isEditing ? updateTransaction : createTransaction;
@@ -198,6 +214,26 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   }, [categoryRows, selectedCategoryId]);
 
   const numericAmount = Number(amount);
+
+  // ---- 这笔账的钱 ----
+  const { data: rates } = useExchangeRates();
+  const currencyMeta = getCurrency(currency);
+  const isForeign = currency !== BASE_CURRENCY;
+
+  // 「1 个外币换多少本位币」。编辑旧账时优先用它当初存下的那个（lockedRate），
+  // 其余情况用现在缓存里的汇率。两边都没有就是 null——那时候不让存（见下面的 blocker）
+  const perBase = getPerBaseRate(rates, currency);
+  const exchangeRate = lockedRate ?? (perBase !== null ? toBaseRate(perBase) : null);
+  const amountInBase = exchangeRate !== null ? convertToBase(numericAmount, exchangeRate) : null;
+
+  // 换币种就把锁着的旧汇率放掉：用户在重新决定这笔账的钱，该用现在的汇率算
+  const selectCurrency = (code: string) => {
+    setCurrency(code);
+    setLockedRate(null);
+    // 零小数位的币种（日元/韩元）不能留着已经打出来的小数：切过去之后键盘按不出小数点，
+    // 而屏幕上还挂着 "500.50 J¥"，那个数用户再也改不回来
+    if (getCurrency(code).decimals === 0 && amount.includes('.')) setAmount(amount.split('.')[0]);
+  };
 
   // 每个可补全字段的当前值和写回口。集中成一张表，浮层按 focusedField 取一行就行，
   // 不用在渲染处写一串三元表达式；以后再加一个可补全的字段也只改这里
@@ -251,7 +287,11 @@ export function TransactionForm({ initial }: TransactionFormProps) {
         ? 'account'
         : !(numericAmount > 0)
           ? 'amount'
-          : null;
+          : // 外币账单没有汇率就存不了：硬存的话只能把汇率当 1，
+            // 500 日元会变成 500 林吉特躺进统计里，而那一行看起来完全正常
+            exchangeRate === null
+            ? 'rate'
+            : null;
   const canSave = !blocker && !mutation.isPending;
 
   // 判断和提示是两件事：四个条件都拦着保存，但只有一个值得写出来。
@@ -262,7 +302,13 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   // 加上 `accounts &&`：账户还没查出来时 accountId 也是 null，但那是"还不知道"不是"一个都没有"。
   // 不区分的话，本地库读完之前的那几毫秒会闪一句"去账本里新建一个"，
   // 而用户根本不缺账户——默认账户是灌好的，他只需要再等一帧
-  const blockerHint = blocker === 'account' && accounts ? '先选一个账户——我的 → 账本 → 账户 里新建' : null;
+  const blockerHint =
+    blocker === 'account' && accounts
+      ? '先选一个账户——我的 → 账本 → 账户 里新建'
+      : // 汇率这一条同理：屏幕上没有任何地方显示"缺汇率"，不说的话保存键就是无故变灰
+        blocker === 'rate'
+        ? `还没有 ${currencyMeta.name} 的汇率——我的 → 货币汇率 里拉一次或手填`
+        : null;
 
   const handleSave = () => {
     if (!canSave || !selectedCategoryId || !accountId) return;
@@ -279,6 +325,9 @@ export function TransactionForm({ initial }: TransactionFormProps) {
       location,
       remarks: remark,
       amount: numericAmount,
+      currency,
+      // canSave 已经拦住了 null，这里的 ?? 1 只是让类型收口
+      exchangeRate: exchangeRate ?? 1,
       type,
       categoryId: selectedCategoryId,
       accountId,
@@ -373,6 +422,9 @@ export function TransactionForm({ initial }: TransactionFormProps) {
             location={location}
             onLocationChange={setLocation}
             amount={numericAmount}
+            currency={currency}
+            amountInBase={isForeign ? amountInBase : null}
+            onCurrencyPress={() => setOpenSheet('currency')}
             onFocusedFieldChange={setFocusedField}
             onFieldAnchorChange={handleFieldAnchor}
           />
@@ -410,7 +462,13 @@ export function TransactionForm({ initial }: TransactionFormProps) {
             </ThemedText>
           ) : null}
 
-          <AmountKeypad value={amount} onChange={setAmount} onSave={handleSave} saveDisabled={!canSave} />
+          <AmountKeypad
+            value={amount}
+            onChange={setAmount}
+            onSave={handleSave}
+            saveDisabled={!canSave}
+            maxDecimals={currencyMeta.decimals}
+          />
         </ThemedView>
       </ThemedView>
 
@@ -453,6 +511,17 @@ export function TransactionForm({ initial }: TransactionFormProps) {
           value={date}
           onSelect={(picked) => {
             setDate(picked);
+            setOpenSheet(null);
+          }}
+          onDismiss={() => setOpenSheet(null)}
+        />
+      ) : null}
+
+      {openSheet === 'currency' ? (
+        <CurrencyPickerSheet
+          selectedCode={currency}
+          onSelect={(code) => {
+            selectCurrency(code);
             setOpenSheet(null);
           }}
           onDismiss={() => setOpenSheet(null)}

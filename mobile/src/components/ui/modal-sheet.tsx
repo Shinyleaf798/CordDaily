@@ -77,6 +77,13 @@ export function useSheetTransition(onDismiss: () => void, maxHeightRatio = 0.6):
 
 type ModalSheetProps = {
   title?: string;
+  /**
+   * 钉在标题行右端的东西（图标按钮之类）。
+   *
+   * 做成插槽而不是让调用方自己在 children 顶上摆一行：标题是这一层画的，
+   * 外面摆的那一行永远跟它对不齐——差的正好是这里 title 的行高和 sheet 的 gap。
+   */
+  headerRight?: ReactNode;
   /** useSheetTransition 的返回值。高度比例和关闭动作都从这里读，不再单独传 */
   transition: SheetTransition;
   dismissOnBackdropPress?: boolean;
@@ -99,7 +106,13 @@ type ModalSheetProps = {
  * 于是键盘弹出 → 缩高 → 重布局 → 焦点抖掉 → RN 发 hideSoftInput 的回路。
  * 换成 paddingBottom 只是把可用区的下边界抬上去，尺寸不变，回路不成立。
  */
-export function ModalSheet({ title, transition, dismissOnBackdropPress = true, children }: ModalSheetProps) {
+export function ModalSheet({
+  title,
+  headerRight,
+  transition,
+  dismissOnBackdropPress = true,
+  children,
+}: ModalSheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
@@ -130,7 +143,12 @@ export function ModalSheet({ title, transition, dismissOnBackdropPress = true, c
               目前只是视觉提示，还没接手势拖拽 */}
           <View style={[styles.handle, { backgroundColor: theme.backgroundSelected }]} />
 
-          {title ? <ThemedText style={styles.title}>{title}</ThemedText> : null}
+          {title || headerRight ? (
+            <View style={styles.header}>
+              <ThemedText style={styles.title}>{title}</ThemedText>
+              {headerRight}
+            </View>
+          ) : null}
           {children}
         </Animated.View>
       </View>
@@ -161,7 +179,13 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: Spacing.two,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
   title: {
+    flex: 1,
     fontSize: 18,
     lineHeight: 26,
     fontWeight: '700',

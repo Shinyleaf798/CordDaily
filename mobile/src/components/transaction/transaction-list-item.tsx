@@ -2,7 +2,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CategoryIcon } from '@/components/category/category-icon';
 import { ThemedText } from '@/components/ui/themed-text';
-import { formatSignedAmount } from '@/utils/format';
+import { BASE_CURRENCY } from '@/constants/currencies';
+import { formatCurrency, formatSignedMoney } from '@/utils/format';
 
 export type TransactionListItemData = {
   id: string;
@@ -15,7 +16,12 @@ export type TransactionListItemData = {
   time: string;
   /** 备注（"具体买了啥"）。跟主题同一行显示，中间一个分隔点 */
   note?: string;
+  /** 录入时那个数——外币账单里它是外币金额（500 日元就是 500） */
   amount: number;
+  /** 这笔账用的是哪种钱。本位币（MYR）时下面那行折算不显示 */
+  currency: string;
+  /** 折算成本位币之后的金额。统计、预算、当天小计用的都是它 */
+  amountInBase: number;
   type: 'INCOME' | 'EXPENSE';
 };
 
@@ -51,6 +57,8 @@ export function TransactionListItem({
   time,
   note,
   amount,
+  currency,
+  amountInBase,
   type,
   surface = 'card',
   onPress,
@@ -61,6 +69,7 @@ export function TransactionListItem({
   const titleIsEcho = categoryLabel.split(' · ').concat(categoryLabel).includes(title);
   const detail = [titleIsEcho ? null : title, note].filter(Boolean).join(' · ');
   const onPage = surface === 'page';
+  const isForeign = currency !== BASE_CURRENCY;
 
   // 不可点时退回 View，而不是给 Pressable 传 disabled：
   // disabled 的 Pressable 仍然会吃掉触摸事件，外面包着的可滚动区域会跟着变迟钝
@@ -88,7 +97,18 @@ export function TransactionListItem({
         ) : null}
       </View>
 
-      <ThemedText style={styles.amount}>{formatSignedAmount(amount, type)}</ThemedText>
+      {/* 外币账单是两行：上面是**收据上那个数**（J¥500），下面小字是它在这个账本里算多少（RM12.98）。
+          顺序不能反——用户核对的是收据，那个数要在第一眼的位置；
+          折算值是账本的事，它只需要在想起来的时候找得到。
+          本位币的账单只有一行，`isForeign` 为假时下面那行整个不渲染，行高跟以前一模一样 */}
+      <View style={styles.amountColumn}>
+        <ThemedText style={styles.amount}>{formatSignedMoney(amount, currency, type)}</ThemedText>
+        {isForeign ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.amountInBase}>
+            {formatCurrency(amountInBase)}
+          </ThemedText>
+        ) : null}
+      </View>
     </Row>
   );
 }
@@ -131,11 +151,18 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '500',
   },
-  amount: {
+  // 整列右对齐：两行数字长度不一样（J¥500 / RM12.98），左对齐会让下面那行吊在半空
+  amountColumn: {
     paddingTop: 5,
     alignSelf: 'flex-start',
+    alignItems: 'flex-end',
+  },
+  amount: {
     fontSize: 16,
     lineHeight: 21,
     fontWeight: '600',
+  },
+  amountInBase: {
+    fontVariant: ['tabular-nums'],
   },
 });

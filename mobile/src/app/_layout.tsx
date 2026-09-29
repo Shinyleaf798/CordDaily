@@ -196,6 +196,7 @@ export default function RootLayout() {
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
             <Stack.Screen name="settings/auto-sync" options={{ ...ScreenTransitions.push, title: '自动同步' }} />
             <Stack.Screen name="settings/cloud" options={{ ...ScreenTransitions.push, title: '云端备份' }} />
+            <Stack.Screen name="settings/currency" options={{ ...ScreenTransitions.push, title: '货币汇率' }} />
             <Stack.Screen name="settings/about" options={{ ...ScreenTransitions.push, title: '关于' }} />
             <Stack.Screen name="login" options={{ ...ScreenTransitions.push, title: '登录' }} />
             <Stack.Screen name="register" options={{ ...ScreenTransitions.push, title: '注册' }} />

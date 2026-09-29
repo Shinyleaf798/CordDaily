@@ -267,4 +267,25 @@ export const MIGRATIONS: string[][] = [
     `ALTER TABLE categories ADD COLUMN syncedFingerprint TEXT;`,
     `ALTER TABLE accounts ADD COLUMN syncedFingerprint TEXT;`,
   ],
+
+  // v13：汇率缓存。一行一个外币，记的是「1 MYR 换得到多少这种钱」。
+  //
+  // 这张表是**纯缓存，不进备份包也不进服务器**：它的每一行都能从 Wise 重新拉一次，
+  // 而且拉回来的比备份里那份新。真正要留住的汇率是**记账那一刻用的那个**，
+  // 那个数已经作为 `transactions.exchangeRate` 存在账单自己身上了（见 CLAUDE.md 原则#7 的同一个思路：
+  // 能现算的不存，但"当时用的是哪个数"算不出来，必须存）。
+  //
+  // 不存 base 列：这个 App 的本位币恒为 MYR（constants/currencies.ts 上有说明），
+  // 多一列而它永远是同一个值，只是让每条 SQL 都要多写一个 WHERE。
+  //
+  // `source` 记这个数是拉来的还是手填的。没网/没配 token 时用户可以直接填汇率，
+  // 那一行不该在下次联网时被悄悄覆盖掉——界面靠这一列区分要不要提示"这是你自己填的"。
+  [
+    `CREATE TABLE IF NOT EXISTS exchange_rates (
+      code TEXT PRIMARY KEY NOT NULL,
+      perBase REAL NOT NULL,
+      fetchedAt TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'wise' CHECK (source IN ('wise', 'manual'))
+    );`,
+  ],
 ];

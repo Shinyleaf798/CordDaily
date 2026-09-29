@@ -9,6 +9,8 @@ type AmountKeypadProps = {
   onChange: (value: string) => void;
   onSave: () => void;
   saveDisabled?: boolean;
+  /** 小数点后能输入几位。跟着币种走——日元和韩元没有「分」，传 0，小数点键直接按不动 */
+  maxDecimals?: 0 | 2;
 };
 
 // 按行排而不是用 flexWrap：整块键盘要按"给多少高度就占多少"来缩放，
@@ -20,13 +22,12 @@ const ROWS = [
   ['.', '0'],
 ] as const;
 
-/** 小数点后能输入几位。跟 utils/format 里 formatAmount 的 toFixed(2) 是同一个口径 */
-const MAX_DECIMALS = 2;
+
 
 // 数字键盘，自己管键位解释逻辑（点几次小数点、退格怎么删），只通过 value/onChange 跟外部同步当前金额字符串，
 // 不知道也不关心这个金额最终要存进哪张表——纯 UI 组件。
 // 高度不自己定，完全听外面给的（记账页把它塞进一个 55% 屏高的面板里）
-export function AmountKeypad({ value, onChange, onSave, saveDisabled }: AmountKeypadProps) {
+export function AmountKeypad({ value, onChange, onSave, saveDisabled, maxDecimals = 2 }: AmountKeypadProps) {
   const theme = useTheme();
 
   const handleBackspace = () => {
@@ -35,7 +36,8 @@ export function AmountKeypad({ value, onChange, onSave, saveDisabled }: AmountKe
 
   const handleKeyPress = (key: string) => {
     if (key === '.') {
-      if (value.includes('.')) return;
+      // 零小数位的币种（日元/韩元）连小数点都不该有：500.5 日元不是一个存在的金额
+      if (maxDecimals === 0 || value.includes('.')) return;
       onChange(`${value}.`);
       return;
     }
@@ -45,7 +47,7 @@ export function AmountKeypad({ value, onChange, onSave, saveDisabled }: AmountKe
     // 数字会在用户不知情的情况下被四舍五入掉——按键时就不让它进来，比事后改掉它诚实。
     // 第三位直接忽略（按下去没反应），不做截断或进位：那两种都会改到已经敲好的数字。
     const decimals = value.split('.')[1];
-    if (decimals !== undefined && decimals.length >= MAX_DECIMALS) return;
+    if (decimals !== undefined && decimals.length >= maxDecimals) return;
 
     onChange(value === '0' ? key : `${value}${key}`);
   };

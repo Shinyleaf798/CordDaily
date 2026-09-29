@@ -103,6 +103,8 @@ export function buildCalendarViewData(input: {
       time: formatClockTime(date),
       note: t.remarks ?? undefined,
       amount: t.amount,
+      currency: t.currency,
+      amountInBase: t.amountInBase,
       type: t.type,
     });
 

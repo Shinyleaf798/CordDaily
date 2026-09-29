@@ -1,4 +1,8 @@
+import { BASE_CURRENCY, CURRENCY_CATALOG, DEFAULT_CURRENCY_CODES } from '@/constants/currencies';
+
 import { getDb } from './client';
+
+const KNOWN_CODES = new Set(CURRENCY_CATALOG.map((c) => c.code));
 
 /**
  * `app_settings` 那张 key-value 表的读写口子。
@@ -150,4 +154,39 @@ export async function pushSearchHistory(keyword: string): Promise<void> {
 
 export async function clearSearchHistory(): Promise<void> {
   await removeSetting(SEARCH_HISTORY_KEY);
+}
+
+// ---- 启用的币种 ----
+
+/**
+ * 记账时能选哪几种外币。存一个 JSON 数组，本位币不在里面（它永远可选）。
+ *
+ * 放 app_settings 而不是单开一张表：这就是一串代码，没有第二个字段，
+ * 排序就是数组顺序。哪天要给每个币种再挂点什么（比如"默认汇率来源"）再拆表不迟。
+ *
+ * **不跟着备份走**：它是这台手机上"我平时用哪几种钱"的偏好，
+ * 而不是账本内容——换了手机重新勾一遍就行，那比把一份别人的偏好恢复过来更合理。
+ */
+const ENABLED_CURRENCIES_KEY = 'enabledCurrencies';
+
+export async function getEnabledCurrencyCodes(): Promise<string[]> {
+  const raw = await getSetting(ENABLED_CURRENCIES_KEY);
+  // 从没设置过 → 用默认那几个。**不能跟"用户手动清空了"混为一谈**，
+  // 所以清空存的是 '[]' 而不是删掉这个键：那时候就该真的一个外币都不列
+  if (raw === null) return [...DEFAULT_CURRENCY_CODES];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...DEFAULT_CURRENCY_CODES];
+    // 过滤掉目录里已经没有的代码：目录是跟着 App 版本走的，降级或改名之后
+    // 留在这里的孤儿代码会在界面上显示成一行没有名字没有旗子的东西
+    return parsed.filter((code): code is string => typeof code === 'string' && KNOWN_CODES.has(code));
+  } catch {
+    return [...DEFAULT_CURRENCY_CODES];
+  }
+}
+
+export async function setEnabledCurrencyCodes(codes: string[]): Promise<void> {
+  // 本位币不进这个清单（它永远可选），去重之后按传进来的顺序存
+  const cleaned = [...new Set(codes)].filter((code) => code !== BASE_CURRENCY && KNOWN_CODES.has(code));
+  await setSetting(ENABLED_CURRENCIES_KEY, JSON.stringify(cleaned));
 }

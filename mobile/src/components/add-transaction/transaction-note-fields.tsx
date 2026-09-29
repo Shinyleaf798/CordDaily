@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
+import { formatCurrency, splitMoney } from '@/utils/format';
 import { useTheme } from '@/hooks/use-theme';
 import type { SuggestionField } from '@/db/transactions';
 
@@ -16,6 +17,10 @@ import type { SuggestionField } from '@/db/transactions';
  * 所以直接量出来的数就能给外面用。
  */
 export type FieldAnchor = { x: number; y: number };
+
+/** 大金额那一行的字号。货币符号是嵌在里面的另一个 Text，得跟它一样大，所以提成常量 */
+const AMOUNT_FONT_SIZE = 28;
+const AMOUNT_LINE_HEIGHT = 34;
 
 /** 店名和地点两列之间的间距，等同 styles.detailRow 的 gap。算地点那一列的 x 要用 */
 const DETAIL_GAP = Spacing.two;
@@ -30,6 +35,11 @@ type TransactionNoteFieldsProps = {
   location: string;
   onLocationChange: (value: string) => void;
   amount: number;
+  /** 这笔账用的币种代码。点金额那一块就是换它 */
+  currency: string;
+  /** 折算成本位币是多少。本位币账单传 null，那一行不显示 */
+  amountInBase: number | null;
+  onCurrencyPress: () => void;
   /**
    * 哪个字段聚焦了（没有就是 null）。历史补全的浮层由**调用方**渲染，不在这里画：
    * 它要浮在这一整块的上方，而 Android 上画到父容器外面的东西收不到触摸，
@@ -60,11 +70,15 @@ export function TransactionNoteFields({
   location,
   onLocationChange,
   amount,
+  currency,
+  amountInBase,
+  onCurrencyPress,
   onFocusedFieldChange,
   onFieldAnchorChange,
 }: TransactionNoteFieldsProps) {
   const theme = useTheme();
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const money = splitMoney(amount, currency);
 
   // 收起时如果里面已经填了内容，给个小圆点提示，免得填过的东西被折叠起来就忘了
   const hasDetail = !!merchant.trim() || !!location.trim();
@@ -89,9 +103,29 @@ export function TransactionNoteFields({
             style={[styles.input, styles.topicInput, { color: theme.text }]}
           />
         </View>
-        <ThemedText type="title" style={styles.amountDisplay}>
-          RM{amount.toFixed(2)}
-        </ThemedText>
+        {/* 金额本身就是换币种的按钮。不另起一个"币种"选项 chip，是因为币种不是这笔账的附加项——
+            它是金额的一部分，"500" 这个数在没说清是哪种钱之前不成立。
+            点数字换币种也符合直觉：手指本来就落在那个数上（刚用键盘打完它）。
+
+            **货币符号染主题色，数字保持正文色**——这既是这块唯一的颜色，也是"这里可以点"的提示。
+            原来在旁边挂了个下拉箭头，去掉了：那个箭头把金额往左挤了一截，
+            而它说的事情（可以换）符号已经说了，还说得更准（换的是"哪种钱"，不是展开一个列表）。
+
+            选中外币后下面多一行折算值，那一行是这块唯一会变高的地方，输入块整体高度因此只有两档 */}
+        <Pressable onPress={onCurrencyPress} hitSlop={8} style={styles.amountBlock}>
+          <ThemedText type="title" style={styles.amountDisplay}>
+            <ThemedText style={[styles.amountSymbol, { color: theme.cardHighlight }]}>
+              {money.sign}
+              {money.symbol}
+            </ThemedText>
+            {money.digits}
+          </ThemedText>
+          {amountInBase !== null ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              ≈ {formatCurrency(amountInBase)}
+            </ThemedText>
+          ) : null}
+        </Pressable>
       </View>
 
       <View style={styles.fieldRow}>
@@ -186,9 +220,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // 整块右对齐：折算那一行比金额短，左对齐会让它吊在金额下方的空白里
+  amountBlock: {
+    alignItems: 'flex-end',
+  },
   amountDisplay: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: AMOUNT_FONT_SIZE,
+    lineHeight: AMOUNT_LINE_HEIGHT,
+  },
+  // 嵌在 amountDisplay 里面。**字号必须再写一遍**：ThemedText 不传 type 时默认是
+  // `default`（fontSize 16），那份样式排在外层的 style 之后，会把继承来的 28 盖掉——
+  // 于是符号莫名其妙地比数字小一圈。两处共用上面那两个常量，改字号时不会只改一边
+  amountSymbol: {
+    fontSize: AMOUNT_FONT_SIZE,
+    lineHeight: AMOUNT_LINE_HEIGHT,
+    fontWeight: '700',
   },
   toggleButton: {
     flexDirection: 'row',

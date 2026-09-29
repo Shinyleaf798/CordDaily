@@ -8,11 +8,12 @@ import { DialogActions, ModalDialog } from '@/components/ui/modal-dialog';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ModalSheet, useSheetTransition } from '@/components/ui/modal-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
+import { BASE_CURRENCY } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { useDeleteTransaction, useDuplicateTransaction, useTransaction } from '@/hooks/use-transactions';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDateTimeLabel } from '@/utils/date';
-import { formatCurrency } from '@/utils/format';
+import { formatCurrency, formatSignedMoney } from '@/utils/format';
 
 type TransactionDetailSheetProps = {
   transactionId: string;
@@ -104,8 +105,7 @@ export function TransactionDetailSheet({ transactionId, onDismiss }: Transaction
               {/* 收入才染绿，支出用普通文字色：账本里九成是支出，全标红等于整屏都在报警 */}
               <ThemedText
                 style={[styles.amount, transaction.type === 'INCOME' && { color: theme.income }]}>
-                {transaction.type === 'INCOME' ? '+' : '-'}
-                {formatCurrency(transaction.amount)}
+                {formatSignedMoney(transaction.amount, transaction.currency, transaction.type)}
               </ThemedText>
             </View>
 
@@ -113,6 +113,14 @@ export function TransactionDetailSheet({ transactionId, onDismiss }: Transaction
               {/* 昨天 9月16号 16:00：相对词负责快速定位，绝对日期和时刻负责说准，缺一个都答不全
                   "这笔到底是什么时候的" */}
               <DetailRow label="日期" value={formatDateTimeLabel(new Date(transaction.date))} />
+              {/* 外币账单多一行汇率。**记的是当初那个汇率**，不是今天的（见 db/transactions.ts 的 resolveMoney）——
+                  这一行的全部意义就是让人事后能回答"当时按多少算的"，显示今天的汇率反而把这个问题弄丢了 */}
+              {transaction.currency !== BASE_CURRENCY ? (
+                <DetailRow
+                  label="汇率"
+                  value={`1 ${transaction.currency} = ${transaction.exchangeRate.toFixed(6)} ${BASE_CURRENCY}　→　${formatCurrency(transaction.amountInBase)}`}
+                />
+              ) : null}
               <DetailRow label="账户" value={transaction.accountName ?? '已删除的账户'} />
               {/* 没填的字段整行不出现，而不是显示"—"：空占位只会把真正填了的内容挤下去 */}
               {transaction.merchant ? <DetailRow label="店名" value={transaction.merchant} /> : null}

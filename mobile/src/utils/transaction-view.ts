@@ -41,6 +41,8 @@ export function toDatedTransaction(t: TransactionWithCategory): DatedTransaction
     time: formatClockTime(date),
     note: t.remarks ?? undefined,
     amount: t.amount,
+    currency: t.currency,
+    amountInBase: t.amountInBase,
     type: t.type,
   };
 }
@@ -74,8 +76,11 @@ export function groupTransactionsByDay(
       date: items[0].date,
       ...formatDayGroupLabel(items[0].date, now),
       items,
-      expense: items.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0),
-      income: items.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0),
+      // 小计加的是 **amountInBase** 而不是 amount：一天里可能既有 RM12 又有 J¥500，
+      // 把两个币种的数字直接相加会得出 512，那个数不表示任何东西。
+      // 全 App 只要是"把多笔加起来"的地方，加数一律是折算后的值（SQL 那边的 SUM 也是）
+      expense: items.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amountInBase, 0),
+      income: items.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amountInBase, 0),
     }))
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 }

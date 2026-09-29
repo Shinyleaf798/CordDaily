@@ -1,7 +1,10 @@
 import * as Crypto from 'expo-crypto';
 
+import { BASE_CURRENCY } from '@/constants/currencies';
+
 import { getDb } from './client';
 import { recordDeletion } from './deletions';
+import { convertToBase } from './exchange-rates';
 
 export type TransactionType = 'INCOME' | 'EXPENSE';
 
@@ -92,12 +95,38 @@ function safeParseTags(raw: string): string[] {
   }
 }
 
+/**
+ * 把「金额 + 币种 + 汇率」折成要写进库的三列。新建和修改共用一份，两边不会走散。
+ *
+ * **汇率在这一刻被冻住**：写进 `exchangeRate` 的那个数从此不再变，
+ * 哪怕明天日元涨了 10%，这笔账在账本里依然是当初那个林吉特数。
+ * 这是 CLAUDE.md 原则#5（预算判断在本地算、不依赖服务器）的同一条思路——
+ * 一笔已经发生的支出，它的数字不该因为外部世界后来变了而改口。
+ */
+function resolveMoney(input: { amount: number; currency?: string; exchangeRate?: number }) {
+  const currency = input.currency ?? BASE_CURRENCY;
+  // 本位币一律按 1 算，不看传进来的 exchangeRate：那一格在界面上根本不存在，
+  // 万一带了个脏值进来，得到的是一笔金额被悄悄改掉的本位币账单
+  const exchangeRate = currency === BASE_CURRENCY ? 1 : (input.exchangeRate ?? 1);
+  return { currency, exchangeRate, amountInBase: convertToBase(input.amount, exchangeRate) };
+}
+
 export type CreateTransactionInput = {
   title: string;
   merchant?: string | null;
   location?: string | null;
   remarks?: string | null;
   amount: number;
+  /**
+   * 这笔账用的是哪种钱。不传就是本位币。
+   *
+   * 跟 exchangeRate 成对出现：这一层**不去查汇率表**，汇率是"记账那一刻界面上显示的那个数"，
+   * 只有界面知道用户当时看到的是什么。让 db 层自己去查，会出现界面显示 38.53、
+   * 存进去的却是几秒后刷新到的 38.61 这种对不上的账。
+   */
+  currency?: string;
+  /** 1 个 currency 换得到多少本位币（日元大约 0.026）。不传就是 1 */
+  exchangeRate?: number;
   type: TransactionType;
   categoryId: string;
   accountId: string;
@@ -116,6 +145,8 @@ export async function createTransaction(input: CreateTransactionInput): Promise<
   const now = new Date().toISOString();
   const isReimbursable = input.isReimbursable ?? false;
 
+  const { currency, exchangeRate, amountInBase } = resolveMoney(input);
+
   const row: TransactionRow = {
     id: Crypto.randomUUID(),
     title: input.title,
@@ -123,10 +154,9 @@ export async function createTransaction(input: CreateTransactionInput): Promise<
     location: input.location?.trim() || null,
     remarks: input.remarks?.trim() || null,
     amount: input.amount,
-    currency: 'MYR',
-    exchangeRate: 1,
-    // 单币种阶段 amountInBase 跟 amount 相同，等做多币种时改成 amount * exchangeRate
-    amountInBase: input.amount,
+    currency,
+    exchangeRate,
+    amountInBase,
     type: input.type,
     date: input.date ?? now,
     tags: JSON.stringify(input.tags ?? []),
@@ -182,10 +212,12 @@ export type UpdateTransactionInput = CreateTransactionInput & { id: string };
 export async function updateTransaction(input: UpdateTransactionInput): Promise<void> {
   const db = await getDb();
   const now = new Date().toISOString();
+  const { currency, exchangeRate, amountInBase } = resolveMoney(input);
 
   await db.runAsync(
     `UPDATE transactions SET
-       title = ?, merchant = ?, location = ?, remarks = ?, amount = ?, amountInBase = ?, type = ?, date = ?,
+       title = ?, merchant = ?, location = ?, remarks = ?, amount = ?, currency = ?, exchangeRate = ?,
+       amountInBase = ?, type = ?, date = ?,
        tags = ?, isReimbursable = ?, excludeFromStats = ?, categoryId = ?, accountId = ?, updatedAt = ?, synced = 0
      WHERE id = ?`,
     [
@@ -194,7 +226,9 @@ export async function updateTransaction(input: UpdateTransactionInput): Promise<
       input.location?.trim() || null,
       input.remarks?.trim() || null,
       input.amount,
-      input.amount,
+      currency,
+      exchangeRate,
+      amountInBase,
       input.type,
       input.date ?? now,
       JSON.stringify(input.tags ?? []),
