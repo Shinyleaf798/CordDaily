@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# 打包用的签名证书。密码在 ~/.gradle/gradle.properties，两样都不进 git
+credentials/
