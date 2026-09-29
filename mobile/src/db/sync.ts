@@ -1,5 +1,7 @@
 import { getCloudTransport, type CloudTransport } from '@/api/cloud-transport';
 
+import { getAvatarPushPayload, markAvatarPushed } from './avatar';
+
 import { getLocalStats } from './backup';
 import { listUsedCategoryIconNames, readCategoryIconBlobs } from './category-icon-files';
 import { getDb } from './client';
@@ -250,6 +252,18 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     await cloud.pushRecurring({ ...rule, isActive: !!rule.isActive });
     await markSynced('recurring_transactions', [rule.id as string]);
     result.recurring += 1;
+  }
+
+  // 头像跟账单一起推。放在时间戳前面、也裹在各自的 try 里：
+  // 换了张头像没传上去，不该让「这次备份失败了」出现在一次账全推成功之后
+  try {
+    const avatar = await getAvatarPushPayload();
+    if (avatar && cloud.pushAvatar) {
+      await cloud.pushAvatar(avatar.data);
+      await markAvatarPushed();
+    }
+  } catch {
+    // 咽掉：下次备份会再试一次（推送标记只有成功了才写）
   }
 
   // 云端那一侧的时间戳（只有 Neon 那条路有：它没有服务器替它记这件事）。

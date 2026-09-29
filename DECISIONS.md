@@ -3232,3 +3232,122 @@ RN 里全局 `crypto.getRandomValues` 不保证存在，而盐不随机的 bcryp
 后端、JWT、`app/login.tsx`、`app/register.tsx` 还是一个字没动。它们走的是我的 Express
 那条路，跟这条并存。**记账、统计、导出、从文件恢复全都不看这两道门**（CLAUDE.md 原则 1），
 两道门只挡云端那一条通道。
+
+## 2026-09-29 账号头像：图存沙盒、跟着备份进 `User.avatar`
+
+### 做了什么
+
+「我的」页顶上那个字母圆圈可以换成自己传的图了。挑图 → 裁成方的 → 缩到 256px →
+存进沙盒，`app_settings` 里只记文件名。有云端账号时跟着备份推进 `User.avatar`（bytea），
+换手机恢复时拉回来。
+
+### 为什么本地存文件、云端存 bytea
+
+本地跟分类图标同一套（`db/category-icon-files.ts` 那份文件头写得很全）：图片不进 SQLite，
+否则每次读设置都拖着一张图。
+
+云端反过来——`User` 就一行，头像跟着它走最省事，不用为「一个文件」单开一张表和一套引用关系。
+分类图标之所以有 `CategoryIcon` 表，是因为那边有几十张、要按名字查。
+
+没有把两边抽成公共函数：尺寸和数量级不同（几十张 34 点 vs 一张 96 点），
+硬合一个就要开始传参数决定 max 像素、目录名、清理策略，比两份各自直白的代码更难读。
+
+### 两种「没有头像」必须分得开
+
+`getAvatarPushPayload()` 返回三种东西：`null`（没换过，这次不用推）、
+`{ data: null }`（用户删了头像，云端那一列要清空）、`{ data: '...' }`（推这张）。
+合成两种的话，**删头像这件事永远同步不出去**——云端会一直留着那张旧图。
+
+推送成功才写 `avatarPushedFile` 标记，所以中途失败下次会自动重试。
+
+### 远端迁移 v2，不是改 v1
+
+`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS`。用 `IF NOT EXISTS` 是因为迁移在手机网络上
+断在半路是常态，而普通的 `ADD COLUMN` 不幂等（列已存在就报错，然后永远卡在那一版）。
+
+`REQUIRED_COLUMNS` 里**没加** avatar：那份清单回答的是"备份跑不跑得起来"，
+头像缺一张不影响任何一笔账，写成必需反而会让还没跑过 v2 的库整个连不上。
+
+### 顺带改了页头
+
+去掉「共 N 笔」，「记账第 N 天」从灰色小字改成 `smallBold`（14 加粗）。那个笔数在备份卡上
+已经有一个，而且在那儿才有用（旁边就是"还有 12 笔没备份"）；同一个数在一屏里出现两次，
+第二次只是噪音。
+
+天数**没有大过名字**：第一版写了个 20px，第二行就盖过第一行，这张卡没有主角了。
+字号也不自己写——`themed-text.tsx` 里那段注释专门警告过各页自己覆盖字号表的后果，
+所以取表里现成的一档。
+
+天数现在**跟登没登录无关**了。"我记了多久"是本地的事实，跟账号没关系。
+
+## 2026-09-29 同一个 Neon 库有两个记账员：加字段要动四个地方
+
+### 踩到的坑
+
+给 `User` 加 avatar 两列，在后端跑 `prisma migrate dev` 时炸了：
+
+```
+Drift detected: Your database schema is not in sync with your migration history.
+[+] Added tables: app_meta
+[*] Changed the `Transaction` table: added index (userId, categoryId), (userId, date)
+[*] Changed the `User` table: added column `avatar`, `avatarMime`
+We need to reset the "public" schema ... All data will be lost.
+```
+
+原因：那个库（`corddaily`）**手机连过**。手机建了 `app_meta`、两个索引，还跑了远端 v2 加上 avatar 两列——
+而 Prisma 的迁移历史里一条记录都没有，于是它认定"库被人动过"，唯一的补救提议是清库。
+
+### 根因：两个记账员，互相不认识
+
+| 记账本 | 谁写谁读 | 记什么 |
+|---|---|---|
+| `_prisma_migrations` | 电脑上的 Prisma | 每个迁移一行（名字 + 校验和） |
+| `app_meta` | 手机 App | 一个整数（远端跑到第几版） |
+
+两张表干的是同一件事——**记录这个库已经跑过哪些迁移**——但各记各的。
+Neon 两个都不看，它只负责存。
+
+`app_meta` 不是垃圾：Postgres 没有 SQLite 那种内置的 `PRAGMA user_version`，
+所以要记"这个库建到第几版了"就得自己建一张表。而这个笔记**必须写在库里**，
+不能记在手机上——重装 App 会没、换手机会没、第二个人的手机上更没有。
+
+### 怎么修的（没有清数据）
+
+1. 把手机建的东西**在 `schema.prisma` 里声明出来**：Transaction 上补 `@@index([userId, date])`
+   和 `@@index([userId, categoryId])`（手机建的索引名跟 Prisma 的命名约定本来就一致），
+   再加一个 `model app_meta`。
+2. 手写一个迁移文件，内容是 app_meta + 两个索引 + avatar 两列。
+3. `prisma migrate resolve --applied 20260929150000_add_user_avatar`——
+   **只往 `_prisma_migrations` 写一行记录，不执行 SQL**，因为库里这些早就有了。
+
+验证：`migrate diff --from-config-datasource --to-schema` 输出 "empty migration"（库和 schema 完全一致），
+`migrate status` 说 up to date。
+
+`migrate dev` 为什么不行：它在生成任何东西**之前**先做 drift 检查，而它对 drift 只有一种处理方式——reset。
+没有"就按现在这样算"的选项。那个选项是单独一条命令，就是 `resolve --applied`。
+
+**那个迁移文件现在删不得**——它是 `_prisma_migrations` 里那行记录的对应物。
+删了之后 Prisma 会报"有迁移在库里有记录但本地缺失"，drift 一起回来（这个也踩了一次，放回去即可，
+校验和是文件内容的 sha256，要逐字节一样）。
+
+### 规矩：加一个字段要动四个地方
+
+1. `mobile/src/db/schema.ts` —— 手机本地 SQLite 的迁移组
+2. `mobile/src/db/neon/schema.ts` —— 远端 DDL 那一组，**外加底下的 `REQUIRED_COLUMNS`**
+3. `backend/prisma/schema.prisma` —— 声明
+4. `backend/prisma/migrations/` —— 对应的迁移文件
+
+不是每次都四个：只存在手机本地的字段（UI 偏好之类）只改 1；要跟着备份上云的四个全要。
+
+**2 和 3 必须逐字对齐**——整个设计的前提就是同一个 Neon 库既能被手机连、也能被 Prisma 后端连。
+写歪了的话 `verifySchema` 会在连接时当场报缺列，这是好事，总比第一次备份才炸强。
+
+### 顺带修的一个静默 bug
+
+`migrateRemote` 原来**只在 `connectRemote` 里跑**。于是 App 升级带来的新列永远加不上——
+用户早就连好了，之后每次备份走的都是 `requireSql()`，谁都不会再看一眼版本号。
+新功能对着旧库跑，撞在 `column "avatar" does not exist` 上，而那个错误还被备份流程的
+try/catch 咽掉了：**静默失败，永远不会自愈。**
+
+改成在 `requireSql()` 里补跑，用一个模块级 `schemaChecked` 压成**每个 App 会话一次**
+（不是每条 SQL 一次）。失败时把标记退回去，一次网络抖动不该让这个会话剩下的时间都当作已检查过。

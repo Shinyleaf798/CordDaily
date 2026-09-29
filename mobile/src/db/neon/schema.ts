@@ -209,6 +209,16 @@ export const REMOTE_MIGRATIONS: string[][] = [
         REFERENCES "Account"("userId", "id")
     )`,
   ],
+
+  // v2：账号头像。图片本身进 `User` 那一行（bytea），不另开一张表——
+  // 一个账号只有一张，为它建表加外键是纯开销。
+  //
+  // `ADD COLUMN IF NOT EXISTS` 是幂等的，所以这一组重跑一遍也没事；
+  // 普通的 `ADD COLUMN` 不是（列已存在会报错），而迁移在手机网络上断在半路是常态。
+  [
+    `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" BYTEA`,
+    `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarMime" TEXT`,
+  ],
 ];
 
 /** App 认识的最新远端版本。库里的 `schemaVersion` 比它大 = 这台手机的 App 太旧了 */
@@ -235,6 +245,8 @@ export const REMOTE_SCHEMA_VERSION = REMOTE_MIGRATIONS.length;
  * **加新列时这里要跟着加一行**，否则旧库上那一列缺失会重新变成一个运行时错误。
  */
 export const REQUIRED_COLUMNS: Record<string, string[]> = {
+  // avatar / avatarMime 不列进来：头像缺一张不影响任何一笔账，
+  // 而把它写成必需会让一个还没跑过 v2 的库整个连不上
   User: ['id', 'email', 'passwordHash'],
   Category: ['id', 'name', 'icon', 'type', 'userId', 'parentId', 'sortOrder', 'isActive'],
   Account: ['id', 'name', 'type', 'currency', 'openingBalance', 'icon', 'userId', 'createdAt'],

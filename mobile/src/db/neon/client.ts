@@ -29,6 +29,8 @@ type Sql = NeonQueryFunction<false, false>;
 // 再重建一个 neon() 是白费的。断开连接时两个一起清（见 disconnectRemote）
 let cachedConnectionString: string | null | undefined;
 let cachedSql: Sql | null = null;
+/** 这个会话有没有核对过远端表结构版本。见 requireSql */
+let schemaChecked = false;
 
 // ---- 连接串的存取 ----
 
@@ -47,6 +49,7 @@ async function saveConnectionString(value: string): Promise<void> {
   await SecureStore.setItemAsync(CONNECTION_KEY, value);
   cachedConnectionString = value;
   cachedSql = null;
+  schemaChecked = false;
 }
 
 /**
@@ -62,6 +65,7 @@ export async function disconnectRemote(): Promise<void> {
   await clearCloudSession();
   cachedConnectionString = null;
   cachedSql = null;
+  schemaChecked = false;
 }
 
 /**
@@ -143,9 +147,39 @@ async function getSql(): Promise<Sql> {
   return cachedSql;
 }
 
-/** 已经连好的库。传输层每个函数开头都调它 */
+/**
+ * 已经连好的库。传输层每个函数开头都调它，**顺带把落后的迁移补上**。
+ *
+ * ## 为什么补迁移在这儿，不只在 connectRemote 里
+ *
+ * 原来只有连接那一刻才跑迁移。于是 App 升级带来的新列**永远加不上**——
+ * 用户早就连好了，之后每次备份走的都是这个函数，谁都不会再去看一眼版本号。
+ * 结果是新功能对着一个旧库跑，撞在 `column "avatar" does not exist` 上，
+ * 而那个错误还被备份流程的 try/catch 咽掉了：**静默失败，永远不会自愈。**
+ *
+ * 头像那一版（v2）就是这么暴露出来的。
+ *
+ * ## 代价只有一次 SELECT
+ *
+ * `migrateRemote` 在版本已经对得上时只查一句就返回，而这里用 `schemaChecked`
+ * 把它压成**每个 App 会话一次**——不是每条 SQL 一次。换库或者断开时这个标记跟着清。
+ *
+ * 失败时把标记退回去：一次网络抖动不该让这个会话剩下的时间里都当作"已经检查过了"。
+ */
 export async function requireSql(): Promise<Sql> {
-  return getSql();
+  const sql = await getSql();
+  if (schemaChecked) return sql;
+
+  // 先置位再跑：迁移语句本身不会回到这里，但万一以后有人在这条路上加了别的查询，
+  // 先置位能挡住重入
+  schemaChecked = true;
+  try {
+    await migrateRemote(sql);
+  } catch (error) {
+    schemaChecked = false;
+    throw error;
+  }
+  return sql;
 }
 
 export type RemoteStatus = {
@@ -201,6 +235,8 @@ export async function connectRemote(raw: string): Promise<ConnectResult> {
   await verifySchema(sql);
 
   await saveConnectionString(connectionString);
+  // saveConnectionString 把标记清了，但这一路刚跑完迁移，没必要让下一次 requireSql 再查一遍
+  schemaChecked = true;
 
   return { host: describeHost(connectionString), schemaVersion: version };
 }

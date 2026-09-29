@@ -37,6 +37,12 @@ model User {
   baseCurrency String   @default("MYR")
   createdAt    DateTime @default(now())
 
+  // 账号头像。图直接存这一行里（一个账号只有一张，为它单开一张表是纯开销），
+  // 手机端那边同一张图存在沙盒文件里，只有备份时才 base64 推上来。
+  // 这是唯一一处二进制进库的地方——分类图标走的是 CategoryIcon 表
+  avatar     Bytes?
+  avatarMime String?
+
   categories            Category[]
   categoryIcons         CategoryIcon[]
   transactions          Transaction[]
@@ -132,6 +138,12 @@ model Transaction {
   recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id])
 
   images TransactionImage[]
+
+  // 手机端的远端建表语句（mobile/src/db/neon/schema.ts）已经在建这两个索引了，
+  // 名字跟 Prisma 的命名约定一致。这里补上声明，两边才对得上——
+  // 不声明的话 Prisma 每次 `migrate dev` 都会把它们当成"库被别人改过"
+  @@index([userId, date])
+  @@index([userId, categoryId])
 }
 
 /// 用户自己上传的分类图标，**二进制真的存在这张表里**（bytea），不走图床。
@@ -207,4 +219,23 @@ model Transfer {
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
+}
+
+/**
+ * 手机端建的那张表，**不归后端管，但必须在这儿声明**。
+ *
+ * 它记的是"这个库的远端表结构跑到第几版了"——SQLite 有内置的 `user_version`，
+ * Postgres 没有，所以手机那边（mobile/src/db/neon/schema.ts）自己建了一张。
+ *
+ * 后端一行都不读它。写在这里的唯一理由是：同一个库被两边共用时，
+ * Prisma 看到一张自己不认识的表就会报 drift，并提议重置整个 schema——那会清库。
+ * 声明出来，两边就对得上了。
+ */
+model app_meta {
+  id            Int       @id
+  schemaVersion Int       @default(0)
+  bookId        String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  lastPushAt    DateTime? @db.Timestamptz(6)
+  lastPushApp   String?
 }

@@ -21,8 +21,14 @@ type BackupCardProps = {
   cloudReady: boolean;
   onBackup: () => void;
   onRestore: () => void;
-  /** 云端还没通时那个按钮。带去「云端备份」页，两条路（登录 / 填 Neon）都从那儿进 */
+  /** 云端还没通时那个按钮。差哪一步就带去哪一页——差连接串去云端页，差账号去登录页 */
   onConnect: () => void;
+  /**
+   * 那个按钮上的字。默认说的是"去连库"，但云端没通有**两种差法**
+   * （连接串没填 / 填了但还没进一本账），按钮说错一种，用户就会被送到一个
+   * 他已经做完了的步骤面前。
+   */
+  connectLabel?: string;
 };
 
 /**
@@ -43,6 +49,7 @@ export function BackupCard({
   onBackup,
   onRestore,
   onConnect,
+  connectLabel = '连接云端后可备份',
 }: BackupCardProps) {
   const theme = useTheme();
   const hasPending = unsynced > 0;
@@ -81,7 +88,7 @@ export function BackupCard({
         <Pressable onPress={onConnect} style={[styles.button, { backgroundColor: theme.cardHighlight }]}>
           <Ionicons name="cloud-outline" size={18} color={theme.onCardHighlight} />
           <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-            连接云端后可备份
+            {connectLabel}
           </ThemedText>
         </Pressable>
       )}

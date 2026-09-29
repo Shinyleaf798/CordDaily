@@ -1,6 +1,7 @@
 import { getCloudTransport, type CloudTransport } from '@/api/cloud-transport';
 import { customIconFileName } from '@/constants/category-icons';
 
+import { restoreAvatar } from './avatar';
 import { isAccountAsShipped, isCategoryAsShipped } from './backup';
 import { listCustomIconFiles, restoreCategoryIconBlobs } from './category-icon-files';
 import { getDb } from './client';
@@ -258,7 +259,23 @@ export async function mergeFromCloud(): Promise<MergeResult> {
   }
 
   result.icons = await downloadMissingIcons(cloud);
+  await downloadAvatar(cloud);
   return result;
+}
+
+/**
+ * 顺手把云端那张头像拉下来。**本地已经有就不覆盖**——恢复只新增，跟整个流程一个口径。
+ *
+ * 失败当没发生：头像没拉到不该让一次成功的账单恢复报成失败。
+ */
+async function downloadAvatar(cloud: CloudTransport): Promise<void> {
+  try {
+    if (!cloud.fetchAvatar) return;
+    const data = await cloud.fetchAvatar();
+    if (data) await restoreAvatar(data);
+  } catch {
+    /* 忽略 */
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Image } from 'expo-image';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
@@ -8,52 +8,74 @@ import { useTheme } from '@/hooks/use-theme';
 
 type ProfileHeaderProps = {
   email: string | undefined;
-  transactionCount: number;
+  /** 自定义头像的 uri，没设过传 null——那时候退回邮箱首字母 */
+  avatarUri: string | null;
   firstTransactionDate: string | null;
+  /**
+   * 点下去干什么。**由「我的」页决定，不在这里写死**：去哪儿取决于云端配到哪一步了，
+   * 而那是页面知道的事——这个件只知道"一个邮箱和一个天数"。
+   */
+  onPress: () => void;
 };
 
 /**
  * 「我的」页最上面那一条：你是谁 + 你记了多久。
  *
- * 头像是邮箱首字母，不是图片——这个 App 没有头像上传（真要做得先接图床，那是另一件事），
- * 而一个纯色圆比一个灰色的默认人像更像"有意为之"。
+ * 头像可以是用户自己传的图（存在沙盒里，见 db/avatar.ts），没传就退回邮箱首字母。
+ * **不做灰色默认人像**：一个纯色圆比它更像"有意为之"，而不是"这里本该有张图但没加载出来"。
  *
  * 「记账第 N 天」从**最早一笔账**算起，不是注册时间：用户认的是"我记了多久"，
- * 而不是"我什么时候注册的这个账号"。一笔账都没有时整行不显示——
- * 「记账第 1 天 · 共 0 笔」是句废话，还会让空库看起来像出了错。
+ * 而不是"我什么时候注册的这个账号"。一笔账都没有时这一行换成一句招呼——
+ * 「记账第 1 天」对一个空库来说是句废话。
+ *
+ * **笔数不在这儿显示**：备份卡上已经有「1,284 笔」，而且那个数在那里是有用的
+ * （它旁边就是"还有 12 笔没备份"）。同一个数在一屏里出现两次，第二次只是噪音。
+ *
+ * 天数用 `smallBold` 而不是自己写一个字号：它要比原来的灰色小字显眼，
+ * 但**必须比名字（`default`，16）小**——第二行盖过第一行的话，这张卡就没有主角了。
+ * 字号表里 14 加粗正好卡在这两个要求中间，而自己写 fontSize 是 themed-text
+ * 那段注释专门警告过的事：写漏的页面会孤零零地大一圈。
  */
-export function ProfileHeader({ email, transactionCount, firstTransactionDate }: ProfileHeaderProps) {
+export function ProfileHeader({ email, avatarUri, firstTransactionDate, onPress }: ProfileHeaderProps) {
   const theme = useTheme();
 
-  // 没登录也照样记账（见根布局那段注释），所以这一条要能表达"还没登录"这个状态，
+  // 没账号也照样记账（见根布局那段注释），所以这一条要能表达"还没有账号"这个状态，
   // 而不是拿一个假名字糊过去
   const isSignedIn = !!email;
-  const name = email?.split('@')[0] ?? '未登录';
+  const name = email?.split('@')[0] ?? '本地账本';
   const initial = isSignedIn ? name[0].toUpperCase() : '·';
 
   const days = firstTransactionDate ? daysSince(firstTransactionDate) : null;
 
   return (
     <Pressable
-      onPress={() => router.push('/settings/account')}
+      onPress={onPress}
       style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-      <View style={[styles.avatar, { backgroundColor: theme.cardHighlight }]}>
-        <ThemedText type="pageTitle" style={{ color: theme.onCardHighlight }}>
-          {initial}
-        </ThemedText>
-      </View>
+      {avatarUri ? (
+        // contentFit=cover 而不是 contain：头像框是圆的，contain 会在方图之外留出底色边，
+        // 看起来像图没铺满。cover 裁掉的那点边缘用户挑图时已经用裁剪框决定过了
+        <Image source={{ uri: avatarUri }} style={styles.avatar} contentFit="cover" />
+      ) : (
+        <View style={[styles.avatar, { backgroundColor: theme.cardHighlight }]}>
+          <ThemedText type="pageTitle" style={{ color: theme.onCardHighlight }}>
+            {initial}
+          </ThemedText>
+        </View>
+      )}
 
       <View style={styles.text}>
         <ThemedText type="default" numberOfLines={1}>
           {name}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {!isSignedIn
-            ? '登录后可以把账备份到云端'
-            : days !== null
-              ? `记账第 ${days} 天 · 共 ${transactionCount} 笔`
-              : '还没有账单，去记第一笔吧'}
-        </ThemedText>
+        {/* 有账就把天数放大说出来，**跟登没登录无关**——"我记了多久"是本地的事实。
+            一笔都没有时才退回一句招呼，那时候说「记账第 1 天」是废话 */}
+        {days !== null ? (
+          <ThemedText type="smallBold">记账第 {days} 天</ThemedText>
+        ) : (
+          <ThemedText type="small" themeColor="textSecondary">
+            {isSignedIn ? '还没有账单，去记第一笔吧' : '连一个自己的数据库，就能备份到云端'}
+          </ThemedText>
+        )}
       </View>
 
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />

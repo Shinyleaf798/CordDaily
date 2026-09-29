@@ -39,7 +39,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "用来挑一张图当分类图标。选中的图会缩小后存在 App 自己的目录里，不会上传，也不会读你其他的照片。",
+          "photosPermission": "用来挑一张图当分类图标或账号头像。选中的图会缩小后存在 App 自己的目录里，不会上传到我这里，也不会读你其他的照片。",
           "cameraPermission": false,
           "microphonePermission": false
         }

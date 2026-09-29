@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,18 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenPadding, Spacing } from '@/constants/theme';
-import type { AccountProbe } from '@/db/neon/account';
+import { probeAccounts } from '@/db/neon/account';
 import { checkConnectionString } from '@/db/neon/client';
 import type { CloudSession } from '@/db/neon/session';
 import {
-  useAccountProbe,
-  useClaimLegacyBook,
   useCloudSession,
   useConnectRemote,
   useDisconnectRemote,
   useHasRemote,
-  useLoginCloudAccount,
-  useRegisterCloudAccount,
   useRemoteStatus,
   useSignOutCloud,
 } from '@/hooks/use-cloud';
@@ -80,12 +77,22 @@ export default function CloudSettingsScreen() {
     }
     setError(null);
     connect.mutate(draft, {
-      onSuccess: () => {
+      onSuccess: async () => {
         // 连上之后立刻把输入框清空：那条串已经进 SecureStore 了，
         // 让它继续留在一个屏幕上（还可能是明文）没有任何好处
         setDraft('');
         setRevealed(false);
         setEditing(false);
+
+        // 连库只是第一步，账号才是第二步。**直接把人送过去**，不要求他自己发现
+        // 下面还有一张卡——库里有没有账号这件事这里已经问得出来，
+        // 让用户再判断一次「我该点登录还是注册」是多余的
+        try {
+          const probe = await probeAccounts();
+          router.push(probe.total > 0 && !probe.legacyId ? '/login' : '/register');
+        } catch {
+          // 探测失败（网络断在这一下）就留在本页，下面那张卡照样给两个入口
+        }
       },
       onError: (connectError) => setError((connectError as Error).message),
     });
@@ -146,7 +153,7 @@ export default function CloudSettingsScreen() {
             </View>
           ) : null}
 
-          {needsAccount ? <AccountStep /> : null}
+          {needsAccount ? <NeedsAccountCard /> : null}
 
           {showConnectionForm ? (
             <>
@@ -234,90 +241,12 @@ export default function CloudSettingsScreen() {
 /**
  * 库连上了，还差一个账号。
  *
- * **默认落在哪一档由库自己决定，不让用户选。** 空库 → 注册；已经有账号 → 登录；
- * 上一版 App 自动建过那行占位 `User` → 认领。第三种最要紧：那本账下面挂着已经推上去的
- * 账单，这时候引导他「注册新账号」会开出第二本空账，而原来那些看着像丢了。
+ * 这里**只给入口，不放表单**：注册和登录是两个独立页面（`app/register.tsx` / `app/login.tsx`），
+ * 从「我的」页那张备份卡也能走到同一个地方。同一张表单在两处各写一遍，
+ * 迟早有一处忘了改——上一版就是这么长出来的。
  */
-function AccountStep() {
+function NeedsAccountCard() {
   const theme = useTheme();
-  const { data: probe, isLoading, error } = useAccountProbe(true);
-  // 默认档是**算出来的**，不是用 effect 同步进 state 的：探测结果回来之前压根没有
-  // 「当前档」这个东西。用 state + effect 的话中间会先渲染一帧错的档再跳过去
-  const [picked, setPicked] = useState<AccountMode | null>(null);
-  const mode = picked ?? (probe ? defaultMode(probe) : null);
-
-  if (isLoading) {
-    return (
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-        <ActivityIndicator color={theme.cardHighlight} />
-        <ThemedText type="small" themeColor="textSecondary">
-          正在看这个库里有没有账号…
-        </ThemedText>
-      </View>
-    );
-  }
-
-  if (error || !probe || mode === null) {
-    return (
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="default" style={{ color: theme.expense }}>
-          读不到这个库里的账号
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {error ? (error as Error).message : '稍后再试一次'}
-        </ThemedText>
-      </View>
-    );
-  }
-
-  return <AccountForm mode={mode} probe={probe} onSwitchMode={setPicked} />;
-}
-
-type AccountMode = 'register' | 'login' | 'claim';
-
-function defaultMode(probe: AccountProbe): AccountMode {
-  if (probe.legacyId) return 'claim';
-  return probe.total > 0 ? 'login' : 'register';
-}
-
-function AccountForm({
-  mode,
-  probe,
-  onSwitchMode,
-}: {
-  mode: AccountMode;
-  probe: AccountProbe;
-  onSwitchMode: (mode: AccountMode) => void;
-}) {
-  const theme = useTheme();
-  const register = useRegisterCloudAccount();
-  const login = useLoginCloudAccount();
-  const claim = useClaimLegacyBook();
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [revealed, setRevealed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const mutation = mode === 'login' ? login : mode === 'claim' ? claim : register;
-  const copy = COPY[mode];
-  const canSubmit = email.trim().length > 2 && password.length >= (mode === 'login' ? 1 : 8);
-
-  const handleSubmit = () => {
-    setError(null);
-    mutation.mutate(
-      { email, password },
-      {
-        // 成功之后什么都不用做：登录态一变，整片查询失效，这一段会被上面的
-        // ConnectedPanel 顶掉。这里只负责清掉屏幕上的密码
-        onSuccess: () => {
-          setPassword('');
-          setRevealed(false);
-        },
-        onError: (submitError) => setError((submitError as Error).message),
-      },
-    );
-  };
 
   return (
     <>
@@ -325,120 +254,31 @@ function AccountForm({
         <View style={styles.cardHead}>
           <Ionicons name="lock-closed-outline" size={20} color={theme.cardHighlight} />
           <ThemedText type="default" style={styles.grow}>
-            {copy.title}
+            还差一步：进一本账
           </ThemedText>
         </View>
         <ThemedText type="small" themeColor="textSecondary">
-          {mode === 'claim'
-            ? `这个库是上一版 App 连过的，里面那本账有 ${probe.legacyTransactions} 笔记录。给它设个邮箱和密码就能继续用，账单一条都不会动。`
-            : copy.hint}
+          库已经连上了。账号建在这个库里面，决定备份进哪一本账——一个库可以放好几本，
+          家里两个人各记各的也行。
         </ThemedText>
       </View>
 
-      <View style={styles.group}>
-        <View style={[styles.inputRow, { backgroundColor: theme.backgroundElement }]}>
-          <Ionicons name="mail-outline" size={18} color={theme.textSecondary} />
-          <TextInput
-            value={email}
-            onChangeText={(next) => {
-              setEmail(next);
-              setError(null);
-            }}
-            placeholder="邮箱"
-            placeholderTextColor={theme.textSecondary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-            style={[styles.input, { color: theme.text }]}
-          />
-        </View>
-
-        <View style={[styles.inputRow, { backgroundColor: theme.backgroundElement }]}>
-          <Ionicons name="key-outline" size={18} color={theme.textSecondary} />
-          <TextInput
-            value={password}
-            onChangeText={(next) => {
-              setPassword(next);
-              setError(null);
-            }}
-            placeholder={mode === 'login' ? '密码' : '密码（至少 8 位）'}
-            placeholderTextColor={theme.textSecondary}
-            secureTextEntry={!revealed}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={[styles.input, { color: theme.text }]}
-          />
-          <Pressable onPress={() => setRevealed((value) => !value)} hitSlop={8}>
-            <Ionicons name={revealed ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.textSecondary} />
-          </Pressable>
-        </View>
-
-        {error ? (
-          <ThemedText type="small" style={{ color: theme.expense }}>
-            {error}
-          </ThemedText>
-        ) : null}
-      </View>
-
       <Pressable
-        onPress={handleSubmit}
-        disabled={mutation.isPending || !canSubmit}
-        style={[
-          styles.primary,
-          { backgroundColor: theme.cardHighlight },
-          (mutation.isPending || !canSubmit) && styles.dimmed,
-        ]}>
-        {mutation.isPending ? (
-          <ActivityIndicator color={theme.onCardHighlight} />
-        ) : (
-          <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
-            {copy.action}
-          </ThemedText>
-        )}
+        onPress={() => router.push('/register')}
+        style={[styles.primary, { backgroundColor: theme.cardHighlight }]}>
+        <ThemedText type="default" style={{ color: theme.onCardHighlight }}>
+          在这个库里注册
+        </ThemedText>
       </Pressable>
 
-      {/* 猜错了也能自己改过来。库里已经有账号却想再开一本、或者不想认领旧账本，都从这里走 */}
-      <View style={styles.switchRow}>
-        {mode !== 'login' ? (
-          <Pressable onPress={() => onSwitchMode('login')} style={styles.ghost}>
-            <ThemedText type="small" themeColor="textSecondary">
-              已经有账号了，去登录
-            </ThemedText>
-          </Pressable>
-        ) : null}
-        {mode !== 'register' ? (
-          <Pressable onPress={() => onSwitchMode('register')} style={styles.ghost}>
-            <ThemedText type="small" themeColor="textSecondary">
-              在这个库里新开一本账
-            </ThemedText>
-          </Pressable>
-        ) : null}
-        {mode !== 'claim' && probe.legacyId ? (
-          <Pressable onPress={() => onSwitchMode('claim')} style={styles.ghost}>
-            <ThemedText type="small" themeColor="textSecondary">
-              认领库里那本旧账
-            </ThemedText>
-          </Pressable>
-        ) : null}
-      </View>
+      <Pressable onPress={() => router.push('/login')} style={styles.ghost}>
+        <ThemedText type="small" themeColor="textSecondary">
+          已经有账号了，去登录
+        </ThemedText>
+      </Pressable>
     </>
   );
 }
-
-const COPY: Record<AccountMode, { title: string; hint: string; action: string }> = {
-  register: {
-    title: '在这个库里注册',
-    hint: '邮箱和密码只写进你自己那个库，不发给任何人。密码忘了没有找回——但连接串还在的话，数据不会丢。',
-    action: '注册',
-  },
-  login: {
-    title: '登录这个库里的账号',
-    hint: '这个库里已经有账号了。换手机就用原来那一个登进去，账单会原样认出来。',
-    action: '登录',
-  },
-  claim: { title: '给旧账本设个密码', hint: '', action: '认领这本账' },
-};
 
 function ConnectedPanel({
   status,

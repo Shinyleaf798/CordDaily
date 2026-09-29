@@ -36,6 +36,14 @@ export type CloudTransport = {
   fetchCloudIconNames(): Promise<string[]>;
   fetchCategoryIconBlobs(names: string[]): Promise<CategoryIconBlob[]>;
   pushCategoryIcons(icons: { name: string; data: string }[]): Promise<{ inserted: number; skipped: number }>;
+  /**
+   * 账号头像的上传和下载。**可选**，跟 `finishPush` 一样——
+   * 头像存在 `User` 那一行里（见 db/neon/schema.ts 的 v2 迁移），
+   * 而我那台后端没有对应的接口。走后端那条路的用户没有头像同步，
+   * 但也没有任何东西因此坏掉，所以这里用可选方法而不是逼另一条路去实现一个空函数。
+   */
+  pushAvatar?(data: string | null): Promise<void>;
+  fetchAvatar?(): Promise<string | null>;
   pushCategories(categories: Record<string, unknown>[]): Promise<BatchResult>;
   pushAccounts(accounts: Record<string, unknown>[]): Promise<BatchResult>;
   pushTransactions(transactions: Record<string, unknown>[]): Promise<BatchResult>;

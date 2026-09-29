@@ -382,6 +382,32 @@ async function fetchCategoryIconBlobs(names: string[]): Promise<CategoryIconBlob
   return rows as unknown as CategoryIconBlob[];
 }
 
+/**
+ * 把头像写进 `User` 那一行。`data` 传 null 就是用户把头像删了，那一列跟着清空。
+ *
+ * **两种"没有"在这里必须分得开**：调用方压根不调这个函数 = 头像没换过；
+ * 调了但 data 是 null = 头像被删了。合成一种的话，删头像这件事永远同步不出去。
+ */
+async function pushAvatar(data: string | null): Promise<void> {
+  const userId = await requireBookId();
+  if (!data) {
+    await run('UPDATE "User" SET "avatar" = NULL, "avatarMime" = NULL WHERE "id" = $1', [userId]);
+    return;
+  }
+  await run(`UPDATE "User" SET "avatar" = decode($2, 'base64'), "avatarMime" = $3 WHERE "id" = $1`, [
+    userId,
+    data,
+    sniffMimeType(data) ?? 'image/jpeg',
+  ]);
+}
+
+/** 云端那张头像的 base64，没设过返回 null */
+async function fetchAvatar(): Promise<string | null> {
+  const userId = await requireBookId();
+  const rows = await run(`SELECT encode("avatar", 'base64') AS "data" FROM "User" WHERE "id" = $1`, [userId]);
+  return (rows[0]?.data as string | null) ?? null;
+}
+
 /** 没有任何分类在引用的图标。理由和触发时机见 pushCategories 那一段 */
 async function pruneOrphanIcons(userId: string): Promise<void> {
   await run(
@@ -596,6 +622,8 @@ export const transport: CloudTransport = {
   fetchCloudIconNames,
   fetchCategoryIconBlobs,
   pushCategoryIcons,
+  pushAvatar,
+  fetchAvatar,
   pushCategories,
   pushAccounts,
   pushTransactions,
