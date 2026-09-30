@@ -6,21 +6,26 @@ import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
 
 type MonthSummaryCardProps = {
+  /** 「2026年9月」，跟"本月支出"拼成同一行标签 */
+  monthLabel: string;
   expense: number;
   income: number;
   balance: number;
 };
 
 // 月度收支总览卡片，纯展示组件，数字从首页传进来。
-// 月份不在这张卡里显示了——首页标题栏右边的月份 chip 统管整屏的时间范围，
-// 卡片里再写一次"9月"只是重复。
-export function MonthSummaryCard({ expense, income, balance }: MonthSummaryCardProps) {
+//
+// 月份现在写在"本月支出"这行标签里（「2026年9月 · 本月支出」）。原来它是卡片外面单独
+// 一枚 chip，理由是"chip 统管整屏的时间范围，卡片里再写一次只是重复"——但反过来看更对：
+// chip 和这行标签说的本来就是同一件事（你在看哪个月的支出），拆成两行才是说了两遍，
+// 还白白吃掉 46px（chip 34 + 间距 12）。首页最缺的就是这几十个像素。
+export function MonthSummaryCard({ monthLabel, expense, income, balance }: MonthSummaryCardProps) {
   const theme = useTheme();
 
   return (
     <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
       <ThemedText themeColor="textSecondary" style={styles.label}>
-        本月支出
+        {monthLabel} · 本月支出
       </ThemedText>
 
       {/* 货币符号单独拆出来用强调色、小一号：主角是数字本身，RM 只是单位 */}

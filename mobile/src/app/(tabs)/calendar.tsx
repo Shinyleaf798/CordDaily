@@ -8,7 +8,7 @@ import { CalendarSummaryHeader } from '@/components/calendar/calendar-summary-he
 import { PageHeader } from '@/components/ui/page-header';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ScreenPadding, Spacing } from '@/constants/theme';
+import { ScreenBottomInset, ScreenGap, ScreenPadding } from '@/constants/theme';
 import { useCalendarViewData } from '@/hooks/use-calendar-view-data';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDayKey, shiftMonth, startOfMonth } from '@/utils/date';
@@ -50,9 +50,9 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <PageHeader title="日历" />
+      <PageHeader title="日历" />
 
+      <ScrollView contentContainerStyle={styles.content}>
         <CalendarSummaryHeader
           monthLabel={data.monthLabel}
           monthExpense={data.monthExpense}
@@ -92,9 +92,9 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: ScreenPadding,
-    paddingTop: 12,
-    paddingBottom: Spacing.six,
-    gap: 12,
+    paddingTop: ScreenGap,
+    paddingBottom: ScreenBottomInset,
+    gap: ScreenGap,
   },
   hint: {
     paddingVertical: 20,

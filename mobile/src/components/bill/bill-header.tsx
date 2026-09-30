@@ -45,8 +45,11 @@ type BillHeaderProps = {
  * 灰着的按钮是在暗示"这里有东西只是现在不能用"，而这里是"这里没有这回事"。
  * 那一档的第二行因此只剩正中间的「全部账单」——它同时就是这一页的名字。
  *
- * 分段控件传了轨道/滑块颜色：这一排铺在**页面底色**上，默认那套"浅轨道 + 深滑块"
- * 在黑底上等于一条看不见的轨道配一块更黑的滑块。铺在卡片上的用法（收支切换）不受影响。
+ * 分段控件传了轨道/滑块颜色：默认那套"浅轨道 + 深滑块"是给铺在卡片上的用法准备的
+ * （收支切换），在这一页会变成一条看不见的轨道配一块更黑的滑块。
+ * 轨道走 `backgroundSelected`、滑块走 `tabTrackBackground`——**比它脚下那层各高一级**。
+ * 这一排原来铺在页面底色上，轨道因此取的是 `backgroundElement`；这条 bar 现在自己就是
+ * `backgroundElement` 了，轨道再用它就等于没有轨道，所以整组往上挪了一级。
  */
 export function BillHeader({
   scope,
@@ -63,7 +66,7 @@ export function BillHeader({
   const theme = useTheme();
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { backgroundColor: theme.backgroundElement }]}>
       <View style={styles.topRow}>
         <Pressable onPress={onBack} hitSlop={10} style={styles.edgeButton}>
           <Ionicons name="chevron-back" size={26} color={theme.text} />
@@ -74,7 +77,7 @@ export function BillHeader({
             items={SCOPE_ITEMS}
             value={scope}
             onChange={onScopeChange}
-            trackColor={theme.backgroundElement}
+            trackColor={theme.backgroundSelected}
             thumbColor={theme.tabTrackBackground}
           />
         </View>
@@ -126,9 +129,16 @@ export function BillHeader({
 }
 
 const styles = StyleSheet.create({
+  // 底色跟记一笔那页的系统导航栏同一个 token（`_layout` 里 navigationTheme.card
+  // = backgroundElement）：这两页顶上那条是同一类东西——「不会滚走的框」，
+  // 所以用同一个色。铺满整宽靠的是它直接挂在 SafeAreaView 下面，不用负 margin。
+  //
+  // paddingBottom 必须有：第二行（翻页 + 期间标签）不能贴着色块下沿，
+  // 否则这条 bar 看着像被切掉了半行
   wrap: {
     paddingHorizontal: ScreenPadding,
     paddingTop: 4,
+    paddingBottom: 10,
     gap: 14,
   },
   topRow: {

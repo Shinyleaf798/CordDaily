@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BackupCard } from '@/components/settings/backup-card';
@@ -15,7 +15,7 @@ import { DialogActions, ModalDialog } from '@/components/ui/modal-dialog';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { ScreenPadding, Spacing } from '@/constants/theme';
+import { ScreenBottomInset, ScreenGap, ScreenPadding } from '@/constants/theme';
 import { getCloudTransport } from '@/api/cloud-transport';
 import { parseBundle, type BackupBundle, type ImportSource, type PendingCounts } from '@/db/backup';
 import { pickBackupFile } from '@/db/backup-file';
@@ -113,9 +113,9 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ThemedView style={styles.screen}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <PageHeader title="我的" />
+        <PageHeader title="我的" />
 
+        <ScrollView contentContainerStyle={styles.content}>
           <ProfileHeader
             email={identity?.email}
             onPress={openAccount}
@@ -185,7 +185,6 @@ export default function SettingsScreen() {
             <SettingsRow icon="information-circle-outline" label="关于" href="/settings/about" />
           </SettingsSection>
 
-          <View style={styles.tail} />
         </ScrollView>
       </ThemedView>
 
@@ -237,8 +236,12 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  // paddingTop 跟其余三个 tab 页取同一个数，标题条才不会在切 tab 时上下跳
-  content: { paddingHorizontal: ScreenPadding, paddingTop: 12, gap: Spacing.three },
-  // 底部 tab bar 是浮在内容上面的，最后一组卡片要留出它的高度才不会被压住
-  tail: { height: Spacing.six },
+  // 四个 tab 页共用同一组数：横向 ScreenPadding、纵向 ScreenGap、底部 ScreenBottomInset。
+  // 这一页原来 gap 是 16、底部靠一个空 View 撑，切 tab 时节奏会变一下
+  content: {
+    paddingHorizontal: ScreenPadding,
+    paddingTop: ScreenGap,
+    paddingBottom: ScreenBottomInset,
+    gap: ScreenGap,
+  },
 });

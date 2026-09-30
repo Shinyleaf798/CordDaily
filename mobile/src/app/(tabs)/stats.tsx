@@ -10,7 +10,7 @@ import { StatsSummaryCard } from '@/components/stats/stats-summary-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
-import { ScreenPadding, Spacing } from '@/constants/theme';
+import { ScreenBottomInset, ScreenGap, ScreenPadding } from '@/constants/theme';
 import { useStatsViewData } from '@/hooks/use-stats-view-data';
 import { useTheme } from '@/hooks/use-theme';
 import { formatMonthKey, shiftMonth, startOfMonth } from '@/utils/date';
@@ -37,9 +37,9 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <PageHeader title="统计" />
+      <PageHeader title="统计" />
 
+      <ScrollView contentContainerStyle={styles.content}>
         {/* 翻月的控件在卡片里，跟日历页同一个位置同一个样子 */}
         <StatsSummaryCard
           monthLabel={data.monthLabel}
@@ -144,9 +144,9 @@ function EmptyCard({ text }: { text: string }) {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: ScreenPadding,
-    paddingTop: 12,
-    paddingBottom: Spacing.six,
-    gap: 12,
+    paddingTop: ScreenGap,
+    paddingBottom: ScreenBottomInset,
+    gap: ScreenGap,
   },
   sectionHeader: {
     flexDirection: 'row',

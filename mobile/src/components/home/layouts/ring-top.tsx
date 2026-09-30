@@ -1,22 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
-import { HomeHeaderActions } from '@/components/home/home-header-actions';
-import { EditBudgetLink, SetBudgetLink } from '@/components/home/set-budget-link';
-import { TransactionListItem } from '@/components/transaction/transaction-list-item';
 import { MonthChip } from '@/components/home/month-chip';
+import { EditBudgetLink, SetBudgetLink } from '@/components/home/set-budget-link';
 import { CircularProgress } from '@/components/ui/circular-progress';
-import { PageHeader } from '@/components/ui/page-header';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ScreenPadding, Spacing } from '@/constants/theme';
-import type { HomeLayoutProps } from '@/components/home/layouts/types';
+import { ScreenPadding } from '@/constants/theme';
+import type { HomeTopProps } from '@/components/home/layouts/types';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
 
 /**
  * 圆环直径 = 内容宽度 × 这个比例，上限 RING_MAX_SIZE。
  *
- * 不写死一个像素值：圆环是这一页的主角，它该占多大是**相对于页面**的一件事。
+ * 不写死一个像素值：圆环是这一段的主角，它该占多大是**相对于页面**的一件事。
  * 写死 188 的话，屏幕边距一变（这次就变了 8），比例就跟着悄悄漂移；
  * 换台小屏手机它会顶满两边，换台大屏又缩成中间一小坨。
  *
@@ -28,9 +25,9 @@ const RING_MAX_SIZE = 260;
 // 环宽跟直径同比例缩放（原来是 14/188），否则环一放大就显得细得像根头发丝
 const RING_STROKE_RATIO = 14 / 188;
 
-// 布局 B「金环」：把"本月还能花多少"做成页面主角，月度收支退成一条三栏 pill，
-// 账单直接铺在页面底色上、只用细线分隔。信息比 A 少，但第一眼看到的就是最该看的那个数。
-export function RingLayout({ data, onSelectTransaction, onOpenSearch }: HomeLayoutProps) {
+// 上半「金环」：把"本月还能花多少"做成主角，月度收支退成一条三栏 pill。
+// 信息比节奏条少，但第一眼看到的就是最该看的那个数。
+export function RingTop({ data }: HomeTopProps) {
   const theme = useTheme();
 
   // useWindowDimensions 而不是 Dimensions.get：转屏和分屏时它会触发重渲染，后者拿到的是启动时的快照
@@ -46,12 +43,9 @@ export function RingLayout({ data, onSelectTransaction, onOpenSearch }: HomeLayo
   const centerValue = data.hasBudget ? data.remaining : data.expense;
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
-      {/* 右侧的搜索和账单预览跟节奏条布局共用同一个组件——换布局不该少掉一个功能 */}
-      <PageHeader title="首页" right={<HomeHeaderActions onOpenSearch={onOpenSearch} />} />
-
-      {/* 这一页不用 gap 排版（每块自带 marginTop），所以这里自己报上跟标题的距离，
-          数值取 12——跟节奏条布局那边的 content.gap 一致 */}
+    // 这一段不用 gap 排版：每块之间的距离不一样（18/18/12），是这套画法自己的韵律，
+    // 所以各块自带 marginTop，而不是交给外面那个统一的 ScreenGap
+    <View>
       <View style={styles.monthRow}>
         <MonthChip label={data.monthLabel} />
       </View>
@@ -134,50 +128,15 @@ export function RingLayout({ data, onSelectTransaction, onOpenSearch }: HomeLayo
           </ThemedText>
         </View>
       </View>
-
-      <ThemedText type="subtitle" style={styles.sectionTitle}>
-        近7天账单
-      </ThemedText>
-
-      {data.dayGroups.length === 0 ? (
-        <ThemedText type="default" themeColor="textSecondary">
-          最近还没有账单，点底部的 + 记一笔吧。
-        </ThemedText>
-      ) : (
-        <View>
-          {data.dayGroups.map((group) => (
-            <View key={group.key}>
-              <View style={styles.dayHeader}>
-                <ThemedText style={[styles.dayLabel, { color: theme.cardHighlight }]}>
-                  {group.label} · {group.subLabel}
-                </ThemedText>
-                <ThemedText themeColor="textSecondary" style={styles.daySummary}>
-                  {group.expense > 0 ? `支出 ${formatAmount(group.expense)}` : ''}
-                  {group.income > 0 ? `${group.expense > 0 ? ' · ' : ''}收入 ${formatAmount(group.income)}` : ''}
-                </ThemedText>
-              </View>
-              {group.items.map((item) => (
-                <View key={item.id} style={[styles.rowWrap, { borderTopColor: theme.backgroundSelected }]}>
-                  <TransactionListItem {...item} surface="page" onPress={() => onSelectTransaction(item.id)} />
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // 月份 chip 是这一段的第一块，跟上面标题条的距离由首页容器的 paddingTop 给，
+  // 所以它自己不带 marginTop
   monthRow: {
-    marginTop: 12,
-  },
-  content: {
-    // 跟节奏条布局同一个数：切换布局时内容不该左右跳一下
-    paddingHorizontal: ScreenPadding,
-    paddingTop: 12,
-    paddingBottom: Spacing.six,
+    flexDirection: 'row',
   },
   ringWrap: {
     alignItems: 'center',
@@ -209,13 +168,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '700',
   },
-  ringFooter: {
-    marginTop: 10,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
-  },
-  // 换成"去设预算"的入口时外面包的是 View，不能共用上面那份（里面是文字样式）
+  // 换成"去设预算"的入口时外面包的是 View，所以这里只管间距、不放文字样式
   ringFooterLink: {
     marginTop: 10,
   },
@@ -269,33 +222,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 28,
     fontWeight: '700',
-  },
-  sectionTitle: {
-    fontSize: 17,
-    lineHeight: 24,
-    marginTop: 20,
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 14,
-    paddingBottom: 6,
-  },
-  dayLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  daySummary: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
-  },
-  // 账单行直接铺在页面底色上，靠一条上边线分隔，没有卡片
-  rowWrap: {
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
