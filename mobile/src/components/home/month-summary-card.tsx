@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
-import { Spacing } from '@/constants/theme';
+import { CardRadius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
 
@@ -65,7 +65,7 @@ export function MonthSummaryCard({ monthLabel, expense, income, balance }: Month
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: CardRadius,
     padding: 18,
   },
   label: {

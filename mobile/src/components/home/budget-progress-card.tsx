@@ -6,6 +6,7 @@ import { PaceBar } from '@/components/ui/pace-bar';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import type { BudgetPace } from '@/hooks/use-home-view-data';
+import { CardRadius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatCurrency } from '@/utils/format';
 
@@ -115,7 +116,7 @@ export function BudgetProgressCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: CardRadius,
     paddingTop: 18,
     paddingHorizontal: 20,
   },
@@ -168,8 +169,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    // 这两个必须跟卡本身同一个数：只改一个，卡的下沿会露出一个直角
+    borderBottomLeftRadius: CardRadius,
+    borderBottomRightRadius: CardRadius,
   },
   footerItem: {
     flex: 1,

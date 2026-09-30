@@ -7,10 +7,10 @@ import { ScreenBottomInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * 列表末尾那颗「编辑布局」。
+ * 列表末尾那颗「编辑」。
  *
- * 文案跟「我的 → 首页布局」和导航栏标题**用同一个词**：两个入口去的是同一个地方，
- * 叫两个名字（"排版" / "布局"）会让人以为是两件事。
+ * 只写「编辑」两个字，不写「编辑布局」：那一页现在管两件事——上下两段各用哪种画法，
+ * 以及账单列表看多长一段。写死其中一件会让人以为另一件不在里面。
  *
  * **它同时就是底部留白本身**，外层高度写死 `ScreenBottomInset`，所以首页的内容容器
  * 不要再给 `paddingBottom`——否则 64 会变成 128，尾巴拖出一大段空。
@@ -19,7 +19,7 @@ import { useTheme } from '@/hooks/use-theme';
  * 并且水平居中，这颗按钮也是水平居中的，两个都在中轴线上。留在 36 以内，
  * 底下那 28 正好是给 ＋ 让的位置，两颗按钮不会叠在一起。
  *
- * 入口放在这儿而不是「我的 → 首页布局」里（那条也还在）：**要改的东西就在眼前**——
+ * 入口放在这儿而不是「我的 → 首页设置」里（那条也还在）：**要改的东西就在眼前**——
  * 一路划到底看完这一屏，正是最容易冒出"上半想换个样子"这个念头的时刻。
  * 它是路由不是弹层：换排版是去一个有自己地址的地方做的事，做完要能返回
  * （判断标准跟 components/ui/modal-host 顶上那条是同一条）。
@@ -35,7 +35,7 @@ export function HomeLayoutEditButton() {
         style={[styles.button, { backgroundColor: theme.backgroundElement }]}>
         <Ionicons name="options-outline" size={15} color={theme.cardHighlight} />
         <ThemedText type="small" themeColor="textSecondary">
-          编辑布局
+          编辑
         </ThemedText>
       </Pressable>
     </View>
@@ -47,6 +47,8 @@ const styles = StyleSheet.create({
     height: ScreenBottomInset,
     alignItems: 'center',
   },
+  // 圆角是高度的一半（全圆），不走 CardRadius：它是颗按钮不是张卡，
+  // 改 CardRadius 时这颗不该跟着变形（见 constants/theme 里那条）
   button: {
     height: 36,
     flexDirection: 'row',

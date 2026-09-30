@@ -53,6 +53,11 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   }
 }
 
+/**
+ * ⚠️ 目前没有调用方。首页原来用它取「近7天」，现在改成了 `useTransactionsInRange`——
+ * 那边的区间是用户可选的（7天/30天/本月/…），"固定往回数 N 天"只是其中一档。
+ * 先留着不删（连同 db 里的 `listRecentTransactions`），等核心功能做完一次性清。
+ */
 export function useRecentTransactions(days = 7) {
   return useQuery({
     queryKey: [...TRANSACTIONS_KEY, 'recent', days],

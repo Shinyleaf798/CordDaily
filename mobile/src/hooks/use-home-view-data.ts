@@ -1,7 +1,9 @@
+import { HomeRangeTitles, homeRangeBounds, type HomeRange } from '@/constants/home-range';
 import type { BudgetStatus } from '@/db/budgets';
 import type { MonthSummary, TransactionWithCategory } from '@/db/transactions';
 import { useBudgetStatus } from '@/hooks/use-budgets';
-import { useMonthSummary, useRecentTransactions } from '@/hooks/use-transactions';
+import { useMonthSummary, useTransactionsInRange } from '@/hooks/use-transactions';
+import { useHomeStore } from '@/store/home.store';
 import { groupTransactionsByDay, type DatedTransaction, type TransactionDayGroup } from '@/utils/transaction-view';
 
 // 「一行账单」和「按天分好的一堆」这两个形状全 App 共用一份（见 utils/transaction-view）。
@@ -33,6 +35,8 @@ export type HomeViewData = {
   dailyRemaining: number;
 
   dayGroups: HomeDayGroup[];
+  /** 账单那一段的标题，跟着用户选的区间走：近7天账单 / 本月账单 / 全部账单… */
+  billsTitle: string;
 };
 
 /**
@@ -47,11 +51,12 @@ export type HomeViewData = {
  */
 export function buildHomeViewData(input: {
   now: Date;
+  range: HomeRange;
   summary?: MonthSummary;
   budgetStatus?: BudgetStatus;
   recent?: TransactionWithCategory[];
 }): HomeViewData {
-  const { now, summary, budgetStatus, recent } = input;
+  const { now, range, summary, budgetStatus, recent } = input;
 
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysElapsed = now.getDate();
@@ -93,6 +98,7 @@ export function buildHomeViewData(input: {
     dailyAverage,
     dailyRemaining,
     dayGroups,
+    billsTitle: HomeRangeTitles[range],
   };
 }
 
@@ -103,11 +109,20 @@ export function buildHomeViewData(input: {
  * 三个查询各自独立缓存，记一笔之后由 invalidateAll 统一失效，这里不需要手动刷新。
  */
 export function useHomeViewData(): HomeViewData {
+  // 「看多长一段」直接在这里读，不从首页传进来：它只影响取数，
+  // 布局组件拿到的永远是一份算好的 HomeViewData，多一个 prop 只会让四个段组件都得转发它
+  const range = useHomeStore((s) => s.range);
+
   const { data: summary } = useMonthSummary();
   const { data: budgetStatus } = useBudgetStatus();
-  const { data: recent } = useRecentTransactions(7);
 
   // 每次渲染重新取"现在"，而不是模块加载时取一次：App 挂在后台过了零点再回来，
   // "今天/昨天"的分组标题和"这个月已经走了几天"都得跟着变
-  return buildHomeViewData({ now: new Date(), summary, budgetStatus, recent });
+  const now = new Date();
+  // 区间边界按天对齐（见 homeRangeBounds），所以同一天内反复渲染拿到的是同一个 start，
+  // React Query 的 key 不会因为"现在"差了几毫秒就变一个，缓存照样命中
+  const { start, end } = homeRangeBounds(range, now);
+  const { data: recent } = useTransactionsInRange(start, end);
+
+  return buildHomeViewData({ now, range, summary, budgetStatus, recent });
 }

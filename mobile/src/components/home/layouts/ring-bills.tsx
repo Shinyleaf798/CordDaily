@@ -14,11 +14,11 @@ export function RingBills({ data, onSelectTransaction }: HomeBillsProps) {
 
   return (
     <View>
-      <BillsSectionTitle />
+      <BillsSectionTitle title={data.billsTitle} />
 
       {data.dayGroups.length === 0 ? (
         <ThemedText type="default" themeColor="textSecondary" style={styles.empty}>
-          最近还没有账单，点底部的 + 记一笔吧。
+          这一段还没有账单，点底部的 + 记一笔吧。
         </ThemedText>
       ) : (
         data.dayGroups.map((group) => (

@@ -5,7 +5,7 @@ import { MonthChip } from '@/components/home/month-chip';
 import { EditBudgetLink, SetBudgetLink } from '@/components/home/set-budget-link';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ScreenPadding } from '@/constants/theme';
+import { CardRadius, ScreenPadding } from '@/constants/theme';
 import type { HomeTopProps } from '@/components/home/layouts/types';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     flexDirection: 'row',
-    borderRadius: 18,
+    borderRadius: CardRadius,
     paddingVertical: 14,
     marginTop: 18,
   },
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
   },
   miniCard: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: CardRadius,
     paddingHorizontal: 16,
     paddingVertical: 14,
     gap: 4,

@@ -15,7 +15,7 @@ import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories
 import { getCloudSession } from '@/db/neon/session';
 import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
-import { useHomeLayoutStore } from '@/store/home-layout.store';
+import { useHomeStore } from '@/store/home.store';
 import { useThemeStore } from '@/store/theme.store';
 
 /**
@@ -52,9 +52,10 @@ export default function RootLayout() {
   const themeName = useThemeStore((s) => s.themeName);
   const hydrateTheme = useThemeStore((s) => s.hydrate);
 
-  // 首页布局偏好也要在首屏之前读出来，否则会先闪一下默认布局再跳成用户选的那套
-  const isHomeLayoutHydrated = useHomeLayoutStore((s) => s.isHydrated);
-  const hydrateHomeLayout = useHomeLayoutStore((s) => s.hydrate);
+  // 首页的显示偏好（两段各用哪种画法、账单看多长一段）也要在首屏之前读出来，
+  // 否则会先闪一下默认样子再跳成用户选的那套
+  const isHomeLayoutHydrated = useHomeStore((s) => s.isHydrated);
+  const hydrateHomeLayout = useHomeStore((s) => s.hydrate);
 
   const isHydrated = isAuthHydrated && isThemeHydrated && isHomeLayoutHydrated;
 
@@ -190,7 +191,7 @@ export default function RootLayout() {
                 现在「我的」页的功能网格直通目的地（见 components/settings/feature-grid.tsx） */}
             <Stack.Screen
               name="settings/home-layout"
-              options={{ ...ScreenTransitions.push, title: '首页布局' }}
+              options={{ ...ScreenTransitions.push, title: '首页设置' }}
             />
             <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />

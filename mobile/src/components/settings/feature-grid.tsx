@@ -43,7 +43,7 @@ const ENTRIES: Entry[] = [
   // 而且说得比一行 hint 更清楚。一件事在同一屏上交代两遍，留更好的那一遍
   { href: '/settings/cloud', icon: 'server-outline', label: '云端备份' },
   { href: '/settings/theme', icon: 'color-palette-outline', label: '主题' },
-  { href: '/settings/home-layout', icon: 'apps-outline', label: '首页布局' },
+  { href: '/settings/home-layout', icon: 'apps-outline', label: '首页设置' },
 ];
 
 export function FeatureGrid() {
