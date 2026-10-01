@@ -41,7 +41,9 @@ const ENTRIES: Entry[] = [
   // 进了网格只剩一个标签——但那份状态没丢：**紧挨着的备份卡就在说同一件事**
   // （连没连上、上次备份是什么时候、按钮是「备份」还是「去连接」），
   // 而且说得比一行 hint 更清楚。一件事在同一屏上交代两遍，留更好的那一遍
-  { href: '/settings/cloud', icon: 'server-outline', label: '云端备份' },
+  // 这一格去的是"填 Neon 连接串"那一页，不是备份本身。原来叫「云端备份」，
+  // 在「数据备份与恢复」出现之后就是两个名字抢同一件事——改叫「云端连接」，跟它实际做的事对齐
+  { href: '/settings/cloud', icon: 'server-outline', label: '云端连接' },
   { href: '/settings/theme', icon: 'color-palette-outline', label: '主题' },
   { href: '/settings/home-layout', icon: 'apps-outline', label: '首页设置' },
 ];

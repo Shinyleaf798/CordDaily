@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { Dimensions, FlatList, Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { TransactionDayCard } from '@/components/transaction/transaction-day-card';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
+import { TransactionMonthCard } from '@/components/transaction/transaction-month-card';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
@@ -52,7 +52,8 @@ type SearchOverlayProps = {
  *
  * **两种形态，由"有没有发起过搜索"切换**：
  * - 还没搜 → 面板里是「历史搜索」和「搜索建议」两组胶囊，下面透出首页
- * - 搜过了 → 面板换成结果（顶上一张合计卡 + 按天分组的明细），占满剩下的高度
+ * - 搜过了 → 面板换成结果（顶上一张合计卡 + **按月**分组的明细），占满剩下的高度
+ *   按月而不是按天：这是全 App 唯一一个结果可能横跨好几年的列表，见 TransactionMonthCard
  *
  * 「搜索建议」那一组不是关键词，是**筛选条**：点「仅支出」就是列出全部支出。
  * 它跟输入框是 AND 的关系，所以"在支出里找星巴克"是打字 + 点一下的组合，不用学语法。
@@ -196,20 +197,25 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
               </ThemedText>
             ) : (
               <FlatList
-                data={data.dayGroups}
+                data={data.monthGroups}
                 keyExtractor={(group) => group.key}
                 contentContainerStyle={styles.listContent}
                 keyboardShouldPersistTaps="handled"
                 ListHeaderComponent={
                   <ThemedView type="backgroundElement" style={styles.summary}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      找到 {data.count} 笔
-                    </ThemedText>
-                    <View style={styles.summaryTotals}>
-                      <ThemedText style={styles.summaryValue}>支出 {formatCurrency(data.expense)}</ThemedText>
-                      {data.income > 0 ? (
-                        <ThemedText style={styles.summaryValue}>收入 {formatCurrency(data.income)}</ThemedText>
-                      ) : null}
+                    {/* 笔数和金额**同一排**：它们回答的是同一个问题的两半（搜到了多少、一共多少钱），
+                        上下两行会读成两件事。字号也压下来——这是一条结果的注脚，
+                        不是页面标题，原来 16/700 的金额比底下每一行的金额还大 */}
+                    <View style={styles.summaryRow}>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        找到 {data.count} 笔
+                      </ThemedText>
+                      <View style={styles.summaryTotals}>
+                        <ThemedText style={styles.summaryValue}>支出 {formatCurrency(data.expense)}</ThemedText>
+                        {data.income > 0 ? (
+                          <ThemedText style={styles.summaryValue}>收入 {formatCurrency(data.income)}</ThemedText>
+                        ) : null}
+                      </View>
                     </View>
                     {/* 命中太多被截断时说一声。不做分页——再多打两个字比翻页快（见 searchTransactions） */}
                     {data.isTruncated ? (
@@ -221,7 +227,13 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
                 }
                 renderItem={({ item }) => (
                   <View style={styles.groupWrap}>
-                    <TransactionDayCard group={item} onSelect={setDetailId} />
+                    {/* 分节标题在卡**外面**，不在卡顶上。搜索结果是跨年的，
+                        这行字是读者在一长列里重新定位的锚点——压在卡里会跟着卡的底色一起
+                        变成"卡的一部分"，滚起来就不显眼了 */}
+                    <ThemedText type="small" themeColor="textSecondary" style={styles.monthHeading}>
+                      {item.label}
+                    </ThemedText>
+                    <TransactionMonthCard group={item} onSelect={setDetailId} />
                   </View>
                 )}
               />
@@ -367,23 +379,43 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.six,
   },
   summary: {
-    borderRadius: 16,
-    padding: 16,
+    // 跟底下的月份卡一样不收圆角，见 TransactionMonthCard 里那段
+    // 内距跟着字号一起收：一排字配 16 的内距会让这张卡看起来空了一半
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 6,
     marginBottom: 10,
   },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  // 收入这一项是例外，大多数搜索只有支出。真有两项时允许换行，
+  // 但不许挤掉左边那句「找到 N 笔」——那是这一排的主语
   summaryTotals: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 14,
+    justifyContent: 'flex-end',
+    gap: 12,
+    flexShrink: 1,
   },
   summaryValue: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   groupWrap: {
     marginBottom: 10,
+  },
+  // 标题和它底下那张卡贴紧（6），跟上一张卡拉开（groupWrap 的 10 之外再加 8）——
+  // 间距本身就该说清楚"这行字管的是下面那张卡"，不然读起来会挂到上一张卡的尾巴上
+  monthHeading: {
+    marginTop: 8,
+    marginBottom: 6,
+    marginLeft: 4,
+    fontWeight: '600',
   },
   empty: {
     paddingHorizontal: ScreenPadding,

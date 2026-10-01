@@ -15,17 +15,27 @@ import { useTheme } from '@/hooks/use-theme';
  *
  * 结果页的字段顺序**刻意跟预览一致**：用户上一屏刚读过一遍，下一屏原位置兑现，
  * 不用重新找。
+ *
+ * **清单只留 4 行：账单新增 / 账单跳过 / 分类新增 / 分类更新。**
+ * 「保留你改过的」「对齐到本地已有分类」「新增账户」「月预算」都撤了——它们**照做不误**，
+ * 只是不再占一行。撤的理由不是嫌长，是这四项**没有一个需要用户拿去核对**：
+ * 账户和预算是恢复的附带动作，分类的「保留」和「对齐」是算法内部的分支名，
+ * 用户既不认得也无从判断对错。摆成清单的样子，等于请人去验收四个他管不着的数。
+ * 真正要他知道的只有一件事——"我改过的会不会被盖掉"——那是下面那句话在说的，
+ * 一句人话比一个数字管用。
+ *
+ * 顺带也让这屏和「备份到云端」那屏对齐：那边是 2~5 行短标签，这边原来 8 行长标签，
+ * 两个按钮并排站在同一张卡上，点下去不该掉进两种密度的页面。
  */
 
 export function RestorePreview({ sourceLabel, plan }: { sourceLabel: string; plan: ImportPlan }) {
   const theme = useTheme();
   const created = plan.categories.filter((item) => item.action === 'create').length;
-  const matched = plan.categories.filter((item) => item.action === 'matched').length;
   // 本地已有、而且内容跟包里不一样的。差额（本地已有且完全相同的）不报——
   // 那些行恢复前后一个字都不变，写进清单只是一个恒为"无事发生"的数
   const updated = plan.categories.filter((item) => item.action === 'exists' && item.differs).length;
   // 你在这台手机上改过、还没备份的那些：恢复不动它们，下次推送会把本地那份送上去。
-  // 这里不区分"云端也改过没有"——对着一张恢复预览，用户要知道的就是"我的改动会不会没"
+  // 不进清单，只用来决定下面那句话怎么写——它不是一个要核对的数，是一句要读的提醒
   const kept = plan.categories.filter((item) => item.conflict).length;
 
   return (
@@ -50,10 +60,6 @@ export function RestorePreview({ sourceLabel, plan }: { sourceLabel: string; pla
         <Line label="已存在，跳过" value={String(plan.duplicateTransactions)} />
         <Line label="新增分类" value={`+ ${created}`} />
         <Line label="更新本地已有分类" value={String(updated)} />
-        <Line label="保留你改过的" value={String(kept)} />
-        <Line label="对齐到本地已有分类" value={String(matched)} />
-        <Line label="新增账户" value={`+ ${plan.newAccounts}`} />
-        <Line label="月预算" value={plan.budgetToRestore ? `恢复 ${plan.budgetToRestore}` : '不覆盖'} />
       </View>
 
       {/* 覆盖是这一步唯一会"改掉现有东西"的地方，必须说在按下确认之前。
@@ -84,9 +90,6 @@ export function RestoreResult({ result }: { result: ImportResult }) {
         <Line label="重复跳过" value={String(result.skipped)} />
         <Line label="新增分类" value={String(result.categories)} />
         <Line label="更新分类" value={String(result.categoriesUpdated)} />
-        <Line label="保留你改过的" value={String(result.categoriesKept)} />
-        <Line label="新增账户" value={String(result.accounts)} />
-        {result.budgetRestored ? <Line label="月预算已恢复" value={String(result.budgetRestored)} /> : null}
       </View>
 
       <ThemedText type="small" themeColor="textSecondary">

@@ -71,6 +71,16 @@ export function formatMonthDay(date: Date): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+/**
+ * 2026年8月。给"跨年的列表"当分节标题用——目前只有搜索结果。
+ *
+ * 跟 formatMonthKey（`2026-09`）分开：那个是给代码当 key 的，这个是给人看的。
+ * 两者混用的话，某天想把标题改成「2026/8」就会连 key 一起改掉，而 key 一变缓存就全丢。
+ */
+export function formatYearMonth(date: Date): string {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+}
+
 /** 把某一天和某个时刻拼起来。秒归零：记账精确到分就够了，秒只会让同一分钟内的两笔排序看着随机 */
 export function withTime(day: Date, hours: number, minutes: number): Date {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, 0, 0);

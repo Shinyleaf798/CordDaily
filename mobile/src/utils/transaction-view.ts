@@ -1,6 +1,6 @@
 import type { TransactionListItemData } from '@/components/transaction/transaction-list-item';
 import type { TransactionWithCategory } from '@/db/transactions';
-import { formatClockTime, formatDayGroupLabel, startOfDay } from '@/utils/date';
+import { formatClockTime, formatDayGroupLabel, formatMonthKey, formatYearMonth, startOfDay } from '@/utils/date';
 import { formatCategoryPath } from '@/utils/format';
 
 /**
@@ -24,6 +24,18 @@ export type TransactionDayGroup = {
   label: string;
   /** 副标签：主标签是相对说法时补具体日期，否则补星期 */
   subLabel: string;
+  items: DatedTransaction[];
+  expense: number;
+  income: number;
+};
+
+export type TransactionMonthGroup = {
+  /** `2026-08`。走 formatMonthKey，不是 toISOString 切片（东八区会错一天，见 utils/date.ts 顶上） */
+  key: string;
+  /** 这堆里最新的那笔的时间。排序和取年月都用它 */
+  date: Date;
+  /** 给人看的标题：`2026年8月` */
+  label: string;
   items: DatedTransaction[];
   expense: number;
   income: number;
@@ -82,5 +94,47 @@ export function groupTransactionsByDay(
       expense: items.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amountInBase, 0),
       income: items.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amountInBase, 0),
     }))
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+/**
+ * 按月归堆，新的月份在最前面。**只有搜索结果用它。**
+ *
+ * 别的页面（首页、日历、分类下钻、账单总览）看的都是一段连续的、自己挑的时间范围，
+ * 按天分卡最合适——那里每张卡回答的是"这一天花了多少"。
+ * 搜索不一样：搜「鸣潮」出来的 8 笔可能横跨 2024 到 2026，彼此隔着好几个月，
+ * 按天分就是 8 张各含一行的卡片，每张顶上还挂一条"当天小计"——
+ * 那个小计等于那一行本身，是个永远重复的数。按月归堆之后，分节标题自己就把年份说清楚了。
+ *
+ * 不给 label 传 now：这里**不要**"今天/昨天"那套相对说法。搜索结果是跨年的，
+ * 一屏里混着「今天」和「2024年7月」，读的人得在两种时间坐标之间来回切。
+ */
+export function groupTransactionsByMonth(
+  transactions: TransactionWithCategory[] | undefined,
+): TransactionMonthGroup[] {
+  const groups = new Map<string, DatedTransaction[]>();
+
+  for (const t of transactions ?? []) {
+    const item = toDatedTransaction(t);
+    const key = formatMonthKey(item.date);
+    const existing = groups.get(key);
+    if (existing) existing.push(item);
+    else groups.set(key, [item]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, items]) => {
+      // 堆里不保证有序（库返回的顺序由 SQL 决定），所以先按时间倒排，再拿第一条当这个月的代表
+      const sorted = [...items].sort((a, b) => b.date.getTime() - a.date.getTime());
+      return {
+        key,
+        date: sorted[0].date,
+        label: formatYearMonth(sorted[0].date),
+        items: sorted,
+        // 加的是 amountInBase，理由同 groupTransactionsByDay：一堆里可能混着 RM 和 J¥
+        expense: sorted.filter((t) => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amountInBase, 0),
+        income: sorted.filter((t) => t.type === 'INCOME').reduce((sum, t) => sum + t.amountInBase, 0),
+      };
+    })
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 }

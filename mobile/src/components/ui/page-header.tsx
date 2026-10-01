@@ -3,7 +3,6 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
 import { ScreenPadding, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 
 type PageHeaderProps = {
   title: string;
@@ -21,7 +20,16 @@ type PageHeaderProps = {
  *
  * 所以这里给它一个**写死的高度**：不管字号怎么改、右边挂不挂图标，这一条永远这么高。
  * 标题行 `ROW_HEIGHT` = pageTitle 的 lineHeight 34 + 上下各 5 的呼吸，也正好是触控目标的
- * 常规尺寸，以后右边真放按钮进来不用再调；底下再多铺一截 `COLOR_TAIL` 的纯色。
+ * 常规尺寸，以后右边真放按钮进来不用再调；底下再留一截 `COLOR_TAIL` 的内距。
+ *
+ * ## 它没有自己的底色
+ *
+ * 原来这一条铺 `backgroundElement`，比页面底色亮一级，于是四个 tab 页顶上都压着一块板。
+ * 那块板**什么都不负责**：它不滚动、不分隔两段内容、下面也没有需要被挡住的东西——
+ * 它只是让标题看起来像被装在一个容器里。去掉之后标题直接坐在页面底色上，
+ * 跟底下第一张卡片的关系由间距交代，而不是由两种底色交代。
+ *
+ * 高度一个像素没动：去掉的是颜色，不是那条 bar。
  *
  * ## 它钉在屏幕顶上，不在 ScrollView 里
  *
@@ -43,10 +51,8 @@ type PageHeaderProps = {
  * 它不认识任何业务概念（只有一个字符串和一个插槽），所以归 ui/ 而不是某个页面目录。
  */
 export function PageHeader({ title, right }: PageHeaderProps) {
-  const theme = useTheme();
-
   return (
-    <View style={[styles.header, { backgroundColor: theme.backgroundElement }]}>
+    <View style={styles.header}>
       <ThemedText type="pageTitle">{title}</ThemedText>
       {right}
     </View>
@@ -57,11 +63,11 @@ export function PageHeader({ title, right }: PageHeaderProps) {
 const ROW_HEIGHT = 44;
 
 /**
- * 色块在标题行**下面**多铺出来的一截。
+ * 标题行底下多留的一截。
  *
- * 是 padding 不是 margin：要的是「这条 bar 的底色多往下走一点」，
- * 不是「bar 和下面的内容之间多一条空白」。写成 margin 的话，
- * 深色主题里那段会是一条明显的黑带（页面底色），bar 看着反而更孤立了。
+ * 它本来是**色块**往下多铺的一段——那时这条 bar 自己有底色（backgroundElement），
+ * 多铺一点是为了让它和下面的内容别断得太硬。现在底色去掉了，这一截就只是内距，
+ * 留着是因为那点呼吸本身是对的，而且动它会让四个 tab 页的标题一起上移。
  */
 const COLOR_TAIL = Spacing.one;
 

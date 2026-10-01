@@ -200,8 +200,11 @@ const KIND_LABELS = { transaction: '账单', category: '分类', account: '账�
  * 备份完成那句话。只报**用户认得的东西**——账单、自己建的分类和账户、转账、周期规则，
  * 内置分类那一批不提（理由跟上面清单里不列它们是同一条）。
  * 一条都没动时给一句话而不是一串 0：那说明云端本来就是最新的。
+ *
+ * **导出去给「数据备份与恢复」页用**：那一页在没有待删除项时直接跑备份、不开这一层，
+ * 但两条路跑完都该说同一句话。留在这个文件里是因为它描述的是这张确认层承诺的口径。
  */
-function describePush(result: PushResult): string {
+export function describePush(result: PushResult): string {
   // 从云端下来的东西排在最前面：这次备份里唯一**改变了这台手机**的事，
   // 用户抬头就该看见，而不是在一串上传数字后面找
   const pulled = [

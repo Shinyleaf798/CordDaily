@@ -195,6 +195,11 @@ export default function RootLayout() {
             />
             <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
+            {/* 「我的 → 数据备份与恢复」。备份卡和「数据」那一组整个搬进来了（见那一页顶上那段） */}
+            <Stack.Screen
+              name="settings/backup"
+              options={{ ...ScreenTransitions.push, title: '数据备份与恢复' }}
+            />
             <Stack.Screen name="settings/auto-sync" options={{ ...ScreenTransitions.push, title: '自动同步' }} />
             <Stack.Screen name="settings/cloud" options={{ ...ScreenTransitions.push, title: '云端备份' }} />
             <Stack.Screen name="settings/currency" options={{ ...ScreenTransitions.push, title: '货币汇率' }} />

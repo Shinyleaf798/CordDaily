@@ -43,6 +43,34 @@
 - 功能规格、API 接口列表、认证流程、页面结构见 `docs/PROJECT-PLAN.md`，数据表的精确定义（字段类型、默认值、关系）以 `backend/prisma/schema.prisma` 为准——改动数据库结构或加新功能前先更新 PROJECT-PLAN，再动代码
 - 每个关键接口/模块完成后，附一句注释说明设计意图
 
+## 打包 Android
+
+`mobile/android/` 是 `expo prebuild` 生成的，在 .gitignore 里。所有构建期的约定都写成了
+config plugin（`mobile/plugins/with-release-signing.js`），手改 `android/` 下的文件会被下次
+`prebuild --clean` 悄悄抹掉。
+
+```bash
+# 正式包（签名 + ARM-only）
+cd mobile/android && JAVA_HOME="<Android Studio>/jbr" ./gradlew.bat assembleRelease
+# 产物：mobile/android/app/build/outputs/apk/release/app-release.apk
+
+# 装模拟器（模拟器是 x86_64，正式包装不进去）
+cd mobile/android && JAVA_HOME="<Android Studio>/jbr" ./gradlew.bat assembleDebug -PreactNativeArchitectures=x86_64
+```
+
+四条容易踩的：
+
+- **不要手动加 x86 架构**。插件把 `reactNativeArchitectures` 锁成 `armeabi-v7a,arm64-v8a`。
+  默认那四套里 x86/x86_64 占约 50 MB，而**只有模拟器用得上**——市面上没有 x86 的 Android 手机。
+  剔掉之后整包从约 116 MB 降到约 67 MB
+- **JDK 必须 17+**。这台机器 PATH 上第一个 `java` 是 Java 8，RN 0.86 跑不了，所以每条命令都要显式
+  指 `JAVA_HOME` 到 Android Studio 自带的 JBR（本机：`G:\Programming\Android Studio\jbr`）
+- **改了图标、启动图、app.json 才需要 prebuild**，改 JS/TS 不用——打包时会重新 bundle。
+  注意 `prebuild` 即使不加 `--clean` 也会清掉 `android/`，等于每次都是完整构建
+- **签名证书在 `mobile/credentials/*.jks`，四个密码在 `~/.gradle/gradle.properties`**，两样都不进 git。
+  没配凭证时 release 会**静默退回 debug 证书**（见插件注释）——发版前用
+  `apksigner verify --print-certs` 确认 DN 是 `CN=CordDaily`
+
 ## 目录结构
 
 ```

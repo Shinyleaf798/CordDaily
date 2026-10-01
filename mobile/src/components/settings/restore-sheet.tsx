@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { RestorePreview, RestoreResult } from '@/components/settings/restore-summary';
 import { ModalHost } from '@/components/ui/modal-host';
@@ -73,6 +73,9 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 「还在读那份包」：三个结果（计划 / 已恢复 / 出错）一个都还没到手
+  const isLoading = !plan && !result && !error;
+
   const handleConfirm = async () => {
     if (!plan) return;
     setError(null);
@@ -86,8 +89,6 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
     if (applied) setResult(applied);
   };
 
-  const isLoading = !plan && !result && !error;
-
   // 写库的这几秒把整层换成状态卡：恢复是往库里成批写东西，中途放手会留下写了一半的状态。
   // 失败时关掉它退回预览，用户可以直接再点一次确认
   if (task.state) {
@@ -99,19 +100,29 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
     );
   }
 
+  /**
+   * **读取阶段也用同一张锁住的状态卡**，而不是在弹层里放一个转圈。
+   *
+   * 原来这几秒是显示在普通 ModalSheet 里的——那层点遮罩能关掉，于是"正在读取云端"
+   * 可以被划走，而那次请求还在飞；回来之后 setState 落在一个已经不在屏幕上的组件里。
+   * 更要紧的是用户这时候分不清自己关掉的是"一个还没开始的操作"还是"一个跑了一半的操作"。
+   *
+   * 读取本身是只读的、放手不会弄坏数据，但**跟写入用同一张画面**才讲得通：
+   * 从按下按钮到看见预览，中间只有一张转圈卡、全程点不动，这是一段完整的等待。
+   * 两段用不同的规矩（前半段能划走、后半段不能）才是真正让人困惑的地方。
+   */
+  if (isLoading) {
+    return (
+      <ModalHost visible onRequestClose={() => undefined}>
+        <TaskDialog state={{ status: 'running', message: `正在读取${sourceLabel}…` }} onDismiss={() => {}} />
+      </ModalHost>
+    );
+  }
+
   return (
     <ModalHost visible animation="none" onRequestClose={() => sheet.close()}>
       <ModalSheet title={result ? '恢复完成' : `从${sourceLabel}恢复`} transition={sheet}>
         <ScrollView contentContainerStyle={styles.body}>
-          {isLoading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={theme.cardHighlight} />
-              <ThemedText type="small" themeColor="textSecondary">
-                正在读取{sourceLabel}…
-              </ThemedText>
-            </View>
-          ) : null}
-
           {result ? <RestoreResult result={result} /> : null}
           {!result && plan ? <RestorePreview sourceLabel={sourceLabel} plan={plan} /> : null}
 
@@ -148,6 +159,5 @@ export function RestoreSheet({ sourceLabel, load, source, onDismiss }: RestoreSh
 
 const styles = StyleSheet.create({
   body: { gap: Spacing.three, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
-  loading: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.five },
   primary: { height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 });

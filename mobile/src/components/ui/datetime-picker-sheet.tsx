@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ModalHost } from '@/components/ui/modal-host';
@@ -23,6 +23,25 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 const TIME_ITEM_WIDTH = 44;
 
 /**
+ * 日历当前展开到哪一层。点顶部那行标题往上钻一层，点格子往下落一层。
+ *
+ * **年之后回到日，而不是停在年**：停住的话顶部那行就变成一个点了没反应的按钮——
+ * 这个弹层里别的地方（时间 chip、确定）点下去都有事发生，唯独它没有，很容易被当成坏了。
+ * 转一圈回到日，代价只是多点一下，但永远有反馈。
+ */
+type Level = 'day' | 'month' | 'year';
+const NEXT_LEVEL: Record<Level, Level> = { day: 'month', month: 'year', year: 'day' };
+
+/**
+ * 年视图一页 12 个，排成跟月视图一样的 3×4。
+ *
+ * 页的起点**对齐到今年**（今年落在最后一格），而不是按绝对数分块（`Math.floor(y / 12) * 12`）：
+ * 记账翻年几乎总是往回翻，让今年待在视野里、往前铺满 11 年，比"今年卡在某一页中间的
+ * 随机位置"好找。翻页仍然是整 12 年一跳，来回翻不会错位。
+ */
+const YEARS_PER_PAGE = 12;
+
+/**
  * 从底部升起的日期 + 时间选择器。自己画而不是用 @react-native-community/datetimepicker：
  * 那个是系统原生控件，iOS 和 Android 长得完全不一样，也不吃这个 App 的主题色板——
  * 在一屏自定义配色的记账界面里弹出一个系统灰的转轮，观感上像是走错了 App。
@@ -30,6 +49,13 @@ const TIME_ITEM_WIDTH = 44;
  * **改成「草稿 + 确定」而不是点一天就关**：加了时间之后，点一天立刻关闭就没机会再调时分了，
  * 而"先调时间再点日子"这种隐含的操作顺序没人猜得到。现在整个弹层只改一个草稿值，
  * 按确定才生效，先点哪个都一样。
+ *
+ * **顶部标题是一个往上钻的入口**：日 → 月 → 年。补记半年前的账要按 6 次上一月，
+ * 补记前年的要按 20 多次；钻到年视图两下就到。左右箭头在每一层都管用，
+ * 只是步长跟着层级变（一个月 / 一年 / 12 年）。
+ *
+ * 往上钻**不改草稿值**，只改"现在在看哪儿"——跟左右箭头是同一类操作。
+ * 真正定下日期的只有点某一天那一下，所以从年视图一路点回来，最后还是得落在一个日子上。
  *
  * 底部一行左边是时间、右边是确定：时间是这一层里唯一的第二个变量，
  * 放在跟确定同一行、隔开两端，既不会被当成日历的一部分，也不会被漏看。
@@ -41,9 +67,10 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
   // 0.8：日历 + 时间带比别的弹层高。这个比例同时决定了起始位移，所以只在这里写一次
   const sheet = useSheetTransition(onDismiss, 0.8);
 
-  // 草稿：日期和时间都改这一个值。翻月份不算改值，所以单独存
+  // 草稿：日期和时间都改这一个值。翻月份和切层级都不算改值，所以单独存
   const [draft, setDraft] = useState(value);
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(value.getFullYear(), value.getMonth(), 1));
+  const [level, setLevel] = useState<Level>('day');
   const [isTimeOpen, setIsTimeOpen] = useState(false);
 
   const today = startOfDay(new Date());
@@ -54,28 +81,48 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const leadingBlanks = new Date(year, month, 1).getDay();
 
-  /**
-   * 切成一周一行的二维数组。
-   *
-   * 原来是一个 flexWrap 容器 + 每格 width: '14.2857%'，那样在某些屏宽上会**排不下 7 列**：
-   * 1/7 是无限小数，每格四舍五入到整数像素之后 7 格加起来可能超过容器宽度，
-   * 第七格就被挤到下一行——表头会变成"日一二三四五 / 六"，整张日历跟着错位。
-   * 一周一个真的 row + 每格 flex: 1 就没有这个问题，剩余像素由 flex 自己分。
-   */
-  const weeks = useMemo(() => {
-    const cells: (number | null)[] = [
-      ...Array.from({ length: leadingBlanks }, () => null),
-      ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-    ];
-    // 补齐最后一周：不补的话那一行只有两三格，flex: 1 会把它们摊开占满整行
-    while (cells.length % 7 !== 0) cells.push(null);
-    return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
-  }, [leadingBlanks, daysInMonth]);
+  // 当前这一页年份的起点，见 YEARS_PER_PAGE 上面那段
+  const todayYear = today.getFullYear();
+  const yearPageAnchor = todayYear - (YEARS_PER_PAGE - 1);
+  const yearPageStart = yearPageAnchor + Math.floor((year - yearPageAnchor) / YEARS_PER_PAGE) * YEARS_PER_PAGE;
 
-  const shiftMonth = (delta: number) => setVisibleMonth(new Date(year, month + delta, 1));
+  // 日视图那几周。算法在组件外面（见 buildWeeks）
+  const weeks = buildWeeks(leadingBlanks, daysInMonth);
 
-  // 换日子只换年月日，时分原样留着——反过来也一样，两个维度互不干扰
-  const pickDay = (day: Date) => setDraft(withTime(day, draft.getHours(), draft.getMinutes()));
+  // 月/年视图那 12 格。算法在组件外面（见 buildPadRows）
+  const padRows = buildPadRows({
+    level,
+    draftYear: draft.getFullYear(),
+    draftMonth: draft.getMonth(),
+    todayYear,
+    todayMonth: today.getMonth(),
+    year,
+    month,
+    yearPageStart,
+  });
+
+  // 左右箭头的步长跟着层级走：一个月 / 一年 / 一页 12 年
+  const shift = (delta: number) => {
+    if (level === 'day') setVisibleMonth(new Date(year, month + delta, 1));
+    else if (level === 'month') setVisibleMonth(new Date(year + delta, month, 1));
+    else setVisibleMonth(new Date(year + delta * YEARS_PER_PAGE, month, 1));
+  };
+
+  const headerLabel =
+    level === 'day'
+      ? `${year}年${month + 1}月`
+      : level === 'month'
+        ? `${year}年`
+        : `${yearPageStart}-${yearPageStart + YEARS_PER_PAGE - 1}`;
+
+  // 换日子只换年月日，时分原样留着——反过来也一样，两个维度互不干扰。
+  // 顺带把日历翻到这一天所在的月并落回日视图：快捷 chip 和年/月视图都可能让"选中的日子"
+  // 不在当前这一屏，不跟过去的话点完看起来像没反应
+  const pickDay = (day: Date) => {
+    setDraft(withTime(day, draft.getHours(), draft.getMinutes()));
+    setVisibleMonth(new Date(day.getFullYear(), day.getMonth(), 1));
+    setLevel('day');
+  };
   const pickTime = (hours: number, minutes: number) => setDraft(withTime(draft, hours, minutes));
 
   const quickPicks = [
@@ -108,54 +155,93 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
           </View>
 
           <View style={styles.monthRow}>
-            <Pressable onPress={() => shiftMonth(-1)} hitSlop={12} style={styles.monthArrow}>
+            <Pressable onPress={() => shift(-1)} hitSlop={12} style={styles.monthArrow}>
               <Ionicons name="chevron-back" size={20} color={theme.textSecondary} />
             </Pressable>
-            <ThemedText type="default">
-              {year}年{month + 1}月
-            </ThemedText>
-            <Pressable onPress={() => shiftMonth(1)} hitSlop={12} style={styles.monthArrow}>
+            {/* 整块标题可点，不只是那行字：一行字的点击区在手指尺度上太窄。
+                带一个图标是因为"标题能点"这件事没有任何别的提示 */}
+            <Pressable
+              onPress={() => setLevel(NEXT_LEVEL[level])}
+              hitSlop={8}
+              style={[styles.levelChip, level !== 'day' && { backgroundColor: theme.background }]}>
+              <ThemedText type="default">{headerLabel}</ThemedText>
+              <Ionicons
+                name={level === 'year' ? 'chevron-down' : 'chevron-expand'}
+                size={14}
+                color={theme.textSecondary}
+              />
+            </Pressable>
+            <Pressable onPress={() => shift(1)} hitSlop={12} style={styles.monthArrow}>
               <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
             </Pressable>
           </View>
 
-          <View style={styles.week}>
-            {WEEKDAYS.map((label) => (
-              <View key={label} style={styles.cell}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {label}
-                </ThemedText>
+          {level === 'day' ? (
+            <>
+              <View style={styles.week}>
+                {WEEKDAYS.map((label) => (
+                  <View key={label} style={styles.cell}>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {label}
+                    </ThemedText>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
 
-          {weeks.map((week, weekIndex) => (
-            <View key={weekIndex} style={styles.week}>
-              {week.map((day, dayIndex) => {
-                // null = 月初之前或月末之后的补位，占着格子不画东西
-                if (day === null) return <View key={dayIndex} style={styles.cell} />;
+              {weeks.map((week, weekIndex) => (
+                <View key={weekIndex} style={styles.week}>
+                  {week.map((day, dayIndex) => {
+                    // null = 月初之前或月末之后的补位，占着格子不画东西
+                    if (day === null) return <View key={dayIndex} style={styles.cell} />;
 
-                const date = new Date(year, month, day);
-                const isSelected = isSameDay(date, draft);
-                const isToday = isSameDay(date, today);
-                // 未来的日期不拦：预付了下个月的房租、提前记一笔，都是真实存在的用法
-                return (
-                  <Pressable key={dayIndex} onPress={() => pickDay(date)} style={styles.cell}>
+                    const date = new Date(year, month, day);
+                    const isSelected = isSameDay(date, draft);
+                    const isToday = isSameDay(date, today);
+                    // 未来的日期不拦：预付了下个月的房租、提前记一笔，都是真实存在的用法
+                    return (
+                      <Pressable key={dayIndex} onPress={() => pickDay(date)} style={styles.cell}>
+                        <View
+                          style={[
+                            styles.dayCircle,
+                            isSelected && { backgroundColor: theme.cardHighlight },
+                            !isSelected && isToday && { borderWidth: 1, borderColor: theme.cardHighlight },
+                          ]}>
+                          <ThemedText type="small" style={isSelected ? { color: theme.onCardHighlight } : undefined}>
+                            {day}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </>
+          ) : (
+            padRows.map((row, rowIndex) => (
+              <View key={rowIndex} style={styles.week}>
+                {row.map((item) => (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => {
+                      setVisibleMonth(new Date(item.targetYear, item.targetMonth, 1));
+                      setLevel(item.nextLevel);
+                    }}
+                    style={styles.padCell}>
                     <View
                       style={[
-                        styles.dayCircle,
-                        isSelected && { backgroundColor: theme.cardHighlight },
-                        !isSelected && isToday && { borderWidth: 1, borderColor: theme.cardHighlight },
+                        styles.padChip,
+                        item.isSelected && { backgroundColor: theme.cardHighlight },
+                        !item.isSelected && item.isCurrent && { borderWidth: 1, borderColor: theme.cardHighlight },
                       ]}>
-                      <ThemedText type="small" style={isSelected ? { color: theme.onCardHighlight } : undefined}>
-                        {day}
+                      <ThemedText type="small" style={item.isSelected ? { color: theme.onCardHighlight } : undefined}>
+                        {item.label}
                       </ThemedText>
                     </View>
                   </Pressable>
-                );
-              })}
-            </View>
-          ))}
+                ))}
+              </View>
+            ))
+          )}
 
           {isTimeOpen ? (
             <View style={styles.timeStrips}>
@@ -190,6 +276,101 @@ export function DateTimePickerSheet({ value, onSelect, onDismiss }: DateTimePick
       </ModalSheet>
     </ModalHost>
   );
+}
+
+/**
+ * 把一个月切成一周一行的二维数组。null = 月初之前或月末之后的补位。
+ *
+ * 原来是一个 flexWrap 容器 + 每格 width: '14.2857%'，那样在某些屏宽上会**排不下 7 列**：
+ * 1/7 是无限小数，每格四舍五入到整数像素之后 7 格加起来可能超过容器宽度，
+ * 第七格就被挤到下一行——表头会变成"日一二三四五 / 六"，整张日历跟着错位。
+ * 一周一个真的 row + 每格 flex: 1 就没有这个问题，剩余像素由 flex 自己分。
+ *
+ * **原来这是组件里的一个 useMemo，加了层级切换之后搬了出来**：它现在只在日视图那条分支里用，
+ * 条件化之后 React Compiler 保不住那个手写的记忆化，于是**整个组件放弃优化**。
+ * 搬成纯函数，编译器不用再推断谁依赖谁，组件回到可优化状态。
+ */
+function buildWeeks(leadingBlanks: number, daysInMonth: number): (number | null)[][] {
+  const cells: (number | null)[] = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  // 补齐最后一周：不补的话那一行只有两三格，flex: 1 会把它们摊开占满整行
+  while (cells.length % 7 !== 0) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+}
+
+type PadCell = {
+  key: string;
+  label: string;
+  isSelected: boolean;
+  isCurrent: boolean;
+  /** 点下去落到哪个月、哪一层 */
+  targetYear: number;
+  targetMonth: number;
+  nextLevel: Level;
+};
+
+/**
+ * 月视图和年视图共用的 12 格。两层只有"格子上写什么、点下去跳哪儿"不一样，
+ * 布局完全相同，所以算成同一种结构再交给同一段 JSX 画。
+ *
+ * 跟 weeks 一样切成每行 3 个的二维数组、每格 flex: 1，不用 flexWrap + 33.33%——
+ * 百分比排不下的那个坑在 3 列上一样存在。
+ *
+ * **写在组件外面、只收数字**：留在组件里的话，无论包不包 useMemo，React Compiler
+ * （app.json 里 reactCompiler 是开着的）都会判定这段的记忆化"保不住"，
+ * 然后**放弃优化整个组件**——连旁边那个本来好好的 weeks 一起。
+ * 搬出来之后它就是个纯函数，编译器不用再推断，组件也回到可优化状态。
+ */
+function buildPadRows({
+  level,
+  draftYear,
+  draftMonth,
+  todayYear,
+  todayMonth,
+  year,
+  month,
+  yearPageStart,
+}: {
+  level: Level;
+  draftYear: number;
+  draftMonth: number;
+  todayYear: number;
+  todayMonth: number;
+  year: number;
+  month: number;
+  yearPageStart: number;
+}): PadCell[][] {
+  if (level === 'day') return [];
+
+  const cells: PadCell[] =
+    level === 'month'
+      ? Array.from({ length: 12 }, (_, i) => ({
+          key: `m${i}`,
+          label: `${i + 1}月`,
+          // 高亮的是草稿所在的那个月，所以得先同年才算
+          isSelected: draftYear === year && draftMonth === i,
+          isCurrent: todayYear === year && todayMonth === i,
+          targetYear: year,
+          targetMonth: i,
+          nextLevel: 'day',
+        }))
+      : Array.from({ length: YEARS_PER_PAGE }, (_, i) => {
+          const cellYear = yearPageStart + i;
+          return {
+            key: `y${cellYear}`,
+            label: String(cellYear),
+            isSelected: draftYear === cellYear,
+            isCurrent: todayYear === cellYear,
+            // 落到年视图选中的那年，月份沿用当前在看的，少跳一下
+            targetYear: cellYear,
+            targetMonth: month,
+            nextLevel: 'month',
+          };
+        });
+
+  return Array.from({ length: cells.length / 3 }, (_, r) => cells.slice(r * 3, r * 3 + 3));
 }
 
 /**
@@ -267,6 +448,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // 钻进月/年视图时给标题一个底色：这时候它既是标题又是"回到日视图"的唯一出口
+  levelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    height: 36,
+    borderRadius: 10,
+    paddingHorizontal: Spacing.two,
+  },
   week: {
     flexDirection: 'row',
   },
@@ -281,6 +471,21 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // 月/年视图 4 行 × 56 ≈ 日视图 6 行 × 40 + 表头，切层级时弹层高度不会明显跳
+  padCell: {
+    flex: 1,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  padChip: {
+    minWidth: 72,
+    height: 40,
+    borderRadius: 12,
+    paddingHorizontal: Spacing.two,
     alignItems: 'center',
     justifyContent: 'center',
   },
