@@ -47,9 +47,26 @@ const LABEL_LINE = 18;
  * 所以 ROW_GAP 不需要再给一大截。
  */
 const ITEM_HEIGHT = CIRCLE_SIZE + Spacing.one + LABEL_LINE * 2;
+/**
+ * 同一格但标签只占一行时的高度。**只有二级面板用它。**
+ *
+ * 主网格用不了：`openPanel` 要靠 `ITEM_HEIGHT` 反算面板该落在第几行下面
+ * （见那里的 top 计算），行高必须是个常数，不能由内容决定。
+ * 而面板底下不挂任何东西，它的格子多高都不影响别人，所以可以按内容收。
+ */
+const ITEM_HEIGHT_ONE_LINE = CIRCLE_SIZE + Spacing.one + LABEL_LINE;
 const ROW_GAP = Spacing.one;
 const COLUMNS = 5;
 const ARROW_SIZE = 8;
+
+/**
+ * 面板整体再往下挪多少。
+ *
+ * 不把它揉进下面那个 top 表达式里：那串算的是「被点那一行的下边缘在窗口哪个位置」，
+ * 是个有确切含义的量，掺进一个凭手感调的数之后就没人说得清它到底在算什么了。
+ * 想调远近只动这一个常量，上面那串不用再看。
+ */
+const PANEL_TOP_OFFSET = Spacing.three;
 
 /** 面板在窗口里的落点，由被点那一格反算出来 */
 type PanelAnchor = { parentId: string; top: number; left: number; width: number; arrowLeft: number };
@@ -83,7 +100,7 @@ export function CategoryGrid({ categories, selectedId, onSelect, onSettingsPress
       const columnWidth = width / COLUMNS;
       setAnchor({
         parentId,
-        top: y + (row + 1) * (ITEM_HEIGHT + ROW_GAP) - ROW_GAP / 2,
+        top: y + (row + 1) * (ITEM_HEIGHT + ROW_GAP) - ROW_GAP / 2 + PANEL_TOP_OFFSET,
         left: x,
         width,
         // 小三角对准被点那一格的中线，回答"这是谁的子分类"
@@ -190,9 +207,11 @@ function SubcategoryPanel({ anchor, options, selectedId, onSelect, onDismiss }: 
                 icon={<CategoryIcon icon={entry.icon} size={ICON_SIZE} />}
                 label={entry.name}
                 selected={entry.id === selectedId}
+                autoHeight
                 onPress={() => onSelect(entry.id)}
               />
             )),
+            true,
           )}
         </View>
       </View>
@@ -205,16 +224,27 @@ type IconCellProps = {
   label: string;
   selected: boolean;
   hasChildren?: boolean;
+  /**
+   * 高度跟着标签走，而不是永远留两行。
+   *
+   * 两行是为「Crash of Clan」这种名字留的，但绝大多数名字只有两三个字，
+   * 于是每一格底下都空着一行——面板里只有一两行格子时，这段空白占到了面板的三分之一，
+   * 看起来就像面板底下多了一条没内容的边。
+   *
+   * 开了之后：一行的名字收到一行的高度，真有长名字的那一格照样撑到两行，
+   * 同一排的其他格子跟着它一起长（row 默认 stretch），图标仍然对齐。
+   */
+  autoHeight?: boolean;
   onPress: () => void;
 };
 
 // 选中的圆必须是独立的空 View：Android 上带圆角的容器只要有子元素溢出边界
 // （就是右下角那颗 -2 的点），圆角会失效变方块——A/B 实测过，别挪回容器上
-function IconCell({ icon, label, selected, hasChildren, onPress }: IconCellProps) {
+function IconCell({ icon, label, selected, hasChildren, autoHeight, onPress }: IconCellProps) {
   const theme = useTheme();
 
   return (
-    <Pressable onPress={onPress} style={styles.item}>
+    <Pressable onPress={onPress} style={[styles.item, autoHeight ? styles.itemAuto : styles.itemFixed]}>
       <View style={styles.iconSlot}>
         {/* 选中圈从中性灰换成主题强调色的淡染：原来它跟右下角那颗「可展开」的点同色，
             两个意思不同的东西长得一样。opacity 就是深浅的旋钮，越大越深 */}
@@ -250,13 +280,15 @@ function IconCell({ icon, label, selected, hasChildren, onPress }: IconCellProps
  * 5 格加起来会超过容器宽度，第 5 格被挤到下一行——表现就是"一行只剩 4 个"。
  * 日历那边 1/7 踩过同一个坑。flex 分的是剩余像素，不存在舍入溢出。
  */
-function toRows(cells: ReactNode[]): ReactNode[] {
+function toRows(cells: ReactNode[], autoHeight = false): ReactNode[] {
   const rows: ReactNode[] = [];
   for (let i = 0; i < cells.length; i += COLUMNS) {
     const row = cells.slice(i, i + COLUMNS);
-    // 补齐最后一行：不补的话那行只有两三格，flex: 1 会把它们摊开占满整行
+    // 补齐最后一行：不补的话那行只有两三格，flex: 1 会把它们摊开占满整行。
+    // 补位格子的高度必须跟真格子同一种——拿固定高度去补一行自适应的格子，
+    // 那一行会被这个看不见的空 View 顶回两行高，等于白改
     const padding = Array.from({ length: COLUMNS - row.length }, (_, k) => (
-      <View key={`__pad${k}`} style={styles.item} />
+      <View key={`__pad${k}`} style={[styles.item, autoHeight ? styles.itemAuto : styles.itemFixed]} />
     ));
     rows.push(
       <View key={i} style={styles.row}>
@@ -289,9 +321,16 @@ const styles = StyleSheet.create({
   },
   item: {
     flex: 1,
-    height: ITEM_HEIGHT,
     alignItems: 'center',
     gap: Spacing.one,
+  },
+  // 主网格：写死。面板要靠它算落点，见 ITEM_HEIGHT 上面那段
+  itemFixed: {
+    height: ITEM_HEIGHT,
+  },
+  // 二级面板：给个一行标签的下限，长名字换行时自己往下长
+  itemAuto: {
+    minHeight: ITEM_HEIGHT_ONE_LINE,
   },
   // 图标、选中圆、右下角那颗点三者共同的定位参照。自己不画任何东西，也不能有 borderRadius
   iconSlot: {

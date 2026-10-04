@@ -730,9 +730,12 @@ export type SuggestionField = 'title' | 'merchant' | 'location';
 export type FieldSuggestion = {
   value: string;
   /**
-   * 上一次用这个值记账时选的分类。点一条历史就顺带把分类也选上——
+   * 这条建议对应的分类。点一条历史就顺带把分类也选上——
    * 「在这家店买的东西属于哪一类」「写『加油』时记的是哪一类」这些答案上次已经给过了，
    * 没道理每次都重问一遍。这是把店名做成独立字段（而不是塞进备注自由文本）最主要的实际回报。
+   *
+   * **一条建议 = 一个「值 + 分类」的组合**，不是「一个值 + 它最近一次的分类」。
+   * 同一个标题用在不同分类上就是几条独立建议，见下面 suggestFieldValues 的 GROUP BY。
    */
   categoryId: string | null;
 };
@@ -745,10 +748,19 @@ export type FieldSuggestion = {
  * **按收支类型过滤**：记支出时不该弹出收入的历史；更要紧的是跟着回来的 categoryId——
  * 拿一个收入分类去选中支出的网格，那一格根本不存在。
  *
- * `categoryId` 是个**裸列**（既不在 GROUP BY 里，也没套聚合函数）。这在标准 SQL 里非法，
- * 但 SQLite 有一条明确的特例：查询里正好只有一个 min()/max() 聚合时，裸列取的是
- * **命中那个极值的那一行**的值。所以配上 MAX(date)，拿到的就是"最近一次用这个值时选的分类"。
- * COUNT(*) 不影响这条规则（它既不是 min 也不是 max）。
+ * **按「值 + 分类」分组，不是只按值。**
+ *
+ * 只按值分组时，同一个标题用在几个分类上会被折叠成一条，而那条只能带一个分类——
+ * 于是「月卡」这种跨游戏通用的名字（鸣潮、崩坏铁道、Crash of Clan 各记过几笔）
+ * 只会给出最近用过的那个游戏，另外两个在浮层里根本出不来。而用户打「月卡」时
+ * 想要的恰恰是"这几个里挑一个"，分类正是用来区分它们的那一维。
+ *
+ * 带上 categoryId 之后，「月卡」拆成三条各带各的游戏，点哪条就填哪个分类。
+ * 代价是条数变多，所以 suggestion-popup 那边的 MAX_ITEMS 一起放宽了。
+ *
+ * 副产品：categoryId 进了 GROUP BY 就不再是裸列，这段 SQL 也不用再依赖
+ * SQLite「只有一个 min()/max() 时裸列取极值那一行」的方言特例。
+ * MAX(date) 留着只为排序（同样常用的两条，最近用过的排前面）。
  */
 export async function suggestFieldValues(
   field: SuggestionField,
@@ -765,7 +777,7 @@ export async function suggestFieldValues(
      WHERE type = ?
        AND ${field} IS NOT NULL AND ${field} != ''
        AND (? = '' OR ${field} LIKE ? ESCAPE '\\')
-     GROUP BY value COLLATE NOCASE
+     GROUP BY value COLLATE NOCASE, categoryId
      ORDER BY uses DESC, lastUsed DESC
      LIMIT ?`,
     [type, trimmed, `%${escapeLike(trimmed)}%`, limit],

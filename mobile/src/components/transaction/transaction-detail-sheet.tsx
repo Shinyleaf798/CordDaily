@@ -40,11 +40,9 @@ export function TransactionDetailSheet({ transactionId, onDismiss }: Transaction
   const sheet = useSheetTransition(onDismiss, 0.65);
 
   const handleEdit = () => {
-    // 先关弹层再跳页：Modal 是独立原生窗口，还开着就导航的话会浮在记账表单上面
-    sheet.close(() => {
-      onDismiss();
-      router.push({ pathname: '/add', params: { id: transactionId } });
-    });
+    // 先关弹层再跳页：Modal 是独立原生窗口，还开着就导航的话会浮在记账表单上面。
+    // 卸载由 close 自己负责（见 useSheetTransition），这里只管跳
+    sheet.close(() => router.push({ pathname: '/add', params: { id: transactionId } }));
   };
 
   const handleDuplicate = () => {

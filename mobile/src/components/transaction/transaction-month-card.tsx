@@ -4,6 +4,7 @@ import { TransactionListItem } from '@/components/transaction/transaction-list-i
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { useTheme } from '@/hooks/use-theme';
+import { isSameDay } from '@/utils/date';
 import type { TransactionMonthGroup } from '@/utils/transaction-view';
 
 type TransactionMonthCardProps = {
@@ -36,24 +37,47 @@ export function TransactionMonthCard({ group, onSelect }: TransactionMonthCardPr
 
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
-      {group.items.map((item, index) => (
-        <View key={item.id}>
-          {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} /> : null}
-          {/* 整行可点，包括左边那列日期——日期是这一行的一部分，不是旁边的装饰。
-              行内不再给 TransactionListItem 传 onPress，否则日期那一列会变成行里唯一点不动的地方 */}
-          <Pressable onPress={() => onSelect(item.id)} style={styles.row}>
-            <View style={styles.dayGutter}>
-              <ThemedText style={styles.dayNumber}>{item.date.getDate()}</ThemedText>
-              <ThemedText themeColor="textSecondary" style={styles.dayMonth}>
-                {item.date.getMonth() + 1}月
-              </ThemedText>
-            </View>
-            <View style={styles.itemFill}>
-              <TransactionListItem {...item} surface="card" />
-            </View>
-          </Pressable>
-        </View>
-      ))}
+      {group.items.map((item, index) => {
+        const previous = group.items[index - 1];
+        /**
+         * 同一天的第二笔起，日期那一列留空。
+         *
+         * 日期回答的是「这一行属于哪天」，一天记了四笔就印四个一样的数字时，
+         * 那一列就从信息变成了噪音——而且是**最大最粗**的那个噪音，
+         * 盖过了这几行里真正在变的东西（时间、分类、金额）。空着反而更清楚：
+         * 没有日期 = 跟上一行同一天，这是账本列表的通行读法，不用学。
+         *
+         * 只跟**前一条**比就够：items 在 groupTransactionsByMonth 里已经按时间倒排，
+         * 同一天的行必定相邻。要是哪天那个排序没了，这里会退化成"每行都显示"——
+         * 是原来的样子，不会错乱。
+         */
+        const showDay = !previous || !isSameDay(item.date, previous.date);
+
+        return (
+          <View key={item.id}>
+            {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} /> : null}
+            {/* 整行可点，包括左边那列日期——日期是这一行的一部分，不是旁边的装饰。
+                行内不再给 TransactionListItem 传 onPress，否则日期那一列会变成行里唯一点不动的地方 */}
+            <Pressable onPress={() => onSelect(item.id)} style={styles.row}>
+              {/* 不显示时这一列照样占着 DAY_GUTTER_WIDTH 的宽：
+                  宽度由样式给，不是被里面的字撑出来的，所以右边那坨内容不会往左跳 */}
+              <View style={styles.dayGutter}>
+                {showDay ? (
+                  <>
+                    <ThemedText style={styles.dayNumber}>{item.date.getDate()}</ThemedText>
+                    <ThemedText themeColor="textSecondary" style={styles.dayMonth}>
+                      {item.date.getMonth() + 1}月
+                    </ThemedText>
+                  </>
+                ) : null}
+              </View>
+              <View style={styles.itemFill}>
+                <TransactionListItem {...item} surface="card" />
+              </View>
+            </Pressable>
+          </View>
+        );
+      })}
     </ThemedView>
   );
 }

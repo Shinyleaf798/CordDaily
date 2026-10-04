@@ -29,7 +29,10 @@ type SuggestionPopupProps = {
 };
 
 /** 一次最多列几条。浮层是盖在分类网格上的，列太多等于把整页挡住 */
-const MAX_ITEMS = 3;
+// 建议按「值 + 分类」分组之后条数会变多：光一个「月卡」就能占三条（鸣潮 / 崩坏铁道 / CoC）。
+// 还卡在 3 的话，这三条会把「异环月卡」这类同样匹配的值整个挤出去——
+// 而用户打「月卡」想看到的就是"有哪几种选择"。查询那边 limit 本来就是 5，这里对齐
+const MAX_ITEMS = 5;
 
 const FIELD_LABEL: Record<SuggestionField, string> = {
   title: '历史主题',

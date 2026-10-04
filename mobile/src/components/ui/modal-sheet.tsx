@@ -13,16 +13,17 @@ export type SheetTransition = {
   backdropOpacity: Animated.Value;
   maxHeightRatio: number;
   /**
-   * 播完出场动画再执行 run（默认是 onDismiss）。重复调用只认第一次。
+   * 播完出场动画再卸载弹层。`run` 是**附加**动作（选中了什么、要跳哪一页），
+   * 不是 onDismiss 的替代品——两个都会执行，onDismiss 在前。重复调用只认第一次。
    *
-   * **传了 run 就等于顶掉了默认的 onDismiss**，所以 run 里必须自己把弹层卸载掉
-   * （`sheet.close(() => { onSelect(x); onDismiss(); })`，或者让调用方的 onSelect 顺手
-   * 把那个 state 关掉——后者是全 App 现有的写法，见 transaction-form 里那几个 picker）。
+   * 这里原本是「传了 run 就顶掉 onDismiss」，于是每个调用方都得记得在自己的回调里
+   * 把弹层那个 state 关掉。漏一次的代价极不成比例：动画照常播完、遮罩淡到全透明，
+   * 但组件还挂着 → RN 的 Modal 仍然 visible → 一层**看不见的全屏窗口吃掉所有触摸**；
+   * 同时 isClosing 已置位，点遮罩、按返回键都在第一行 return。
+   * 屏幕上什么都没变，却什么都点不动——而且看不出是哪一层在挡。
    *
-   * 漏了会**整屏卡死**，而且看不出是卡在哪：动画照常播完，遮罩淡到全透明，
-   * 但组件还挂着 → RN 的 Modal 还是 visible → 一层看不见的全屏窗口吃掉所有触摸；
-   * 与此同时 isClosing 已经置位，再点遮罩、再按返回键都会在第一行就 return。
-   * 于是屏幕上什么都没变，却什么都点不动了。
+   * 这个坑在「添加币种」上真的踩中了（加完整页卡死），另有两处 router.push 同样漏了。
+   * 与其在九个调用点各自记得补一句，不如让这一层自己保证——少一个必须记住的约定。
    */
   close: (run?: () => void) => void;
 };
@@ -66,7 +67,11 @@ export function useSheetTransition(onDismiss: () => void, maxHeightRatio = 0.6):
         }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
       ]).start(() => {
-        (run ?? onDismiss)();
+        // 先卸载再跑 run：run 里常是 router.push，而 Modal 是独立原生窗口，
+        // 还开着就导航会让它浮在新页面上面。两句都是同步的，onDismiss 触发的重渲染
+        // 不会打断下一行
+        onDismiss();
+        run?.();
       });
     },
     [translateY, backdropOpacity, offscreen, onDismiss],

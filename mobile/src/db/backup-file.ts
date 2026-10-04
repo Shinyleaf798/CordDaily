@@ -1,4 +1,3 @@
-import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
@@ -59,19 +58,29 @@ export async function exportToFile(format: ExportFormat, range: BackupRange = {}
 
 export type PickedFile = { name: string; text: string };
 
-/** 让用户挑一个备份文件。取消返回 null——那是正常操作，不是错误 */
+/**
+ * 让用户挑一个备份文件。取消返回 null——那是正常操作，不是错误。
+ *
+ * **用 expo-file-system 自带的 picker，不用 expo-document-picker。** 后者在 Android 上会把
+ * 选中的文件拷进 `cacheDir/DocumentPicker/`，再交给我们 `new File(file://...)` 去读——
+ * 而新版 FileSystem 对 `file://` 路径要查权限：`FilePermissionService` 只放行
+ * `filesDir` / `cacheDir`，但那个类是 `open` 的，**Expo Go 继承它之后收窄到了自己那个
+ * scoped experience 目录**，裸 cacheDir 就落在作用域外，于是报
+ * 「Missing 'READ' permission for accessing the file」。这个错只在 Expo Go 里出现，
+ * 用 dev build 装的同一份代码不会——所以很容易误判成模拟器的权限没开。
+ *
+ * `File.pickFileAsync()` 返回的是 SAF 的 `content://` uri，而 `checkPermission` 对
+ * content uri 是直接放行的（不走路径校验那一支），两种运行方式下都读得到。
+ *
+ * 不传 `mimeTypes` 就是不限类型：很多文件管理器把 .json 报成 text/plain 或
+ * application/octet-stream，限死之后用户会发现自己的备份文件是灰的、点不了。
+ * 格式对不对交给 parseBundle 判断，那里给得出「这个文件不是 CordDaily 的备份」这种能看懂的话。
+ */
 export async function pickBackupFile(): Promise<PickedFile | null> {
-  const result = await DocumentPicker.getDocumentAsync({
-    // 不限死 application/json：很多文件管理器把 .json 报成 text/plain 或 application/octet-stream，
-    // 限死之后用户会发现自己的备份文件是灰的、点不了。格式对不对交给 parseBundle 判断，
-    // 那里给得出「这个文件不是 CordDaily 的备份」这种能看懂的话
-    type: '*/*',
-    copyToCacheDirectory: true,
-  });
+  // multipleFiles: false 是为了锁住重载——不传参数会落到那个已废弃的 (initialUri, mimeType) 签名上
+  const picked = await File.pickFileAsync({ multipleFiles: false });
+  if (picked.canceled) return null;
 
-  if (result.canceled || !result.assets?.length) return null;
-
-  const asset = result.assets[0];
-  const file = new File(asset.uri);
-  return { name: asset.name ?? file.name, text: await file.text() };
+  const file = picked.result;
+  return { name: file.name, text: await file.text() };
 }
