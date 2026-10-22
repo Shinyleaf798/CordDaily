@@ -3,11 +3,13 @@ import { useState } from 'react';
 import { Dimensions, FlatList, Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BatchEditSheet } from '@/components/search/batch-edit-sheet';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
 import { TransactionMonthCard } from '@/components/transaction/transaction-month-card';
 import { ModalHost } from '@/components/ui/modal-host';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
+import { Toast, useToast } from '@/components/ui/toast';
 import { ScreenPadding, Spacing } from '@/constants/theme';
 import { SearchFilterLabels, type SearchFilter } from '@/db/transactions';
 import { useClearSearchHistory, useRecordSearch, useSearchHistory } from '@/hooks/use-search-history';
@@ -67,6 +69,13 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
   const [submitted, setSubmitted] = useState('');
   const [filter, setFilter] = useState<SearchFilter | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  /**
+   * 勾选模式（批量修改）。null = 没在勾选，Set = 正在勾、勾了这些。
+   * 用一个可空的集合而不是「isSelecting + 集合」两个 state：后者能构造出"没在勾选、却勾着三笔"这种状态
+   */
+  const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
+  const [isBatchEditing, setIsBatchEditing] = useState(false);
+  const toast = useToast();
 
   const data = useSearchViewData(submitted, filter);
   const { data: history } = useSearchHistory();
@@ -74,6 +83,21 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
   const clearHistory = useClearSearchHistory();
 
   const historyList = history ?? [];
+  // 只算**还在结果里**的那几笔：勾完之后列表可能重查过（比如刚改完名字，它们不再匹配这个词），
+  // 拿着已经不在眼前的 id 去改，等于改了用户看不见的账
+  const selectedRows = selectedIds ? data.results.filter((t) => selectedIds.has(t.id)) : [];
+  const isAllSelected = data.count > 0 && selectedRows.length === data.count;
+
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      if (!prev) return prev;
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () => setSelectedIds(isAllSelected ? new Set() : new Set(data.results.map((t) => t.id)));
   const panelMaxHeight = Dimensions.get('window').height * PANEL_MAX_HEIGHT_RATIO;
 
   const submit = (value: string) => {
@@ -83,6 +107,8 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
 
     setKeyword(trimmed);
     setSubmitted(trimmed);
+    // 换了一批结果，上一批里勾的就不作数了
+    setSelectedIds(null);
     Keyboard.dismiss();
     if (trimmed) recordSearch.mutate(trimmed);
   };
@@ -93,6 +119,7 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
     const value = filter === next ? null : next;
     setFilter(value);
     setSubmitted(keyword.trim());
+    setSelectedIds(null);
     Keyboard.dismiss();
   };
 
@@ -100,6 +127,7 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
     setKeyword('');
     setSubmitted('');
     setFilter(null);
+    setSelectedIds(null);
   };
 
   return (
@@ -178,16 +206,30 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
           <View style={[styles.results, { backgroundColor: theme.background }]}>
             {/* 选中的筛选条要一直看得见：结果只有三条的时候，人第一个想问的是
                 "是真的只有三条，还是我刚才点了什么"。这一行就是那个答案 */}
-            {filter ? (
+            {filter || data.count > 0 ? (
               <View style={styles.activeFilterRow}>
-                <Pressable
-                  onPress={() => toggleFilter(filter)}
-                  style={[styles.activeFilter, { backgroundColor: theme.cardHighlight }]}>
-                  <ThemedText style={[styles.activeFilterText, { color: theme.onCardHighlight }]}>
-                    {SearchFilterLabels[filter]}
-                  </ThemedText>
-                  <Ionicons name="close" size={13} color={theme.onCardHighlight} />
-                </Pressable>
+                {filter ? (
+                  <Pressable
+                    onPress={() => toggleFilter(filter)}
+                    style={[styles.activeFilter, { backgroundColor: theme.cardHighlight }]}>
+                    <ThemedText style={[styles.activeFilterText, { color: theme.onCardHighlight }]}>
+                      {SearchFilterLabels[filter]}
+                    </ThemedText>
+                    <Ionicons name="close" size={13} color={theme.onCardHighlight} />
+                  </Pressable>
+                ) : null}
+                {/* 批量修改的入口。放在结果顶上而不是每行长按：长按要靠猜，
+                    而"先搜出来、再一起改"这件事本身就是从这一排开始的 */}
+                {data.count > 0 ? (
+                  <Pressable
+                    onPress={() => setSelectedIds(selectedIds ? null : new Set())}
+                    hitSlop={8}
+                    style={styles.selectToggle}>
+                    <ThemedText type="small" style={[styles.selectToggleText, { color: theme.cardHighlight }]}>
+                      {selectedIds ? '取消' : '选择'}
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
               </View>
             ) : null}
 
@@ -233,11 +275,42 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
                     <ThemedText type="small" themeColor="textSecondary" style={styles.monthHeading}>
                       {item.label}
                     </ThemedText>
-                    <TransactionMonthCard group={item} onSelect={setDetailId} />
+                    <TransactionMonthCard
+                      group={item}
+                      onSelect={selectedIds ? toggleSelected : setDetailId}
+                      selectedIds={selectedIds ?? undefined}
+                    />
                   </View>
                 )}
               />
             )}
+
+            {/* 勾选模式的底栏：全选、数量、修改。钉在结果区底部，滚到哪都够得着 */}
+            {selectedIds ? (
+              <SafeAreaView
+                edges={['bottom']}
+                style={[styles.selectBar, { backgroundColor: theme.backgroundElement }]}>
+                <Pressable onPress={toggleSelectAll} hitSlop={8}>
+                  <ThemedText type="small" style={{ color: theme.cardHighlight }}>
+                    {isAllSelected ? '取消全选' : '全选'}
+                  </ThemedText>
+                </Pressable>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.selectCount}>
+                  已选 {selectedRows.length} 笔
+                </ThemedText>
+                <Pressable
+                  onPress={() => setIsBatchEditing(true)}
+                  disabled={selectedRows.length === 0}
+                  style={[
+                    styles.selectAction,
+                    { backgroundColor: theme.cardHighlight, opacity: selectedRows.length > 0 ? 1 : 0.4 },
+                  ]}>
+                  <ThemedText type="small" style={[styles.selectActionText, { color: theme.onCardHighlight }]}>
+                    修改
+                  </ThemedText>
+                </Pressable>
+              </SafeAreaView>
+            ) : null}
           </View>
         ) : (
           // 还没搜的时候，面板底下压着的首页要能看见（这一层是抽屉不是页面），
@@ -251,6 +324,20 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
       {detailId ? (
         <TransactionDetailSheet transactionId={detailId} onDismiss={() => setDetailId(null)} />
       ) : null}
+
+      {/* 同上，也得挂在搜索层里面 */}
+      {isBatchEditing ? (
+        <BatchEditSheet
+          transactions={selectedRows}
+          onDismiss={() => setIsBatchEditing(false)}
+          onDone={(count) => {
+            setSelectedIds(null);
+            toast.show(`已修改 ${count} 笔`);
+          }}
+        />
+      ) : null}
+
+      <Toast toast={toast.toast} onHide={toast.clear} />
     </ModalHost>
   );
 }
@@ -360,6 +447,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: ScreenPadding,
     paddingBottom: 8,
+  },
+  selectToggle: {
+    marginLeft: 'auto',
+    paddingVertical: 6,
+  },
+  selectToggleText: {
+    fontWeight: '600',
+  },
+  selectBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: ScreenPadding,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  selectCount: {
+    flex: 1,
+  },
+  selectAction: {
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  selectActionText: {
+    fontWeight: '700',
   },
   activeFilter: {
     flexDirection: 'row',

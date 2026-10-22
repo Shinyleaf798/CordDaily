@@ -8,6 +8,7 @@ import { AccountPickerSheet } from '@/components/add-transaction/account-picker-
 import { AmountKeypad } from '@/components/add-transaction/amount-keypad';
 import { CategoryGrid, type CategoryGridItem } from '@/components/add-transaction/category-grid';
 import { CurrencyPickerSheet } from '@/components/add-transaction/currency-picker-sheet';
+import { RepeatPickerSheet } from '@/components/add-transaction/repeat-picker-sheet';
 import { SuggestionPopup, type SuggestionCategory } from '@/components/add-transaction/suggestion-popup';
 import { TransactionNoteFields, type FieldAnchor } from '@/components/add-transaction/transaction-note-fields';
 import { TransactionOptionsRow } from '@/components/add-transaction/transaction-options-row';
@@ -19,10 +20,12 @@ import { BASE_CURRENCY, getCurrency } from '@/constants/currencies';
 import { Spacing } from '@/constants/theme';
 import { isPickable } from '@/db/categories';
 import { convertToBase, toBaseRate } from '@/db/exchange-rates';
+import { anchorFor, describeRepeat, type RepeatSetting } from '@/db/recurring';
 import type { SuggestionField, TransactionDetail } from '@/db/transactions';
 import { useAccounts, useLastUsedAccountId } from '@/hooks/use-accounts';
 import { useCategories } from '@/hooks/use-categories';
 import { getPerBaseRate, useExchangeRates } from '@/hooks/use-exchange-rates';
+import { useCreateRecurringRule } from '@/hooks/use-recurring';
 import { useCreateTransaction, useUpdateTransaction } from '@/hooks/use-transactions';
 import { useKeyboardHeight } from '@/hooks/use-keyboard-height';
 import { useTheme } from '@/hooks/use-theme';
@@ -173,10 +176,18 @@ export function TransactionForm({ initial }: TransactionFormProps) {
   const [excludeFromStats, setExcludeFromStats] = useState(initial?.excludeFromStats ?? false);
   // 同一时刻最多开一个选择器，所以存"哪个开着"而不是两个 boolean——
   // 两个 boolean 就存在"两个都为 true"这种本不该存在的状态
-  const [openSheet, setOpenSheet] = useState<'date' | 'account' | 'currency' | null>(null);
+  const [openSheet, setOpenSheet] = useState<'date' | 'account' | 'currency' | 'repeat' | null>(null);
+  /**
+   * 选了「重复」（频率 + 每周几 / 每月几号），保存时这一笔照常记上，同时建一条周期规则
+   * （见 db/recurring.ts 的 createRecurringRule）。
+   * **只在记新的一笔时有**：改一笔旧账时把它变成规则，那条规则的起点是一个过去的日子，
+   * 保存那一刻会把中间欠的几个月全补出来——这种副作用不该藏在"改一下备注"这个动作后面
+   */
+  const [repeat, setRepeat] = useState<RepeatSetting | null>(null);
+  const createRecurring = useCreateRecurringRule();
 
   const isEditing = !!initial;
-  const mutation = isEditing ? updateTransaction : createTransaction;
+  const mutation = isEditing ? updateTransaction : repeat ? createRecurring : createTransaction;
 
   // 默认值按这个顺序退：手动选的 → 上次记账用的 → 列表第一个。
   // （改账单时不用再单独兜一层：pickedAccountId 的初始值就是 initial.accountId）
@@ -349,6 +360,26 @@ export function TransactionForm({ initial }: TransactionFormProps) {
 
     if (initial) {
       updateTransaction.mutate({ ...payload, id: initial.id }, { onSuccess });
+    } else if (repeat) {
+      createRecurring.mutate(
+        {
+          rule: {
+            title: payload.title,
+            remarks: payload.remarks,
+            amount: payload.amount,
+            currency: payload.currency,
+            exchangeRate: payload.exchangeRate,
+            type: payload.type,
+            frequency: repeat.frequency,
+            // 规则的锚点是选的那个日子，不一定是这一笔的日期（22 号记这一笔、规则是每月 1 号）
+            startDate: anchorFor(repeat, date).toISOString(),
+            categoryId: payload.categoryId,
+            accountId: payload.accountId,
+          },
+          first: payload,
+        },
+        { onSuccess },
+      );
     } else {
       createTransaction.mutate(payload, { onSuccess });
     }
@@ -446,6 +477,8 @@ export function TransactionForm({ initial }: TransactionFormProps) {
             onReimbursableChange={handleReimbursableChange}
             excludeFromStats={excludeFromStats}
             onExcludeFromStatsChange={setExcludeFromStats}
+            repeatLabel={repeat ? describeRepeat(repeat) : null}
+            onRepeatPress={isEditing ? undefined : () => setOpenSheet('repeat')}
             onCameraPress={() => {
               // TODO(dummy data): 接 Cloudinary 客户端直传后开放拍照/选图，当前只是 UI 占位
               console.log('camera pressed (todo: Cloudinary upload)');
@@ -522,6 +555,18 @@ export function TransactionForm({ initial }: TransactionFormProps) {
           selectedCode={currency}
           onSelect={(code) => {
             selectCurrency(code);
+            setOpenSheet(null);
+          }}
+          onDismiss={() => setOpenSheet(null)}
+        />
+      ) : null}
+
+      {openSheet === 'repeat' ? (
+        <RepeatPickerSheet
+          selected={repeat}
+          reference={date}
+          onSelect={(setting) => {
+            setRepeat(setting);
             setOpenSheet(null);
           }}
           onDismiss={() => setOpenSheet(null)}

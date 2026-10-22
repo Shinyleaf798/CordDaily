@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { TransactionListItem } from '@/components/transaction/transaction-list-item';
@@ -10,6 +11,12 @@ import type { TransactionMonthGroup } from '@/utils/transaction-view';
 type TransactionMonthCardProps = {
   group: TransactionMonthGroup;
   onSelect: (id: string) => void;
+  /**
+   * 传了就是**勾选模式**（搜索结果的批量修改）：每行左边多一个勾，点一行是勾上/取消，
+   * 不再打开详情。onSelect 照常收到被点的那个 id，切换由调用方做——选中集合归搜索层管，
+   * 因为「全选」和「批量修改」都在卡片外面
+   */
+  selectedIds?: ReadonlySet<string>;
 };
 
 /** 日期那一列的宽度。固定值而不是让内容自己撑：两位数的 30 和一位数的 4 要左边对齐 */
@@ -17,6 +24,7 @@ const DAY_GUTTER_WIDTH = 32;
 const CARD_PADDING = 16;
 const ICON_WIDTH = 38;
 const COLUMN_GAP = 12;
+const CHECK_WIDTH = 22;
 
 /**
  * 「一个月 = 一张卡」。**只有搜索结果用这个形状。**
@@ -32,8 +40,9 @@ const COLUMN_GAP = 12;
  * **没有月度小计。** 搜索页顶上那张汇总卡报的是"这次搜索一共多少钱"，
  * 那才是用户搜完想知道的数；每个月再报一次，会让人以为要把它们加起来对一遍。
  */
-export function TransactionMonthCard({ group, onSelect }: TransactionMonthCardProps) {
+export function TransactionMonthCard({ group, onSelect, selectedIds }: TransactionMonthCardProps) {
   const theme = useTheme();
+  const isSelecting = !!selectedIds;
 
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
@@ -55,10 +64,26 @@ export function TransactionMonthCard({ group, onSelect }: TransactionMonthCardPr
 
         return (
           <View key={item.id}>
-            {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} /> : null}
+            {index > 0 ? (
+              <View
+                style={[
+                  styles.divider,
+                  { backgroundColor: theme.backgroundSelected },
+                  // 勾选模式下文字整体右移了一列勾，分隔线的起点跟着挪，不然会切过勾和日期
+                  isSelecting ? { marginLeft: DIVIDER_INSET + CHECK_WIDTH + COLUMN_GAP } : null,
+                ]}
+              />
+            ) : null}
             {/* 整行可点，包括左边那列日期——日期是这一行的一部分，不是旁边的装饰。
                 行内不再给 TransactionListItem 传 onPress，否则日期那一列会变成行里唯一点不动的地方 */}
             <Pressable onPress={() => onSelect(item.id)} style={styles.row}>
+              {isSelecting ? (
+                <Ionicons
+                  name={selectedIds.has(item.id) ? 'checkbox' : 'square-outline'}
+                  size={CHECK_WIDTH}
+                  color={selectedIds.has(item.id) ? theme.cardHighlight : theme.textSecondary}
+                />
+              ) : null}
               {/* 不显示时这一列照样占着 DAY_GUTTER_WIDTH 的宽：
                   宽度由样式给，不是被里面的字撑出来的，所以右边那坨内容不会往左跳 */}
               <View style={styles.dayGutter}>
@@ -81,6 +106,9 @@ export function TransactionMonthCard({ group, onSelect }: TransactionMonthCardPr
     </ThemedView>
   );
 }
+
+/** 分隔线从文字开始：16 内距 + 32 日期 + 12 + 38 图标 + 12（勾选模式再加一列勾，见上面） */
+const DIVIDER_INSET = CARD_PADDING + DAY_GUTTER_WIDTH + COLUMN_GAP + ICON_WIDTH + COLUMN_GAP;
 
 const styles = StyleSheet.create({
   // 不收圆角。按天分卡时圆角是必要的——那种卡一天一张、一屏好几个，
@@ -119,6 +147,6 @@ const styles = StyleSheet.create({
   // 这里多了一列日期，所以缩进也多一段：16 内距 + 32 日期 + 12 + 38 图标 + 12
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: CARD_PADDING + DAY_GUTTER_WIDTH + COLUMN_GAP + ICON_WIDTH + COLUMN_GAP,
+    marginLeft: DIVIDER_INSET,
   },
 });

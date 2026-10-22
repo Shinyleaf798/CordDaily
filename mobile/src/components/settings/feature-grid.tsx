@@ -32,9 +32,8 @@ const ENTRIES: Entry[] = [
   { href: '/categories', icon: 'grid-outline', label: '分类管理' },
   { href: '/accounts', icon: 'card-outline', label: '账户' },
   { href: '/set-budget', icon: 'cash-outline', label: '预算' },
-  // href 为 null = 还没做的位。压暗留着而不是删掉，是因为它在规格文档里已经是既定功能，
-  // 空着能让人一眼看出"这里以后有东西"，比某天突然多出一格好
-  { href: null, icon: 'repeat-outline', label: '周期记账' },
+  // 只管理（暂停/删除），新建在记账页上点「重复」（见 app/recurring.tsx 顶上那段）
+  { href: '/recurring', icon: 'repeat-outline', label: '周期记账' },
 
   { href: '/settings/currency', icon: 'swap-horizontal-outline', label: '货币汇率' },
   // 从下面「数据」那一组挪上来的。原来那一行带着状态（已连接 / 待登录 + 一句说明），

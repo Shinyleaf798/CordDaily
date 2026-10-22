@@ -4,11 +4,12 @@ import { Stack } from 'expo-router/js-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { AppState, LogBox } from 'react-native';
 
 import { RestorePrompt } from '@/components/settings/restore-prompt';
 import { ScreenTransitions } from '@/constants/screen-transitions';
 import { ThemeScheme } from '@/constants/theme';
+import { generateDueAndRefresh } from '@/hooks/use-recurring';
 import { useTheme } from '@/hooks/use-theme';
 import { seedDefaultAccounts } from '@/db/accounts';
 import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories';
@@ -97,6 +98,21 @@ export default function RootLayout() {
     })();
   }, [isHydrated, user]);
 
+  // 周期记账的补生成（CLAUDE.md 原则#4）：启动跑一次，**每次回到前台再跑一次**。
+  // 只在启动跑的话，一个一直挂在后台的 App 跨过月初也不会记上那笔月费——
+  // 手机上的 App 很少真的被杀掉重开。runDueRecurring 自己防重入，两头同时触发也只跑一份
+  useEffect(() => {
+    if (!isHydrated) return;
+    const run = () => generateDueAndRefresh(queryClient).catch(() => {
+      // 生成失败不该挡住任何东西：规则和 nextRunDate 都没动，下次打开接着补
+    });
+    run();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') run();
+    });
+    return () => subscription.remove();
+  }, [isHydrated]);
+
   // 根视图底色：整棵 React 树后面那块原生窗口，启动图收掉到首屏之间、透明屏底下会露出来。
   // 它在 Android 上默认是白的，黑色主题下不设就闪一下刺眼的白。
   useEffect(() => {
@@ -181,6 +197,12 @@ export default function RootLayout() {
             />
             {/* 跟记一笔、分类管理同一类，用同一个 push。以前空着看不出来是因为原生栈在 Android 上
                 会把 slide_from_right 回落成默认；JS 栈照字面执行，不写就分叉成两种动画。 */}
+            <Stack.Screen name="recurring" options={{ ...ScreenTransitions.push, title: '周期记账' }} />
+            {/* 标题留空：header 正中间放收支切换 tabs，同 categories 那条 */}
+            <Stack.Screen
+              name="recurring-editor"
+              options={{ ...ScreenTransitions.push, title: '', headerTitleAlign: 'center' }}
+            />
             <Stack.Screen name="tags" options={{ ...ScreenTransitions.push, title: '标签汇总' }} />
             <Stack.Screen
               name="reimbursements"

@@ -872,8 +872,8 @@ export async function applyImport(
       await db.runAsync(
         `INSERT OR IGNORE INTO recurring_transactions
            (id, title, remarks, amount, currency, exchangeRate, type, frequency, startDate, nextRunDate,
-            endDate, isActive, categoryId, accountId, createdAt, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            endDate, isActive, categoryId, accountId, createdAt, deletedAt, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           rule.id as string,
           rule.title as string,
@@ -890,6 +890,9 @@ export async function applyImport(
           idMap.get(rule.categoryId as string) ?? (rule.categoryId as string),
           accountMap.get(rule.accountId as string) ?? (rule.accountId as string),
           (rule.createdAt as string) ?? new Date().toISOString(),
+          // 软删的规则也在包里（它生成过的账要找得到它），带着删除时间回来才不会在列表里复活。
+          // 云端那份包没有这一列——那边删掉的规则回来是一条「已暂停」的，再删一次就是
+          (rule.deletedAt as string) ?? null,
           synced,
         ],
       );

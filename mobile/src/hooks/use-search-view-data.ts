@@ -53,11 +53,14 @@ export function buildSearchViewData(input: { results?: TransactionWithCategory[]
 export function useSearchViewData(
   submittedKeyword: string,
   filter: SearchFilter | null,
-): SearchViewData & { isLoading: boolean; hasQuery: boolean } {
+): SearchViewData & { isLoading: boolean; hasQuery: boolean; results: TransactionWithCategory[] } {
   const { data: results, isFetching } = useSearchTransactions(submittedKeyword, filter);
 
   return {
     ...buildSearchViewData({ results }),
+    // 原样的行也给出去：批量修改要读勾选那几笔的店名、地点、账户（列表项上没有这几个字段），
+    // 以及「全选」要拿到全部 id——按月分堆之后再拍平一遍是绕远路
+    results: results ?? [],
     // isFetching 而不是 isLoading：同一个词第二次搜时缓存里已经有数据，
     // isLoading 是 false 但后台在重查，这时候不该把列表换成转圈
     isLoading: isFetching,

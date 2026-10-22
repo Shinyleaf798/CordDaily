@@ -20,6 +20,9 @@ type TransactionOptionsRowProps = {
   excludeFromStats: boolean;
   onExcludeFromStatsChange: (value: boolean) => void;
   onCameraPress?: () => void;
+  /** 「重复」那一格的文字（每月 / 每周…），null = 不重复。不传 onRepeatPress 就不显示这一格（改旧账时） */
+  repeatLabel?: string | null;
+  onRepeatPress?: () => void;
 };
 
 /**
@@ -44,6 +47,8 @@ export function TransactionOptionsRow({
   excludeFromStats,
   onExcludeFromStatsChange,
   onCameraPress,
+  repeatLabel,
+  onRepeatPress,
 }: TransactionOptionsRowProps) {
   const theme = useTheme();
   const [isTagInputOpen, setIsTagInputOpen] = useState(false);
@@ -80,6 +85,15 @@ export function TransactionOptionsRow({
             missing={!accountName}
             onPress={onAccountPress}
           />
+          {/* 紧挨着日期和账户：它回答的也是"这笔钱什么时候、怎么花"，而不是这笔账的附加标记 */}
+          {onRepeatPress ? (
+            <OptionChip
+              icon="repeat-outline"
+              label={repeatLabel ?? '重复'}
+              active={!!repeatLabel}
+              onPress={onRepeatPress}
+            />
+          ) : null}
           <OptionChip
             icon={tags.length > 0 ? 'pricetag' : 'pricetag-outline'}
             label={`标签${tags.length > 0 ? ` (${tags.length})` : ''}`}

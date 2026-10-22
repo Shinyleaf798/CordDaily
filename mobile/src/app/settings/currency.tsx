@@ -116,7 +116,13 @@ export default function CurrencySettingsScreen() {
     setManual(null);
   };
 
-  const fetchedAt = Object.values(rates?.byCode ?? {})[0]?.fetchedAt ?? null;
+  // 取**启用中的**币种里最新的那个时间。原来拿的是 byCode 的第一条——那是 SQLite 里 rowid 最小的行，
+  // 而 INSERT OR REPLACE 每次都是删了重插、换新 rowid，于是排第一的永远是一条不再刷新的旧行
+  // （比如已经移除的币种，它的缓存还留着但不在拉取列表里）：汇率变了，时间却一直停在原地
+  const fetchedAt = enabled.reduce<string | null>((newest, { code }) => {
+    const at = rates?.byCode[code]?.fetchedAt;
+    return at && (!newest || at > newest) ? at : newest;
+  }, null);
   const problem = refresh.error?.message ?? rates?.refreshError ?? null;
 
   return (

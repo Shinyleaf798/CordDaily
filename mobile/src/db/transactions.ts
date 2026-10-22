@@ -134,6 +134,8 @@ export type CreateTransactionInput = {
   tags?: string[];
   isReimbursable?: boolean;
   excludeFromStats?: boolean;
+  /** 由周期规则生成的那几笔带上规则 id（见 db/recurring.ts），手记的一律是 null */
+  recurringId?: string | null;
 };
 
 // id 在本地创建的这一刻就生成好（CLAUDE.md 核心原则#2），同步时后端用它做幂等去重。
@@ -165,7 +167,7 @@ export async function createTransaction(input: CreateTransactionInput): Promise<
     excludeFromStats: input.excludeFromStats ? 1 : 0,
     categoryId: input.categoryId,
     accountId: input.accountId,
-    recurringId: null,
+    recurringId: input.recurringId ?? null,
     createdAt: now,
     updatedAt: now,
     synced: 0,
@@ -240,6 +242,55 @@ export async function updateTransaction(input: UpdateTransactionInput): Promise<
       input.id,
     ],
   );
+}
+
+/**
+ * 批量修改时每个字段的意图。**不出现 = 不动**，`null` = 清空，字符串 = 改成这个。
+ *
+ * 三种状态要分开：「这几笔的店名我不管」和「这几笔的店名全部删掉」是两件事，
+ * 只用"空串 = 不动"的话第二件事就做不到了。主题不能清空（NOT NULL，也是记账的必填项），
+ * 账户同理，所以这两个只有"不动 / 改成"两态。
+ */
+export type BatchTransactionPatch = {
+  title?: string;
+  remarks?: string | null;
+  merchant?: string | null;
+  location?: string | null;
+  accountId?: string;
+};
+
+/**
+ * 一键改一批账单的文字字段和账户。**金额、日期、分类、类型一律不碰**——
+ * 那几个是每一笔各自的事实（这笔哪天花的、花了多少），一键改成同一个值几乎只会是误操作。
+ *
+ * 一条 UPDATE ... WHERE id IN (...)，天然是原子的：要么全改，要么一笔没改。
+ * 搜索结果最多 200 笔（见 searchTransactions），远在 SQLite 999 个参数的上限以内。
+ * 跟单笔修改一样置 synced = 0，下次备份会把改动推上去。
+ */
+export async function batchUpdateTransactions(ids: string[], patch: BatchTransactionPatch): Promise<number> {
+  const sets: string[] = [];
+  const params: (string | null)[] = [];
+  const set = (column: string, value: string | null) => {
+    sets.push(`${column} = ?`);
+    params.push(value);
+  };
+
+  if (patch.title !== undefined && patch.title.trim()) set('title', patch.title.trim());
+  // 填了一串空格跟清空是一回事，统一存 null——跟 createTransaction 里 `?.trim() || null` 同一个口径
+  if (patch.remarks !== undefined) set('remarks', patch.remarks?.trim() || null);
+  if (patch.merchant !== undefined) set('merchant', patch.merchant?.trim() || null);
+  if (patch.location !== undefined) set('location', patch.location?.trim() || null);
+  if (patch.accountId !== undefined) set('accountId', patch.accountId);
+
+  if (ids.length === 0 || sets.length === 0) return 0;
+
+  const db = await getDb();
+  const result = await db.runAsync(
+    `UPDATE transactions SET ${sets.join(', ')}, updatedAt = ?, synced = 0
+     WHERE id IN (${ids.map(() => '?').join(', ')})`,
+    [...params, new Date().toISOString(), ...ids],
+  );
+  return result.changes;
 }
 
 /**

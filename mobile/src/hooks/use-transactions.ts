@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import {
+  batchUpdateTransactions,
   createTransaction,
   deleteTransaction,
   duplicateTransaction,
@@ -20,6 +21,7 @@ import {
   setReimbursed,
   suggestFieldValues,
   updateTransaction,
+  type BatchTransactionPatch,
   type CreateTransactionInput,
   type SearchFilter,
   type SuggestionField,
@@ -33,7 +35,7 @@ const TRANSACTIONS_KEY = ['transactions'];
 
 // 一笔交易会同时影响账单列表、月度汇总、分类构成、标签汇总和报销清单，
 // 所以写入后统一把这几组缓存全部失效，而不是逐个挑——挑漏了就会出现"记了一笔但首页数字没变"
-function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
+export function invalidateAll(queryClient: QueryClient) {
   const keys = [
     TRANSACTIONS_KEY,
     ['monthSummary'],
@@ -43,6 +45,8 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
     ['tagSummaries'],
     ['tagBreakdown'],
     ['reimbursements'],
+    // 记账页的历史补全（主题/店名/地点）。批量改名之后旧名字不该还挂在补全列表里
+    ['fieldSuggestions'],
     // 「我的」页那张备份卡上的三个数（本地账单 / 未备份 / 上次备份）也是交易的衍生值。
     // 漏了它的表现特别隐蔽：那一页是 tab，删完账单回来它**没有重新挂载**，
     // 于是一直显示删除前的数字，看起来像"删除没生效"
@@ -136,6 +140,15 @@ export function useUpdateTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateTransactionInput) => updateTransaction(input),
+    onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
+/** 一键改一批（搜索结果里勾选的那几笔），见 db/transactions.ts 的 batchUpdateTransactions */
+export function useBatchUpdateTransactions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, patch }: { ids: string[]; patch: BatchTransactionPatch }) => batchUpdateTransactions(ids, patch),
     onSuccess: () => invalidateAll(queryClient),
   });
 }

@@ -288,4 +288,15 @@ export const MIGRATIONS: string[][] = [
       source TEXT NOT NULL DEFAULT 'wise' CHECK (source IN ('wise', 'manual'))
     );`,
   ],
+
+  // v14：周期规则的软删除。
+  //
+  // 规则不能像账单那样真删 + 立墓碑：它生成过的每一笔账都用 recurringId 指着它，
+  // 服务器上 Transaction → RecurringTransaction 那条外键没有 ON DELETE，云端删规则会被那些账挡住；
+  // 而 deleted_records 的 kind 上有 CHECK，加一种要整表重建。
+  // 软删就两头都绕开了：本地列表不再显示它、不再生成；推上去的是一条 isActive = false 的规则，
+  // 它名下的历史账单原样留着、外键依然成立
+  [
+    `ALTER TABLE recurring_transactions ADD COLUMN deletedAt TEXT;`,
+  ],
 ];
