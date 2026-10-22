@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CalendarDayDetail } from '@/components/calendar/calendar-day-detail';
 import { CalendarMonthGrid } from '@/components/calendar/calendar-month-grid';
 import { CalendarSummaryHeader } from '@/components/calendar/calendar-summary-header';
-import { PageHeader } from '@/components/ui/page-header';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ScreenBottomInset, ScreenGap, ScreenPadding } from '@/constants/theme';
@@ -50,7 +49,7 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
-      <PageHeader title="日历" />
+      {/* 没有标题行：底部 tab 已经亮着「日历」，月份和左右翻页都在下面那张卡的第一行，标题条只是重复，拿掉后第一屏多出一截 */}
 
       <ScrollView contentContainerStyle={styles.content}>
         <CalendarSummaryHeader

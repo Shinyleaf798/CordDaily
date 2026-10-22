@@ -839,3 +839,19 @@ export async function suggestFieldValues(
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
+
+/**
+ * 某个时刻以来每一笔账的日期（只要日期一列）。「我的 · 账本样式」的记账足迹格子用它：
+ * 哪天记了几笔、今年记了几天、连续记了几天。
+ *
+ * 只拿 ISO 字符串回去在 JS 里按本地日期分堆，不在 SQL 里 `date(..., 'localtime')`：
+ * 那个依赖 SQLite 自己认的时区，跟 App 里其余按本地日期分堆的地方（formatDayKey）不一定是同一个口径。
+ * 半年的账也就几千行一列，量不大。
+ */
+export async function listEntryDates(since: Date): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ date: string }>('SELECT date FROM transactions WHERE date >= ?', [
+    since.toISOString(),
+  ]);
+  return rows.map((row) => row.date);
+}

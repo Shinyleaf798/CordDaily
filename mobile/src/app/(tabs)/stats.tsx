@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -7,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CategoryBreakdown } from '@/components/stats/category-breakdown';
 import { MonthTrend } from '@/components/stats/month-trend';
 import { StatsSummaryCard } from '@/components/stats/stats-summary-card';
-import { PageHeader } from '@/components/ui/page-header';
 import { ThemedText } from '@/components/ui/themed-text';
 import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenBottomInset, ScreenGap, ScreenPadding } from '@/constants/theme';
@@ -31,13 +29,15 @@ export default function StatsScreen() {
   const theme = useTheme();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const data = useStatsViewData(month);
+  // 标签那格只放用得最多的一个，其余的数一下，点进去看全
+  const topTag = data.tags[0];
 
   const openCategory = (categoryId: string) =>
     router.push({ pathname: '/category-spending', params: { id: categoryId, month: formatMonthKey(month) } });
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
-      <PageHeader title="统计" />
+      {/* 没有标题行：底部 tab 已经亮着「统计」，月份和左右翻页都在下面那张卡的第一行，标题条只是重复，拿掉后第一屏多出一截 */}
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* 翻月的控件在卡片里，跟日历页同一个位置同一个样子 */}
@@ -64,50 +64,45 @@ export default function StatsScreen() {
         <SectionHeader title="支出构成" />
         <CategoryBreakdown categories={data.categories} onSelect={openCategory} />
 
-        {/* 标签是全部时间的，其余都是本月——标题里写明，不让这个差别悄悄存在。
-            「槟城旅行」这种标签圈的是横跨几个月的一件事，切成"9月那部分"没有意义 */}
-        <SectionHeader
-          title="标签 · 全部时间"
-          action={data.tagCount > data.tags.length ? `全部 ${data.tagCount} 个` : undefined}
-          onAction={() => router.push('/tags')}
-        />
-        {data.tags.length === 0 ? (
-          <EmptyCard text="还没有用过标签。标签适合圈「一趟旅行」「一次装修」这种跨分类的事。" />
-        ) : (
-          <ThemedView type="backgroundElement" style={styles.list}>
-            {data.tags.map((tag, index) => (
-              <Pressable key={tag.tag} onPress={() => router.push('/tags')}>
-                <View style={[styles.row, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.backgroundSelected }]}>
-                  <View style={styles.rowText}>
-                    <ThemedText style={styles.rowTitle} numberOfLines={1}>
-                      {tag.tag}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {tag.count} 笔
-                    </ThemedText>
-                  </View>
-                  <ThemedText style={styles.rowValue}>{formatCurrency(tag.total)}</ThemedText>
-                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-                </View>
-              </Pressable>
-            ))}
-          </ThemedView>
-        )}
-
-        <SectionHeader title="待收回" />
-        <Pressable onPress={() => router.push('/reimbursements')}>
-          <ThemedView type="backgroundElement" style={styles.list}>
-            <View style={styles.row}>
-              <View style={styles.rowText}>
-                <ThemedText style={styles.rowTitle}>垫出去还没收回的钱</ThemedText>
-              </View>
-              <ThemedText style={[styles.rowValue, { color: theme.cardHighlight }]}>
-                {formatCurrency(data.pendingReimbursement)}
+        {/* 待收回和标签并排压成一张卡：两样都是"顺便看一眼"的侧面，各占一整段太重了。
+            原来标签是一张列表、待收回是单独一行，现在各留一个数，点进去才看全
+            （这一块是从「账本」样式的设计稿里搬回经典样式的，见 DECISIONS.md）。
+            标签那格标明「全部时间」：其余都是本月，不让这个差别悄悄存在 */}
+        <ThemedView type="backgroundElement" style={styles.sideCard}>
+          <Pressable
+            onPress={() => router.push('/reimbursements')}
+            style={[styles.sideCell, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: theme.backgroundSelected }]}>
+            <ThemedText type="small" themeColor="textSecondary">
+              待收回
+            </ThemedText>
+            <ThemedText style={[styles.sideValue, { color: theme.cardHighlight }]} numberOfLines={1}>
+              {formatCurrency(data.pendingReimbursement)}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              垫出去还没收回的钱
+            </ThemedText>
+          </Pressable>
+          <Pressable onPress={() => router.push('/tags')} style={styles.sideCell}>
+            <ThemedText type="small" themeColor="textSecondary">
+              标签 · 全部时间
+            </ThemedText>
+            {topTag ? (
+              <>
+                <ThemedText style={styles.sideTag} numberOfLines={1}>
+                  {topTag.tag}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                  {formatCurrency(topTag.total)}
+                  {data.tagCount > 1 ? ` · 还有 ${data.tagCount - 1} 个` : ''}
+                </ThemedText>
+              </>
+            ) : (
+              <ThemedText type="small" themeColor="textSecondary">
+                还没用过标签，适合圈「一趟旅行」这种跨分类的事
               </ThemedText>
-              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-            </View>
-          </ThemedView>
-        </Pressable>
+            )}
+          </Pressable>
+        </ThemedView>
       </ScrollView>
     </SafeAreaView>
   );
@@ -131,16 +126,6 @@ function SectionHeader({ title, action, onAction }: { title: string; action?: st
   );
 }
 
-function EmptyCard({ text }: { text: string }) {
-  return (
-    <ThemedView type="backgroundElement" style={styles.emptyCard}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {text}
-      </ThemedText>
-    </ThemedView>
-  );
-}
-
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: ScreenPadding,
@@ -157,34 +142,27 @@ const styles = StyleSheet.create({
   sectionTitle: {
     letterSpacing: 0.3,
   },
-  list: {
+  sideCard: {
+    flexDirection: 'row',
     borderRadius: 16,
     overflow: 'hidden',
+    marginTop: 8,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-  },
-  rowText: {
+  sideCell: {
     flex: 1,
-    minWidth: 0,
-    gap: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 2,
   },
-  rowTitle: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '500',
+  sideValue: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '700',
   },
-  rowValue: {
+  sideTag: {
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 22,
     fontWeight: '600',
-  },
-  emptyCard: {
-    borderRadius: 16,
-    padding: 16,
+    marginTop: 3,
   },
 });

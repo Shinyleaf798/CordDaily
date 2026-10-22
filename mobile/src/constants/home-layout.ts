@@ -38,13 +38,33 @@ export const HomeSlotLabels: Record<HomeSlot, string> = {
 
 // 同一个布局名在两段里做的是两件不同的事，所以提示语按段分开写——
 // 「金环」在上半是个表盘，在下半是"没有卡片的通栏列表"，共用一句话会两边都说不清
+//
+// 写得短，因为它们现在挂在首页「编辑」弹层里半屏宽的图卡上（缩略图占掉左边一截），超过两行就挤成一团。
+// 原来那一整页「首页设置」里是一整句（「月度总览卡 + 预算横条，进度和时间放同一根轴上比」），那页删了
 export const HomeSlotHints: Record<HomeSlot, Record<HomeLayoutName, string>> = {
   top: {
-    pace: '月度总览卡 + 预算横条，进度和时间放同一根轴上比',
-    ring: '把「本月还能花多少」做成主角，收支退成一条 pill',
+    pace: '总览卡 + 预算横条',
+    ring: '还能花多少放环心',
   },
   bills: {
-    pace: '一天一张卡，天与天之间靠卡片间距分',
-    ring: '通栏铺在页面底色上，只用一条细线分隔',
+    pace: '一天一张卡',
+    ring: '通栏细线',
   },
+};
+
+/**
+ * 首页「编辑」弹层第一层的两个整页预设：经典 = 上下两段都用节奏条，金环 = 上下两段都用金环。
+ *
+ * 跟上面两段各自的选择不冲突：预设只是"一次把两段都设成同一种"的快捷方式，
+ * 下面「各部分显示什么」仍然能把两段拆开选。两段不一样时第一层哪个都不亮——
+ * 那时候它确实不是这两种里的任何一种。
+ */
+export const HomePresetLabels: Record<HomeLayoutName, string> = {
+  pace: '经典',
+  ring: '金环',
+};
+
+export const HomePresetHints: Record<HomeLayoutName, string> = {
+  pace: '卡片 + 预算条',
+  ring: '环形预算 + 通栏',
 };

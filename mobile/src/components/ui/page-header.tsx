@@ -6,12 +6,15 @@ import { ScreenPadding, Spacing } from '@/constants/theme';
 
 type PageHeaderProps = {
   title: string;
+  /** 跟在标题后面的一小段灰字（首页的「2026」）。跟标题同一条基线，不另起一行 */
+  note?: string;
   /** 标题右侧的位置，留给搜索、图表这类页面级入口 */
   right?: ReactNode;
 };
 
 /**
- * 底部四个 tab 页共用的顶部标题条。
+ * 顶部标题条。原来底部四个 tab 页都有；现在只剩首页在用（写的是月份，右边挂搜索和账单预览），
+ * 日历、统计、我的的标题行都拿掉了——底部 tab 已经说明了在哪一页，见 DECISIONS.md。
  *
  * 在这之前每页各写一行 `<ThemedText type="pageTitle">`，字号是一致的（都走 pageTitle），
  * 但**上下占多高**各页说了算——我的那页顶上留 24、其余留 12，切 tab 时标题会上下跳一格。
@@ -50,10 +53,17 @@ type PageHeaderProps = {
  *
  * 它不认识任何业务概念（只有一个字符串和一个插槽），所以归 ui/ 而不是某个页面目录。
  */
-export function PageHeader({ title, right }: PageHeaderProps) {
+export function PageHeader({ title, note, right }: PageHeaderProps) {
   return (
     <View style={styles.header}>
-      <ThemedText type="pageTitle">{title}</ThemedText>
+      <View style={styles.titleRow}>
+        <ThemedText type="pageTitle">{title}</ThemedText>
+        {note ? (
+          <ThemedText type="small" themeColor="textSecondary">
+            {note}
+          </ThemedText>
+        ) : null}
+      </View>
       {right}
     </View>
   );
@@ -81,5 +91,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.two,
   },
 });

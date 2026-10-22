@@ -57,7 +57,6 @@ export default function RootLayout() {
   // 否则会先闪一下默认样子再跳成用户选的那套
   const isHomeLayoutHydrated = useHomeStore((s) => s.isHydrated);
   const hydrateHomeLayout = useHomeStore((s) => s.hydrate);
-
   const isHydrated = isAuthHydrated && isThemeHydrated && isHomeLayoutHydrated;
 
   useEffect(() => {
@@ -210,11 +209,8 @@ export default function RootLayout() {
             />
             {/* 「我的」下面的二级页，跟其它二级页同一种转场和同一套标题规则。
                 原来的 settings/ledger 和 settings/other 删掉了：那两页各自只是转发几条，
-                现在「我的」页的功能网格直通目的地（见 components/settings/feature-grid.tsx） */}
-            <Stack.Screen
-              name="settings/home-layout"
-              options={{ ...ScreenTransitions.push, title: '首页设置' }}
-            />
+                现在「我的」页上的格子直通目的地（见 components/settings/me-page.tsx）。
+                原来的 settings/home-layout（首页设置）也删了：它管的事挪进了首页底部「编辑」的弹层 */}
             <Stack.Screen name="settings/theme" options={{ ...ScreenTransitions.push, title: '主题' }} />
             <Stack.Screen name="settings/account" options={{ ...ScreenTransitions.push, title: '账号' }} />
             {/* 「我的 → 数据备份与恢复」。备份卡和「数据」那一组整个搬进来了（见那一页顶上那段） */}

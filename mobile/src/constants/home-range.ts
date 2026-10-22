@@ -7,13 +7,13 @@ import { addDays, startOfDay, startOfMonth } from '@/utils/date';
  * **本月是自然月**（"这个月1号到月底"）。两种口径都要，因为它们回答不同的问题——
  * 「最近花得凶不凶」是滚动的，「这个月还剩多少」是自然月的，后者跟预算卡对得上。
  *
- * 「全部」不设下限。那一档在账多了之后会一次性查出上千行，
- * 首页的 ScrollView 会把它们全渲染出来——所以它是给"我就想翻翻"准备的，
- * 不该当默认值（默认仍然是 7 天）。
+ * 原来还有一档「全部」（不设下限），后来拿掉了：账多了之后它会一次查出上千行、
+ * 首页的 ScrollView 全部渲染出来，而"我就想翻翻全部"这件事账单预览页（/bill-overview）的「总」已经在做。
+ * 存过「全部」的设备读到这个值会退回默认的 7 天（见 home.store 的 parseRange）。
  */
-export type HomeRange = 'd7' | 'd30' | 'month' | 'm3' | 'y1' | 'all';
+export type HomeRange = 'd7' | 'd30' | 'month' | 'm3' | 'y1';
 
-export const HomeRanges: HomeRange[] = ['d7', 'd30', 'month', 'm3', 'y1', 'all'];
+export const HomeRanges: HomeRange[] = ['d7', 'd30', 'month', 'm3', 'y1'];
 
 /** 设置页上那排选项的名字 */
 export const HomeRangeLabels: Record<HomeRange, string> = {
@@ -22,7 +22,6 @@ export const HomeRangeLabels: Record<HomeRange, string> = {
   month: '本月',
   m3: '3个月',
   y1: '一年',
-  all: '全部',
 };
 
 /**
@@ -36,7 +35,6 @@ export const HomeRangeTitles: Record<HomeRange, string> = {
   month: '本月账单',
   m3: '近3个月账单',
   y1: '近一年账单',
-  all: '全部账单',
 };
 
 /**
@@ -64,7 +62,5 @@ export function homeRangeBounds(range: HomeRange, now: Date): { start: Date | nu
       return { start: startOfDay(new Date(now.getFullYear(), now.getMonth() - 3, now.getDate())), end: null };
     case 'y1':
       return { start: startOfDay(new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())), end: null };
-    case 'all':
-      return { start: null, end: null };
   }
 }
