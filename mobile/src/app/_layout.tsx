@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import { Stack } from 'expo-router/js-stack';
 import * as SplashScreen from 'expo-splash-screen';
@@ -7,6 +8,7 @@ import { useEffect } from 'react';
 import { AppState, LogBox } from 'react-native';
 
 import { RestorePrompt } from '@/components/settings/restore-prompt';
+import { InterFontAssets } from '@/constants/font';
 import { ScreenTransitions } from '@/constants/screen-transitions';
 import { ThemeScheme } from '@/constants/theme';
 import { generateDueAndRefresh } from '@/hooks/use-recurring';
@@ -16,6 +18,7 @@ import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories
 import { getCloudSession } from '@/db/neon/session';
 import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
+import { useFontStore } from '@/store/font.store';
 import { useHomeStore } from '@/store/home.store';
 import { useThemeStore } from '@/store/theme.store';
 
@@ -57,12 +60,21 @@ export default function RootLayout() {
   // 否则会先闪一下默认样子再跳成用户选的那套
   const isHomeLayoutHydrated = useHomeStore((s) => s.isHydrated);
   const hydrateHomeLayout = useHomeStore((s) => s.hydrate);
-  const isHydrated = isAuthHydrated && isThemeHydrated && isHomeLayoutHydrated;
+
+  // 字体偏好和 Inter 的字体文件都要在首屏之前到位，否则数字会先用系统字体画一帧再跳。
+  // Inter 不管选没选都加载：四个文件从包里读，几十毫秒；只在选中时才加载，切换那一下就得等它。
+  // 加载失败也放行（fontError），没有 Inter 的话那几行字退回系统字体，不该挡住启动
+  const isFontHydrated = useFontStore((s) => s.isHydrated);
+  const hydrateFont = useFontStore((s) => s.hydrate);
+  const [isInterLoaded, interError] = useFonts(InterFontAssets);
+  const isHydrated =
+    isAuthHydrated && isThemeHydrated && isHomeLayoutHydrated && isFontHydrated && (isInterLoaded || !!interError);
 
   useEffect(() => {
     hydrateAuth();
     hydrateTheme();
     hydrateHomeLayout();
+    hydrateFont();
     // 首次启动灌默认分类和默认账户。放在这里而不是 db/client.ts 的 getDb 里，是因为这两个模块都要 import getDb，
     // 反过来让 client.ts import 它们会形成循环依赖。
     // 两个都是"空库才跑"，所以每次启动多两次 COUNT 查询，装过一次之后就直接返回
@@ -75,7 +87,7 @@ export default function RootLayout() {
     seedDefaultAccounts().catch(() => {
       // 同上：账户页可以手动新建账户
     });
-  }, [hydrateAuth, hydrateTheme, hydrateHomeLayout]);
+  }, [hydrateAuth, hydrateTheme, hydrateHomeLayout, hydrateFont]);
 
   useEffect(() => {
     if (isHydrated) {

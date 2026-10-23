@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, type Href } from 'expo-router';
-import type { ComponentProps } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View, type TextStyle } from 'react-native';
+import { useState, type ComponentProps } from 'react';
+import { Pressable, ScrollView, StyleSheet, View, type TextStyle } from 'react-native';
 
+import { FontSheet } from '@/components/settings/font-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
+import { FontLabels } from '@/constants/font';
 import { Colors, ScreenBottomInset, ThemeLabels, ThemeNames } from '@/constants/theme';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useAvatar } from '@/hooks/use-avatar';
@@ -17,6 +19,7 @@ import { FOOTPRINT_WEEKS, useEntryFootprint } from '@/hooks/use-entry-footprint'
 import { useIdentity } from '@/hooks/use-identity';
 import { useRecurringRules } from '@/hooks/use-recurring';
 import { useTheme } from '@/hooks/use-theme';
+import { useFontStore } from '@/store/font.store';
 import { useThemeStore } from '@/store/theme.store';
 import { formatDayLabel } from '@/utils/date';
 import { formatAmount } from '@/utils/format';
@@ -31,11 +34,11 @@ type IconName = ComponentProps<typeof Ionicons>['name'];
 const GUTTER = 20;
 
 /**
- * 大数字用的字。Android 上是系统自带的 Roboto Condensed（窄体），大数字不至于撑满一格，
- * 也不用为它打包一个字体文件；等宽数字让上下几格的数竖着对得齐。iOS 没有系统窄体，只用等宽数字
+ * 大数字用等宽数字，让上下几格的数竖着对得齐。字体本身不在这里定：
+ * 原来这里写死了 Android 窄体，结果「我的」和首页的数字长得不一样；
+ * 现在跟全 App 一起走「字体」里选的那套（见 constants/font）
  */
 const NUMBER_FONT: TextStyle = {
-  fontFamily: Platform.select({ android: 'sans-serif-condensed', default: undefined }),
   fontVariant: ['tabular-nums'],
 };
 
@@ -76,6 +79,8 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
   const { data: currencies } = useEnabledCurrencies();
   const themeName = useThemeStore((s) => s.themeName);
   const setThemeName = useThemeStore((s) => s.setThemeName);
+  const fontName = useFontStore((s) => s.fontName);
+  const [isPickingFont, setPickingFont] = useState(false);
 
   const name = identity?.email?.split('@')[0] ?? '本地';
   const unsynced = stats?.unsyncedTotal ?? 0;
@@ -233,6 +238,17 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
           })}
         </View>
 
+        {/* 字体跟主题挨着：两样都是「整个 App 长什么样」，用户会在同一处找 */}
+        <Pressable onPress={() => setPickingFont(true)} style={[styles.themeRow, hairline]}>
+          <Ionicons name="text-outline" size={20} color={theme.text} />
+          <ThemedText style={styles.grow}>字体</ThemedText>
+          <ThemedText style={[NUMBER_FONT, { color: theme.cardHighlight, fontWeight: '700' }]}>1,234.50</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {FontLabels[fontName]}
+          </ThemedText>
+          <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+        </Pressable>
+
         <View style={[styles.tools, hairline]}>
           <ToolCell
             icon="swap-horizontal-outline"
@@ -256,6 +272,8 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
           />
         </View>
       </View>
+
+      {isPickingFont ? <FontSheet onDismiss={() => setPickingFont(false)} /> : null}
     </ScrollView>
   );
 }

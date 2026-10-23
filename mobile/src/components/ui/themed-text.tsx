@@ -1,7 +1,9 @@
 import { Platform, StyleSheet, Text, type TextProps } from 'react-native';
 
+import { fontStyleFor } from '@/constants/font';
 import { Fonts, ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useFontStore } from '@/store/font.store';
 
 export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'pageTitle' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
@@ -10,21 +12,32 @@ export type ThemedTextProps = TextProps & {
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
+  const fontName = useFontStore((s) => s.fontName);
+
+  const typeStyle = [
+    type === 'default' && styles.default,
+    type === 'title' && styles.title,
+    type === 'pageTitle' && styles.pageTitle,
+    type === 'small' && styles.small,
+    type === 'smallBold' && styles.smallBold,
+    type === 'subtitle' && styles.subtitle,
+    type === 'link' && styles.link,
+    type === 'linkPrimary' && [styles.linkPrimary, { color: theme.cardHighlight }],
+    type === 'code' && styles.code,
+  ];
+  // 用户选的字体挂在这一层，所有字一次到位，不用每个页面各自记得写（见 constants/font）。
+  // 要先把样式压平才知道这段字最终多粗——Inter 的粗细是换文件，不是 fontWeight。
+  // 代码块（type="code"）本来就该是等宽，不跟着换
+  const weight = StyleSheet.flatten([typeStyle, style])?.fontWeight;
+  const fontStyle = type === 'code' ? null : fontStyleFor(fontName, weight);
 
   return (
     <Text
       style={[
         { color: theme[themeColor ?? 'text'] },
-        type === 'default' && styles.default,
-        type === 'title' && styles.title,
-        type === 'pageTitle' && styles.pageTitle,
-        type === 'small' && styles.small,
-        type === 'smallBold' && styles.smallBold,
-        type === 'subtitle' && styles.subtitle,
-        type === 'link' && styles.link,
-        type === 'linkPrimary' && [styles.linkPrimary, { color: theme.cardHighlight }],
-        type === 'code' && styles.code,
+        typeStyle,
         style,
+        fontStyle,
       ]}
       {...rest}
     />
