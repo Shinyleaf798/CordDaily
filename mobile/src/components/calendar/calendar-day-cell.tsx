@@ -17,7 +17,8 @@ type CalendarDayCellProps = {
 // 分档之后"这周有两天明显深"才看得出来。十六进制后两位是 alpha（RN 认 #RRGGBBAA）
 const HEAT_ALPHA = ['', '1f', '33', '4d', '66'];
 
-function heatLevel(expense: number, maxExpense: number): number {
+/** 当天支出落在当月最高那天的哪一档（0 = 没花钱，1~4 越来越多）。热力那套月历也按这四档上色 */
+export function heatLevel(expense: number, maxExpense: number): number {
   if (expense <= 0 || maxExpense <= 0) return 0;
   const ratio = expense / maxExpense;
   if (ratio <= 0.25) return 1;

@@ -3,9 +3,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ScreenPadding } from '@/constants/theme';
+import { ScreenPadding, ThemeScheme } from '@/constants/theme';
 import { BillScopeLabels, type BillScope } from '@/hooks/use-bill-overview-data';
 import { useTheme } from '@/hooks/use-theme';
+import { useThemeStore } from '@/store/theme.store';
 
 const SCOPE_ITEMS = (['all', 'year', 'month', 'week'] as const).map((key) => ({
   key,
@@ -64,6 +65,10 @@ export function BillHeader({
   onOpenFilter,
 }: BillHeaderProps) {
   const theme = useTheme();
+  // 滑块要比轨道「跳」出来一档，而这一档在深浅主题里方向相反：
+  // 黑底上是更亮的灰（tabTrackBackground），白底上是纯白卡片色。
+  // 白主题的 tabTrackBackground 跟 backgroundSelected 是同一个灰，原来一律用它，滑块就隐身了
+  const isLight = ThemeScheme[useThemeStore((s) => s.themeName)] === 'light';
 
   return (
     <View style={[styles.wrap, { backgroundColor: theme.backgroundElement }]}>
@@ -78,7 +83,7 @@ export function BillHeader({
             value={scope}
             onChange={onScopeChange}
             trackColor={theme.backgroundSelected}
-            thumbColor={theme.tabTrackBackground}
+            thumbColor={isLight ? theme.backgroundElement : theme.tabTrackBackground}
           />
         </View>
 

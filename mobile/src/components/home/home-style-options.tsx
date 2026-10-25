@@ -1,5 +1,5 @@
 import { HomeSlotThumbnails } from '@/components/home/home-style-thumbnails';
-import { StyleChoiceGroup, StyleOptionGroup, type StyleChoice } from '@/components/home/home-style-sheet';
+import { StyleChoiceGroup, StyleOptionGroup, type StyleChoice } from '@/components/ui/page-style-sheet';
 import {
   HomeLayoutLabels,
   HomeLayoutNames,

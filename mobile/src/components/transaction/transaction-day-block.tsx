@@ -33,7 +33,7 @@ export function TransactionDayBlock({ group, onSelect }: TransactionDayBlockProp
       />
       {group.items.map((item, index) => (
         <View key={item.id}>
-          {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} /> : null}
+          {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.divider }]} /> : null}
           <View style={styles.itemWrap}>
             <TransactionListItem {...item} surface="card" onPress={() => onSelect(item.id)} />
           </View>

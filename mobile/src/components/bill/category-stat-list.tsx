@@ -65,7 +65,7 @@ export function CategoryStatList({ categories }: CategoryStatListProps) {
 
         return (
           <View key={category.id}>
-            {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} /> : null}
+            {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.divider }]} /> : null}
 
             {/* 没有子分类的行不给 onPress：点了没反应会被当成坏了 */}
             <Pressable

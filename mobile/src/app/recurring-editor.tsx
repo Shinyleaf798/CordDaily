@@ -362,7 +362,7 @@ function PickerRow({
 
 function Divider() {
   const theme = useTheme();
-  return <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />;
+  return <View style={[styles.divider, { backgroundColor: theme.divider }]} />;
 }
 
 const styles = StyleSheet.create({

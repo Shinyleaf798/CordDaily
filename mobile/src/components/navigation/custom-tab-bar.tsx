@@ -64,7 +64,7 @@ export function CustomTabBar({ state, navigation }: TabBarProps) {
   };
 
   return (
-    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: theme.backgroundElement, borderTopColor: theme.backgroundSelected }]}>
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: theme.backgroundElement, borderTopColor: theme.divider }]}>
       <View style={styles.row}>
         {leftRoutes.map(renderTab)}
 

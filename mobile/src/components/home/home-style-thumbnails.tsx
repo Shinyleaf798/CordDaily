@@ -1,6 +1,7 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ThumbnailFrame } from '@/components/ui/page-style-sheet';
 import type { HomeLayoutName, HomeSlot } from '@/constants/home-layout';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -90,22 +91,16 @@ function BillsFlatThumbnail() {
   );
 }
 
-/** 每张缩略图的外框（52×76，页面底色）。所有缩略图都套这个，大小才一致 */
-function ThumbnailFrame({ children }: { children: ReactNode }) {
-  const theme = useTheme();
-  return <View style={[frameStyles.frame, { backgroundColor: theme.background }]}>{children}</View>;
-}
-
 /** 经典：三块圆角卡片叠在一起 */
 export function ClassicThumbnail() {
   const theme = useTheme();
   const block = { backgroundColor: theme.backgroundSelected, borderRadius: 4 };
   return (
-    <View style={[frameStyles.frame, { backgroundColor: theme.background }]}>
+    <ThumbnailFrame>
       <View style={[block, { height: 20 }]} />
       <View style={[block, { height: 14 }]} />
       <View style={[block, { flex: 1 }]} />
-    </View>
+    </ThumbnailFrame>
   );
 }
 
@@ -114,7 +109,7 @@ export function RingThumbnail() {
   const theme = useTheme();
   const line = { height: 4, borderRadius: 2, backgroundColor: theme.backgroundSelected };
   return (
-    <View style={[frameStyles.frame, { backgroundColor: theme.background }]}>
+    <ThumbnailFrame>
       <View style={[frameStyles.ringCard, { backgroundColor: theme.backgroundSelected }]}>
         <View
           style={[
@@ -126,18 +121,11 @@ export function RingThumbnail() {
       <View style={[line, { width: '85%' }]} />
       <View style={[line, { width: '70%' }]} />
       <View style={[line, { width: '80%' }]} />
-    </View>
+    </ThumbnailFrame>
   );
 }
 
 const frameStyles = StyleSheet.create({
-  frame: {
-    width: 52,
-    height: 76,
-    borderRadius: 8,
-    padding: 5,
-    gap: 4,
-  },
   ringCard: {
     height: 34,
     borderRadius: 4,

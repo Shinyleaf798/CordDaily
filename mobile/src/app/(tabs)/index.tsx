@@ -2,10 +2,8 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { HomeEditButton } from '@/components/home/home-edit-button';
 import { HomeHeaderActions } from '@/components/home/home-header-actions';
 import { HomeStyleOptions } from '@/components/home/home-style-options';
-import { HomeStyleSheet, type StyleChoice } from '@/components/home/home-style-sheet';
 import { ClassicThumbnail, RingThumbnail } from '@/components/home/home-style-thumbnails';
 import { PaceBills } from '@/components/home/layouts/pace-bills';
 import { PaceTop } from '@/components/home/layouts/pace-top';
@@ -13,7 +11,9 @@ import { RingBills } from '@/components/home/layouts/ring-bills';
 import { RingTop } from '@/components/home/layouts/ring-top';
 import { SearchOverlay } from '@/components/search/search-overlay';
 import { TransactionDetailSheet } from '@/components/transaction/transaction-detail-sheet';
+import { PageEditButton } from '@/components/ui/page-edit-button';
 import { PageHeader } from '@/components/ui/page-header';
+import { PageStyleSheet, type StyleChoice } from '@/components/ui/page-style-sheet';
 import { HomeLayoutNames, HomePresetHints, HomePresetLabels, type HomeLayoutName } from '@/constants/home-layout';
 import { ScreenGap, ScreenPadding } from '@/constants/theme';
 import { useHomeLayout } from '@/hooks/use-home-layout';
@@ -87,8 +87,8 @@ export default function HomeScreen() {
           <PaceBills data={data} onSelectTransaction={setSelectedId} />
         )}
 
-        {/* 这一块同时就是底部留白，所以 content 里没有 paddingBottom（见 HomeEditButton） */}
-        <HomeEditButton onPress={() => setEditingStyle(true)} />
+        {/* 这一块同时就是底部留白，所以 content 里没有 paddingBottom（见 PageEditButton） */}
+        <PageEditButton onPress={() => setEditingStyle(true)} />
       </ScrollView>
 
       {/* 两个弹层都由首页持有而不是某一段：换了布局点同一个东西应该弹出同一个东西，
@@ -100,7 +100,7 @@ export default function HomeScreen() {
       {isSearchOpen ? <SearchOverlay onDismiss={() => setSearchOpen(false)} /> : null}
 
       {isEditingStyle ? (
-        <HomeStyleSheet
+        <PageStyleSheet
           title="首页样式"
           choices={PRESETS}
           selected={preset}

@@ -89,7 +89,7 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
   const activeRules = (rules ?? []).filter((rule) => rule.isActive);
   const nextRule = activeRules[0];
   const foreignCount = currencies?.foreign.length ?? 0;
-  const hairline = { borderColor: theme.backgroundSelected };
+  const hairline = { borderColor: theme.divider };
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -325,7 +325,7 @@ function StatCell({ icon, label, value, unit, hint, href, position }: StatCellPr
       style={({ pressed }) => [
         styles.statCell,
         {
-          borderColor: theme.backgroundSelected,
+          borderColor: theme.divider,
           borderRightWidth: isLeft ? StyleSheet.hairlineWidth : 0,
           paddingLeft: isLeft ? 0 : 16,
           paddingRight: isLeft ? 16 : 0,
@@ -374,7 +374,7 @@ function ToolCell({
       onPress={() => router.push(href)}
       style={({ pressed }) => [
         styles.toolCell,
-        divider ? { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: theme.backgroundSelected, paddingLeft: 14 } : null,
+        divider ? { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: theme.divider, paddingLeft: 14 } : null,
         { opacity: pressed ? 0.6 : 1 },
       ]}>
       <Ionicons name={icon} size={20} color={theme.text} />

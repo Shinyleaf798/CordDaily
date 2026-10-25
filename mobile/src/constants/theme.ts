@@ -3,7 +3,7 @@
  * 每个主题一套完整色板，key 保持一致，方便 useTheme() 直接换源不用改调用方代码。
  */
 
-import { Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 export type ThemeName = 'whiteColorful' | 'blackGold' | 'blackPurple';
 
@@ -41,6 +41,9 @@ export const ThemeScheme: Record<ThemeName, 'light' | 'dark'> = {
 // - cardBorder：目前只给 budget-progress-card 用，跟 backgroundElement 拆开是为了单独调这张卡片的底色，
 //   不影响输入框、tab bar、月度总览卡等其他共用 backgroundElement 的地方
 // - tabTrackBackground：分段控件（如收支类型切换）的轨道底色，选中项用 background 铺出高亮块
+// - divider：全 App 的**分隔线**（行与行之间、卡片里上下两段之间、tab bar 顶上那条），三套主题里目前都跟
+//   backgroundSelected 同值。单独一个 token 是为了以后要调分隔线时只动这一处——深色主题试过亮一档（#3a3a3a），
+//   用户看了还是要回原来的，见 DECISIONS.md。选项、按钮、输入框的**描边**不走它，仍是 backgroundSelected
 export const Colors = {
   whiteColorful: {
     text: '#000000',
@@ -54,6 +57,7 @@ export const Colors = {
     income: '#12b76a',
     expense: '#e5484d',
     tabTrackBackground: '#E0E1E6',
+    divider: '#E0E1E6',
   },
   blackGold: {
     text: '#ffffff',
@@ -67,6 +71,7 @@ export const Colors = {
     income: '#32d583',
     expense: '#f97066',
     tabTrackBackground: '#4d4d4d',
+    divider: '#2a2a2a',
   },
   blackPurple: {
     text: '#ffffff',
@@ -80,6 +85,7 @@ export const Colors = {
     income: '#32d583',
     expense: '#f97066',
     tabTrackBackground: '#4d4d4d',
+    divider: '#2a2a2a',
   },
 } as const;
 
@@ -187,3 +193,11 @@ export const ScreenBottomInset = 64;
 // 那件事现在是 ScreenBottomInset
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+/**
+ * 用单独一个 View 画的分隔线有多粗：就是发丝线，跟全 App 用边框画的那些（StyleSheet.hairlineWidth）一样粗。
+ *
+ * 曾经是取整后的 1dp（3 个像素）——为了深色主题下看得见；颜色退回原来那一档之后，
+ * 一张卡里粗一张卡里细反而不统一，所以跟其余的线对齐。留成常量是因为这几条线不是边框，写不了 hairlineWidth 以外的语义
+ */
+export const DividerWidth = StyleSheet.hairlineWidth;

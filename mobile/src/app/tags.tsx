@@ -61,7 +61,7 @@ function TagBreakdown({ tag, total }: { tag: string; total: number }) {
   if (!breakdown || breakdown.length === 0) return null;
 
   return (
-    <View style={[styles.breakdown, { borderTopColor: theme.backgroundSelected }]}>
+    <View style={[styles.breakdown, { borderTopColor: theme.divider }]}>
       {breakdown.map((row) => {
         const ratio = total > 0 ? row.total / total : 0;
         return (

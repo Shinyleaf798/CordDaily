@@ -112,7 +112,7 @@ export function BatchEditSheet({ transactions, onDismiss, onDone }: BatchEditShe
                   key={key}
                   style={[
                     styles.fieldRow,
-                    index > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.backgroundSelected } : null,
+                    index > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.divider } : null,
                   ]}>
                   <ThemedText type="default" style={styles.fieldLabel}>
                     {label}

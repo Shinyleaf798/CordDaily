@@ -97,7 +97,9 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
       return next;
     });
 
-  const toggleSelectAll = () => setSelectedIds(isAllSelected ? new Set() : new Set(data.results.map((t) => t.id)));
+  // 汇总卡左边那个方格：没全选时点 = 全勾上（顺带进勾选模式），全选时点 = 全取消并退出勾选。
+  // 进出勾选模式不再有单独的「选择 / 取消」按钮——想只改几笔，就先全选再把不要的勾掉
+  const toggleSelectAll = () => setSelectedIds(isAllSelected ? null : new Set(data.results.map((t) => t.id)));
   const panelMaxHeight = Dimensions.get('window').height * PANEL_MAX_HEIGHT_RATIO;
 
   const submit = (value: string) => {
@@ -206,30 +208,16 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
           <View style={[styles.results, { backgroundColor: theme.background }]}>
             {/* 选中的筛选条要一直看得见：结果只有三条的时候，人第一个想问的是
                 "是真的只有三条，还是我刚才点了什么"。这一行就是那个答案 */}
-            {filter || data.count > 0 ? (
+            {filter ? (
               <View style={styles.activeFilterRow}>
-                {filter ? (
-                  <Pressable
-                    onPress={() => toggleFilter(filter)}
-                    style={[styles.activeFilter, { backgroundColor: theme.cardHighlight }]}>
-                    <ThemedText style={[styles.activeFilterText, { color: theme.onCardHighlight }]}>
-                      {SearchFilterLabels[filter]}
-                    </ThemedText>
-                    <Ionicons name="close" size={13} color={theme.onCardHighlight} />
-                  </Pressable>
-                ) : null}
-                {/* 批量修改的入口。放在结果顶上而不是每行长按：长按要靠猜，
-                    而"先搜出来、再一起改"这件事本身就是从这一排开始的 */}
-                {data.count > 0 ? (
-                  <Pressable
-                    onPress={() => setSelectedIds(selectedIds ? null : new Set())}
-                    hitSlop={8}
-                    style={styles.selectToggle}>
-                    <ThemedText type="small" style={[styles.selectToggleText, { color: theme.cardHighlight }]}>
-                      {selectedIds ? '取消' : '选择'}
-                    </ThemedText>
-                  </Pressable>
-                ) : null}
+                <Pressable
+                  onPress={() => toggleFilter(filter)}
+                  style={[styles.activeFilter, { backgroundColor: theme.cardHighlight }]}>
+                  <ThemedText style={[styles.activeFilterText, { color: theme.onCardHighlight }]}>
+                    {SearchFilterLabels[filter]}
+                  </ThemedText>
+                  <Ionicons name="close" size={13} color={theme.onCardHighlight} />
+                </Pressable>
               </View>
             ) : null}
 
@@ -249,9 +237,24 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
                         上下两行会读成两件事。字号也压下来——这是一条结果的注脚，
                         不是页面标题，原来 16/700 的金额比底下每一行的金额还大 */}
                     <View style={styles.summaryRow}>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        找到 {data.count} 笔
-                      </ThemedText>
+                      {/* 批量修改的入口：一个全选方格，挨着「找到 N 笔」——它勾的正是这 N 笔。
+                          原来是结果顶上单独一行的「选择」文字按钮，把这张卡顶到了第二排 */}
+                      <Pressable
+                        onPress={toggleSelectAll}
+                        hitSlop={10}
+                        accessibilityRole="checkbox"
+                        accessibilityLabel="全选"
+                        accessibilityState={{ checked: isAllSelected }}
+                        style={styles.summaryCount}>
+                        <Ionicons
+                          name={isAllSelected ? 'checkbox' : 'square-outline'}
+                          size={20}
+                          color={isAllSelected ? theme.cardHighlight : theme.textSecondary}
+                        />
+                        <ThemedText type="small" themeColor="textSecondary">
+                          找到 {data.count} 笔
+                        </ThemedText>
+                      </Pressable>
                       <View style={styles.summaryTotals}>
                         <ThemedText style={styles.summaryValue}>支出 {formatCurrency(data.expense)}</ThemedText>
                         {data.income > 0 ? (
@@ -285,16 +288,11 @@ export function SearchOverlay({ onDismiss }: SearchOverlayProps) {
               />
             )}
 
-            {/* 勾选模式的底栏：全选、数量、修改。钉在结果区底部，滚到哪都够得着 */}
+            {/* 勾选模式的底栏：数量、修改。钉在结果区底部，滚到哪都够得着（全选在汇总卡上） */}
             {selectedIds ? (
               <SafeAreaView
                 edges={['bottom']}
                 style={[styles.selectBar, { backgroundColor: theme.backgroundElement }]}>
-                <Pressable onPress={toggleSelectAll} hitSlop={8}>
-                  <ThemedText type="small" style={{ color: theme.cardHighlight }}>
-                    {isAllSelected ? '取消全选' : '全选'}
-                  </ThemedText>
-                </Pressable>
                 <ThemedText type="small" themeColor="textSecondary" style={styles.selectCount}>
                   已选 {selectedRows.length} 笔
                 </ThemedText>
@@ -448,13 +446,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: ScreenPadding,
     paddingBottom: 8,
   },
-  selectToggle: {
-    marginLeft: 'auto',
-    paddingVertical: 6,
-  },
-  selectToggleText: {
-    fontWeight: '600',
-  },
   selectBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,6 +489,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 6,
     marginBottom: 10,
+  },
+  summaryCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   summaryRow: {
     flexDirection: 'row',

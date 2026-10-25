@@ -33,7 +33,7 @@ export function RingBills({ data, onSelectTransaction }: HomeBillsProps) {
               </ThemedText>
             </View>
             {group.items.map((item) => (
-              <View key={item.id} style={[styles.rowWrap, { borderTopColor: theme.backgroundSelected }]}>
+              <View key={item.id} style={[styles.rowWrap, { borderTopColor: theme.divider }]}>
                 <TransactionListItem {...item} surface="page" onPress={() => onSelectTransaction(item.id)} />
               </View>
             ))}

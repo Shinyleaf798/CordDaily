@@ -6,12 +6,12 @@ import { ScreenBottomInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * 首页列表末尾那颗「编辑」，点开是首页的样式弹层（HomeStyleSheet）。
+ * 页面内容末尾那颗「编辑」，点开是这一页的样式弹层（PageStyleSheet）。首页和日历都用它。
  *
  * 原来叫 HomeLayoutEditButton，跳去「我的 → 首页设置」那一页；那一页删了，
- * 弹层改成就地弹出：选一下就能在弹层后面看到首页变了样，不用来回跳页比较。
+ * 弹层改成就地弹出：选一下就能在弹层后面看到页面变了样，不用来回跳页比较。
  *
- * **弹层不归这颗按钮管，归路由页**（app/(tabs)/index.tsx）：按钮在滚动内容里，
+ * **弹层不归这颗按钮管，归路由页**（app/(tabs)/index.tsx、calendar.tsx）：按钮在滚动内容里，
  * 换了画法那一段会重渲染，弹层要是挂在按钮下面，会在用户刚点下去的那一刻跟着消失。
  * 所以这里只报"被点了"。
  *
@@ -21,7 +21,7 @@ import { useTheme } from '@/hooks/use-theme';
  * 不要再给 `paddingBottom`——否则留白会变成两倍。按钮压在这块空间的顶部、只占 36 高：
  * 底部 tab bar 中间那颗 ＋ 往上凸 24 并且水平居中，留在 36 以内两颗按钮不会叠在一起。
  */
-export function HomeEditButton({ onPress }: { onPress: () => void }) {
+export function PageEditButton({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
 
   return (

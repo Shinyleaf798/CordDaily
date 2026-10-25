@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
-import { Spacing } from '@/constants/theme';
+import { DividerWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
 
@@ -21,6 +21,9 @@ type CalendarSummaryHeaderProps = {
 /**
  * 日历顶部：月份切换 + 本月总消费 + 日均。
  *
+ * 只画内容不画卡片：经典样式里它跟月历合在同一张卡上（卡在 layouts/classic-top），
+ * 两样回答的是同一件事——这个月——分成两张圆角卡读起来像两件事。
+ *
  * 数字排版照搬 MonthSummaryCard（大号总额 + 下面一排次级数字），但没有直接复用那个组件：
  * 那张卡是"本月"三个数（支出/收入/结余）的固定组合，这里要的是支出 + 日均，
  * 而且多一个月份切换行。硬塞成一个带一堆开关的通用卡片，两边都会变难改。
@@ -38,7 +41,7 @@ export function CalendarSummaryHeader({
   const theme = useTheme();
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+    <View style={styles.wrap}>
       <View style={styles.monthRow}>
         <Pressable onPress={onPrevMonth} hitSlop={10} style={styles.arrow}>
           <Ionicons name="chevron-back" size={18} color={theme.textSecondary} />
@@ -66,7 +69,8 @@ export function CalendarSummaryHeader({
         <ThemedText style={styles.amount}>{formatAmount(monthExpense)}</ThemedText>
       </View>
 
-      <View style={[styles.statsRow, { borderTopColor: theme.backgroundSelected }]}>
+      <View style={[styles.rule, styles.ruleGap, { backgroundColor: theme.divider }]} />
+      <View style={styles.statsRow}>
         <View style={styles.stat}>
           <ThemedText themeColor="textSecondary" style={styles.statLabel}>
             日均消费 · {dailyAverageHint}
@@ -74,7 +78,7 @@ export function CalendarSummaryHeader({
           <ThemedText style={styles.statValue}>{formatCurrency(dailyAverage)}</ThemedText>
         </View>
 
-        <View style={[styles.statDivider, { backgroundColor: theme.backgroundSelected }]} />
+        <View style={[styles.statDivider, { backgroundColor: theme.divider }]} />
 
         <View style={styles.stat}>
           <ThemedText themeColor="textSecondary" style={styles.statLabel}>
@@ -88,9 +92,9 @@ export function CalendarSummaryHeader({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 20,
-    padding: 18,
+  // 外面那张卡的内距是 10（给月历留宽），这里再补 8，文字离卡边还是原来的 18
+  wrap: {
+    padding: 8,
   },
   monthRow: {
     flexDirection: 'row',
@@ -140,11 +144,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.5,
   },
+  // 分隔线是一个 1 高的 View，不是 borderTop：Android 上 1dp 的边框落在半个像素上会被抹成四行灰，
+  // 看着比旁边同色的线暗一截；单独一个 View 会对齐到整像素，跟卡里其余的线（以及「我的」页）一个样
+  rule: {
+    height: DividerWidth,
+  },
+  ruleGap: {
+    marginTop: 12,
+  },
   statsRow: {
     flexDirection: 'row',
-    marginTop: 12,
     paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   stat: {
     flex: 1,
@@ -161,7 +171,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statDivider: {
-    width: StyleSheet.hairlineWidth,
+    width: DividerWidth,
     marginHorizontal: Spacing.three,
   },
 });

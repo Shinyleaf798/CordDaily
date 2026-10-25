@@ -69,7 +69,7 @@ export default function ReimbursementsScreen() {
                 style={[
                   styles.row,
                   index < items.length - 1 && {
-                    borderBottomColor: theme.backgroundSelected,
+                    borderBottomColor: theme.divider,
                     borderBottomWidth: StyleSheet.hairlineWidth,
                   },
                 ]}>

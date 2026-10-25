@@ -2,7 +2,6 @@ import { StyleSheet, View } from 'react-native';
 
 import { CalendarDayCell } from '@/components/calendar/calendar-day-cell';
 import { ThemedText } from '@/components/ui/themed-text';
-import { ThemedView } from '@/components/ui/themed-view';
 import type { CalendarDay } from '@/hooks/use-calendar-view-data';
 import { WEEKDAY_LABELS } from '@/utils/date';
 
@@ -18,7 +17,7 @@ type CalendarMonthGridProps = {
 // 两种都不好；日历页翻月有自己的箭头，边角上不该再冒出第二条路径。
 export function CalendarMonthGrid({ weeks, maxDayExpense, selectedKey, onSelectDay }: CalendarMonthGridProps) {
   return (
-    <ThemedView type="backgroundElement" style={styles.card}>
+    <View style={styles.grid}>
       <View style={styles.weekRow}>
         {WEEKDAY_LABELS.map((label) => (
           <ThemedText key={label} themeColor="textSecondary" style={styles.weekday}>
@@ -45,14 +44,13 @@ export function CalendarMonthGrid({ weeks, maxDayExpense, selectedKey, onSelectD
           )}
         </View>
       ))}
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 20,
-    padding: 10,
+  // 不画卡片，跟总览一起放在 layouts/classic-top 那张卡里
+  grid: {
     gap: 4,
   },
   weekRow: {

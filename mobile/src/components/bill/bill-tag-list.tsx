@@ -42,7 +42,7 @@ export function BillTagList({ tags }: BillTagListProps) {
     <ThemedView type="backgroundElement" style={styles.card}>
       {tags.map((tag, index) => (
         <View key={tag.tag}>
-          {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} /> : null}
+          {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.divider }]} /> : null}
 
           <View style={styles.row}>
             <View style={styles.body}>

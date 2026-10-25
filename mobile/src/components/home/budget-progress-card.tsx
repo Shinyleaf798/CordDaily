@@ -90,7 +90,7 @@ export function BudgetProgressCard({
         )}
       </View>
 
-      <View style={[styles.footerRow, { backgroundColor: theme.cardHighlight + '1A', borderTopColor: theme.backgroundSelected }]}>
+      <View style={[styles.footerRow, { backgroundColor: theme.cardHighlight + '1A', borderTopColor: theme.divider }]}>
         <View style={styles.footerItem}>
           <ThemedText themeColor="textSecondary" style={styles.footerLabel}>
             本月日均消费
@@ -98,7 +98,7 @@ export function BudgetProgressCard({
           <ThemedText style={styles.footerValue}>{formatCurrency(dailyAverage)}</ThemedText>
         </View>
 
-        <View style={[styles.footerDivider, { backgroundColor: theme.backgroundSelected }]} />
+        <View style={[styles.footerDivider, { backgroundColor: theme.divider }]} />
 
         <View style={styles.footerItem}>
           <ThemedText themeColor="textSecondary" style={styles.footerLabel}>

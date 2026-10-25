@@ -89,7 +89,7 @@ export function CategoryBreakdown({ categories, onSelect }: CategoryBreakdownPro
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    // 不收圆角：日历和统计两页的卡片都是直角（2026-10-25 用户定的，见 DECISIONS.md）
     padding: 16,
     gap: 14,
   },

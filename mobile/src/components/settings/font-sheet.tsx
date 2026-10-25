@@ -67,7 +67,7 @@ export function FontSheet({ onDismiss }: { onDismiss: () => void }) {
                   accessibilityState={{ selected }}
                   style={[
                     styles.option,
-                    index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.backgroundSelected },
+                    index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.divider },
                   ]}>
                   <View style={styles.grow}>
                     <ThemedText>{FontLabels[option]}</ThemedText>

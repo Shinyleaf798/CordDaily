@@ -34,7 +34,7 @@ export function MonthSummaryCard({ monthLabel, expense, income, balance }: Month
         <ThemedText style={styles.amount}>{formatAmount(expense)}</ThemedText>
       </View>
 
-      <View style={[styles.statsRow, { borderTopColor: theme.backgroundSelected }]}>
+      <View style={[styles.statsRow, { borderTopColor: theme.divider }]}>
         <View style={styles.stat}>
           <View style={styles.statLabelRow}>
             <View style={[styles.dot, { backgroundColor: theme.income }]} />
@@ -45,7 +45,7 @@ export function MonthSummaryCard({ monthLabel, expense, income, balance }: Month
           <ThemedText style={[styles.statValue, { color: theme.income }]}>{formatCurrency(income)}</ThemedText>
         </View>
 
-        <View style={[styles.statDivider, { backgroundColor: theme.backgroundSelected }]} />
+        <View style={[styles.statDivider, { backgroundColor: theme.divider }]} />
 
         <View style={styles.stat}>
           <View style={styles.statLabelRow}>

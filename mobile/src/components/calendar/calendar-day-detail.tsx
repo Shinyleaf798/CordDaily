@@ -44,7 +44,7 @@ export function CalendarDayDetail({ selection, onSelectTransaction }: CalendarDa
         selection.items.map((item, index) => (
           <View key={item.id}>
             {/* 分隔线从文字开始（缩进 66 = 16 内距 + 38 图标 + 12 间距），不切过图标，同首页 */}
-            {index > 0 ? <View style={[styles.rowDivider, { backgroundColor: theme.backgroundSelected }]} /> : null}
+            {index > 0 ? <View style={[styles.rowDivider, { backgroundColor: theme.divider }]} /> : null}
             <View style={styles.itemWrap}>
               <TransactionListItem {...item} surface="card" onPress={() => onSelectTransaction(item.id)} />
             </View>
@@ -57,7 +57,7 @@ export function CalendarDayDetail({ selection, onSelectTransaction }: CalendarDa
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    // 不收圆角：日历和统计两页的卡片都是直角（2026-10-25 用户定的，见 DECISIONS.md）
     overflow: 'hidden',
   },
   empty: {

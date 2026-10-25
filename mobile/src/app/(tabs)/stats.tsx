@@ -40,7 +40,9 @@ export default function StatsScreen() {
       {/* 没有标题行：底部 tab 已经亮着「统计」，月份和左右翻页都在下面那张卡的第一行，标题条只是重复，拿掉后第一屏多出一截 */}
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* 翻月的控件在卡片里，跟日历页同一个位置同一个样子 */}
+        {/* 翻月的控件在卡片里，跟日历页同一个位置同一个样子。
+            趋势图是这张卡的下半（理由见 StatsSummaryCard）。柱子数跟着数据走：只有这个月有账就只画一根，
+            攒够月份它自己会长到 6 根。一笔账都没有时不画——一张空图比没有图更难看懂 */}
         <StatsSummaryCard
           monthLabel={data.monthLabel}
           onPrevMonth={() => setMonth(shiftMonth(month, -1))}
@@ -50,16 +52,8 @@ export default function StatsScreen() {
           deltaAmount={data.deltaAmount}
           deltaPercentage={data.deltaPercentage}
           previousExpense={data.previousExpense}
+          trend={data.trend.length > 0 ? <MonthTrend bars={data.trend} /> : undefined}
         />
-
-        {/* 趋势图的柱子数跟着数据走：只有这个月有账就只画一根，攒够月份它自己会长到 6 根。
-            一笔账都没有时整段不画——一张空图比没有图更难看懂 */}
-        {data.trend.length > 0 ? (
-          <>
-            <SectionHeader title="月度趋势" />
-            <MonthTrend bars={data.trend} />
-          </>
-        ) : null}
 
         <SectionHeader title="支出构成" />
         <CategoryBreakdown categories={data.categories} onSelect={openCategory} />
@@ -71,7 +65,7 @@ export default function StatsScreen() {
         <ThemedView type="backgroundElement" style={styles.sideCard}>
           <Pressable
             onPress={() => router.push('/reimbursements')}
-            style={[styles.sideCell, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: theme.backgroundSelected }]}>
+            style={[styles.sideCell, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: theme.divider }]}>
             <ThemedText type="small" themeColor="textSecondary">
               待收回
             </ThemedText>
@@ -144,7 +138,7 @@ const styles = StyleSheet.create({
   },
   sideCard: {
     flexDirection: 'row',
-    borderRadius: 16,
+    // 不收圆角：日历和统计两页的卡片都是直角（2026-10-25 用户定的，见 DECISIONS.md）
     overflow: 'hidden',
     marginTop: 8,
   },

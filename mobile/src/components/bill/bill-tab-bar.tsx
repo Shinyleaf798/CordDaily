@@ -80,7 +80,7 @@ export function BillTabBar({ value, onChange, progress }: BillTabBarProps) {
 
   return (
     <View
-      style={[styles.bar, { backgroundColor: theme.background, borderTopColor: theme.backgroundSelected }]}
+      style={[styles.bar, { backgroundColor: theme.background, borderTopColor: theme.divider }]}
       onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
       {/* 量出宽度之前不画：translateX 只吃数字，0 宽度算出来的位置全是 0 */}
       {width > 0 ? (

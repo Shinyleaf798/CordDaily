@@ -34,7 +34,7 @@ type BillSummaryTableProps = {
  */
 export function BillSummaryTable({ title, rows }: BillSummaryTableProps) {
   const theme = useTheme();
-  const columnBorder = { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: theme.backgroundSelected };
+  const columnBorder = { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: theme.divider };
 
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
@@ -43,7 +43,7 @@ export function BillSummaryTable({ title, rows }: BillSummaryTableProps) {
         <ThemedText style={styles.cardTitle}>{title}</ThemedText>
       </View>
 
-      <View style={[styles.head, { borderBottomColor: theme.backgroundSelected }]}>
+      <View style={[styles.head, { borderBottomColor: theme.divider }]}>
         <ThemedText themeColor="textSecondary" style={[styles.cell, styles.labelCell, styles.headText]}>
           日期
         </ThemedText>

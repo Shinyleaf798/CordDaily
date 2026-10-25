@@ -250,7 +250,7 @@ export default function CategoriesScreen() {
             放在 ScrollView 外面而不是用绝对定位浮在上面：占真实高度的话，
             列表的可滚区自己就短了那么一截，最后一行不会被它盖住，也不用再补一个
             "刚好等于按钮高度"的 paddingBottom 去躲它——那种数字改一次样式就要对一次 */}
-        <View style={[styles.footer, { borderTopColor: theme.backgroundSelected }]}>
+        <View style={[styles.footer, { borderTopColor: theme.divider }]}>
           <Pressable
             onPress={() => setEditor({ category: null })}
             style={[styles.addRow, { borderColor: theme.cardHighlight }]}>

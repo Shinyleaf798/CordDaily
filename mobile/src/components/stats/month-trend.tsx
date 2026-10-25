@@ -12,7 +12,7 @@ type MonthTrendProps = {
 const CHART_HEIGHT = 72;
 
 /**
- * 月度支出趋势：一个月一根柱。
+ * 月度支出趋势：一个月一根柱。只画图不画卡片——它是统计页总览卡的下半（StatsSummaryCard 的 trend）。
  *
  * **柱不是线**：月度花销是一个个离散的量，不是连续信号，几个点画折线是硬凑。
  * 也**只画支出**，不把收入叠上去——那会让"这个月比上个月高多少"这唯一要读的事变难。
@@ -29,8 +29,7 @@ export function MonthTrend({ bars }: MonthTrendProps) {
   const theme = useTheme();
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-      <View style={styles.plot}>
+    <View style={styles.plot}>
         {bars.map((bar) => (
           <View key={bar.monthKey} style={styles.column}>
             {/* 每根柱子都标金额。柱子的高低回答"哪个月多"，数字回答"到底多少"——
@@ -67,17 +66,11 @@ export function MonthTrend({ bars }: MonthTrendProps) {
             </ThemedText>
           </View>
         ))}
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
   plot: {
     flexDirection: 'row',
     gap: 8,

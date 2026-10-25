@@ -18,6 +18,7 @@ import { seedDefaultCategories, seedDefaultSubcategories } from '@/db/categories
 import { getCloudSession } from '@/db/neon/session';
 import { maybeAutoSync } from '@/db/sync';
 import { useAuthStore } from '@/store/auth.store';
+import { useCalendarStore } from '@/store/calendar.store';
 import { useFontStore } from '@/store/font.store';
 import { useHomeStore } from '@/store/home.store';
 import { useThemeStore } from '@/store/theme.store';
@@ -60,6 +61,9 @@ export default function RootLayout() {
   // 否则会先闪一下默认样子再跳成用户选的那套
   const isHomeLayoutHydrated = useHomeStore((s) => s.isHydrated);
   const hydrateHomeLayout = useHomeStore((s) => s.hydrate);
+  // 日历的两段画法同理，不然切到日历 tab 时会先闪一下经典再跳成热力
+  const isCalendarHydrated = useCalendarStore((s) => s.isHydrated);
+  const hydrateCalendar = useCalendarStore((s) => s.hydrate);
 
   // 字体偏好和 Inter 的字体文件都要在首屏之前到位，否则数字会先用系统字体画一帧再跳。
   // Inter 不管选没选都加载：四个文件从包里读，几十毫秒；只在选中时才加载，切换那一下就得等它。
@@ -68,12 +72,18 @@ export default function RootLayout() {
   const hydrateFont = useFontStore((s) => s.hydrate);
   const [isInterLoaded, interError] = useFonts(InterFontAssets);
   const isHydrated =
-    isAuthHydrated && isThemeHydrated && isHomeLayoutHydrated && isFontHydrated && (isInterLoaded || !!interError);
+    isAuthHydrated &&
+    isThemeHydrated &&
+    isHomeLayoutHydrated &&
+    isCalendarHydrated &&
+    isFontHydrated &&
+    (isInterLoaded || !!interError);
 
   useEffect(() => {
     hydrateAuth();
     hydrateTheme();
     hydrateHomeLayout();
+    hydrateCalendar();
     hydrateFont();
     // 首次启动灌默认分类和默认账户。放在这里而不是 db/client.ts 的 getDb 里，是因为这两个模块都要 import getDb，
     // 反过来让 client.ts import 它们会形成循环依赖。
@@ -87,7 +97,7 @@ export default function RootLayout() {
     seedDefaultAccounts().catch(() => {
       // 同上：账户页可以手动新建账户
     });
-  }, [hydrateAuth, hydrateTheme, hydrateHomeLayout, hydrateFont]);
+  }, [hydrateAuth, hydrateTheme, hydrateHomeLayout, hydrateCalendar, hydrateFont]);
 
   useEffect(() => {
     if (isHydrated) {
@@ -147,7 +157,7 @@ export default function RootLayout() {
       background: theme.background,
       card: theme.backgroundElement,
       text: theme.text,
-      border: theme.backgroundSelected,
+      border: theme.divider,
       primary: theme.cardHighlight,
       notification: theme.expense,
     },

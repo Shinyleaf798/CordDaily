@@ -83,7 +83,7 @@ export default function AccountEditorScreen() {
             />
           </View>
 
-          <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+          <View style={[styles.divider, { backgroundColor: theme.divider }]} />
 
           {/* 币种不给选：全 App 记账都按 MYR 存（transactions.currency 固定 'MYR'、汇率固定 1）。
               这里放一个选择器的话，选了 USD 的账户余额会拿一堆 MYR 的流水算出来，

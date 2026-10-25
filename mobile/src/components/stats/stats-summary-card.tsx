@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/ui/themed-text';
+import { DividerWidth } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAmount, formatCurrency } from '@/utils/format';
 
@@ -16,6 +18,8 @@ type StatsSummaryCardProps = {
   /** 上月没有支出时是 null，这时只说绝对值不说百分比 */
   deltaPercentage: number | null;
   previousExpense: number;
+  /** 卡的下半：月度趋势图。一笔账都没有时不传，卡就只有上半 */
+  trend?: ReactNode;
 };
 
 /**
@@ -32,6 +36,10 @@ type StatsSummaryCardProps = {
  * 月份切换行也在这张卡里，跟日历页的 CalendarSummaryHeader 一样：
  * 两页都是"按月翻着看"，翻月的控件长在同一个位置、同一个样子，换页不用重新找。
  * 设计稿上它原本是右上角一个 chip，改掉是为了这个一致性，顺带白捡一个「回到本月」的退路。
+ *
+ * **月度趋势图在这张卡的下半**，不再单独一张卡：环比那颗胶囊已经在跟上个月比，
+ * 趋势图是把同一个比较拉长到几个月，两样是一组。分成两张卡、中间再夹一行「月度趋势」小标题，
+ * 读起来像两件事（见 DECISIONS.md）。
  */
 export function StatsSummaryCard({
   monthLabel,
@@ -42,6 +50,7 @@ export function StatsSummaryCard({
   deltaAmount,
   deltaPercentage,
   previousExpense,
+  trend,
 }: StatsSummaryCardProps) {
   const theme = useTheme();
 
@@ -79,7 +88,8 @@ export function StatsSummaryCard({
         <ThemedText style={styles.amount}>{formatAmount(expense)}</ThemedText>
       </View>
 
-      <View style={[styles.footer, { borderTopColor: theme.backgroundSelected }]}>
+      <View style={[styles.rule, { marginTop: 12, backgroundColor: theme.divider }]} />
+      <View style={styles.footer}>
         {hasComparison ? (
           <>
             <View style={[styles.chip, { backgroundColor: theme.backgroundSelected }]}>
@@ -100,14 +110,35 @@ export function StatsSummaryCard({
           </ThemedText>
         )}
       </View>
+
+      {trend ? (
+        <>
+          <View style={[styles.rule, { marginTop: 14, backgroundColor: theme.divider }]} />
+          <View style={styles.trend}>
+            <ThemedText themeColor="textSecondary" style={styles.label}>
+              月度趋势
+            </ThemedText>
+            {trend}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    // 不收圆角：日历和统计两页的卡片都是直角（2026-10-25 用户定的，见 DECISIONS.md）
     padding: 18,
+  },
+  // 分隔线是一个 1 高的 View，不是 borderTop：Android 上 1dp 的边框落在半个像素上会被抹成四行灰，
+  // 看着比旁边同色的线暗一截；单独一个 View 会对齐到整像素，跟卡里其余的线（以及「我的」页）一个样
+  rule: {
+    height: DividerWidth,
+  },
+  trend: {
+    paddingTop: 14,
+    gap: 10,
   },
   monthRow: {
     flexDirection: 'row',
@@ -161,9 +192,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 12,
     paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   chip: {
     borderRadius: 999,

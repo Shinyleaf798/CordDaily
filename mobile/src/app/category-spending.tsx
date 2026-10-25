@@ -62,7 +62,7 @@ export default function CategorySpendingScreen() {
             <ThemedText style={styles.amount}>{formatAmount(data.total)}</ThemedText>
           </View>
 
-          <View style={[styles.footer, { borderTopColor: theme.backgroundSelected }]}>
+          <View style={[styles.footer, { borderTopColor: theme.divider }]}>
             <View style={[styles.chip, { backgroundColor: theme.backgroundSelected }]}>
               <ThemedText style={[styles.chipText, { color: theme.cardHighlight }]}>
                 {data.percentage.toFixed(1)}%

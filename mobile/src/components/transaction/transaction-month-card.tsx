@@ -68,7 +68,7 @@ export function TransactionMonthCard({ group, onSelect, selectedIds }: Transacti
               <View
                 style={[
                   styles.divider,
-                  { backgroundColor: theme.backgroundSelected },
+                  { backgroundColor: theme.divider },
                   // 勾选模式下文字整体右移了一列勾，分隔线的起点跟着挪，不然会切过勾和日期
                   isSelecting ? { marginLeft: DIVIDER_INSET + CHECK_WIDTH + COLUMN_GAP } : null,
                 ]}

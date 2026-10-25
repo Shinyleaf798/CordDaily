@@ -86,14 +86,14 @@ export function RingTop({ data }: HomeTopProps) {
           </ThemedText>
           <ThemedText style={styles.pillValue}>{formatAmount(data.expense)}</ThemedText>
         </View>
-        <View style={[styles.pillDivider, { backgroundColor: theme.backgroundSelected }]} />
+        <View style={[styles.pillDivider, { backgroundColor: theme.divider }]} />
         <View style={styles.pillCell}>
           <ThemedText themeColor="textSecondary" style={styles.pillLabel}>
             收入
           </ThemedText>
           <ThemedText style={[styles.pillValue, { color: theme.income }]}>{formatAmount(data.income)}</ThemedText>
         </View>
-        <View style={[styles.pillDivider, { backgroundColor: theme.backgroundSelected }]} />
+        <View style={[styles.pillDivider, { backgroundColor: theme.divider }]} />
         <View style={styles.pillCell}>
           <ThemedText themeColor="textSecondary" style={styles.pillLabel}>
             结余
