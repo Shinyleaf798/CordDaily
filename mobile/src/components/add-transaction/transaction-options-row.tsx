@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useRecentTags } from '@/hooks/use-transactions';
 import { formatClockTime, formatDayLabel } from '@/utils/date';
 
 type TransactionOptionsRowProps = {
@@ -53,6 +54,9 @@ export function TransactionOptionsRow({
   const theme = useTheme();
   const [isTagInputOpen, setIsTagInputOpen] = useState(false);
   const [draftTag, setDraftTag] = useState('');
+  const { data: recentTags } = useRecentTags();
+  // 已经加在这笔上的不再列：点了也不会有变化，留着只会让人以为没点中
+  const suggestedTags = (recentTags ?? []).filter((tag) => !tags.includes(tag));
 
   const commitDraftTag = () => {
     const trimmed = draftTag.trim();
@@ -145,6 +149,28 @@ export function TransactionOptionsRow({
             returnKeyType="done"
             style={[styles.tagInput, { color: theme.text, backgroundColor: theme.background }]}
           />
+          {/* 最近用过的标签，点一下直接加上，不用每次重打。一趟旅行要连记十几笔，
+              每笔都敲一遍「韩国旅行」既慢又容易打错成两个标签 */}
+          {/* 只占一行、横着滑：这一块每多一行，底下的数字键盘就被压矮一截 */}
+          {suggestedTags.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.recentRow}>
+              <ThemedText type="small" themeColor="textSecondary">
+                最近
+              </ThemedText>
+              {suggestedTags.map((tag) => (
+                <Pressable
+                  key={tag}
+                  onPress={() => onTagsChange([...tags, tag])}
+                  style={[styles.tagChip, styles.recentChip, { borderColor: theme.backgroundSelected }]}>
+                  <ThemedText type="small">+ {tag}</ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </View>
       )}
     </View>
@@ -222,6 +248,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,
+  },
+  recentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  // 描边而不是实底：跟上面"已经加上的"那排区分开，一眼看出哪些是候选
+  recentChip: {
+    borderWidth: StyleSheet.hairlineWidth,
   },
   tagInput: {
     height: 40,

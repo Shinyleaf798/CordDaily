@@ -1,11 +1,10 @@
-import type { CategorySpending, MonthlyExpense, MonthSummary, TagSummary, TransactionWithCategory } from '@/db/transactions';
+import type { CategorySpending, MonthlyExpense, MonthSummary, TransactionWithCategory } from '@/db/transactions';
 import {
   useCategorySpending,
   useCategoryTransactions,
   useMonthlyExpense,
   useMonthSummary,
   usePendingReimbursementTotal,
-  useTagSummaries,
 } from '@/hooks/use-transactions';
 import { formatMonthKey, shiftMonth, startOfMonth } from '@/utils/date';
 import { groupTransactionsByDay, type DatedTransaction, type TransactionDayGroup } from '@/utils/transaction-view';
@@ -16,7 +15,6 @@ const TREND_MAX_MONTHS = 6;
 /** 主屏构成图最多列几行，超出的并进「其他」 */
 const TOP_CATEGORY_COUNT = 5;
 /** 主屏标签区最多列几行 */
-const TOP_TAG_COUNT = 3;
 
 export type CategorySlice = {
   /** 「其他」那一行没有真实分类，id 是 `__other__`，点不进去 */
@@ -64,9 +62,6 @@ export type StatsViewData = {
   /** 趋势图的柱子。一根都没有（一笔账都还没记）时是空数组，界面整段不画 */
   trend: TrendBar[];
 
-  tags: TagSummary[];
-  tagCount: number;
-
   pendingReimbursement: number;
 };
 
@@ -88,10 +83,9 @@ export function buildStatsViewData(input: {
   previousSummary?: MonthSummary;
   spending?: CategorySpending[];
   monthly?: MonthlyExpense[];
-  tags?: TagSummary[];
   pendingReimbursement?: number;
 }): StatsViewData {
-  const { now, month, summary, previousSummary, spending, monthly, tags, pendingReimbursement } = input;
+  const { now, month, summary, previousSummary, spending, monthly, pendingReimbursement } = input;
 
   const expense = summary?.expense ?? 0;
   const previousExpense = previousSummary?.expense ?? 0;
@@ -189,8 +183,6 @@ export function buildStatsViewData(input: {
     }
   }
 
-  const allTags = tags ?? [];
-
   return {
     monthLabel: `${month.getFullYear()}年${month.getMonth() + 1}月`,
     isCurrentMonth: month.getTime() === startOfMonth(now).getTime(),
@@ -202,8 +194,6 @@ export function buildStatsViewData(input: {
     categories,
     categoryCount: sorted.length,
     trend,
-    tags: allTags.slice(0, TOP_TAG_COUNT),
-    tagCount: allTags.length,
     pendingReimbursement: pendingReimbursement ?? 0,
   };
 }
@@ -211,9 +201,7 @@ export function buildStatsViewData(input: {
 /**
  * 统计页取数的唯一入口：四个查询 + 一次派生。
  *
- * 口径上有一处**故意**的不一致：标签汇总是全部时间的，其余三个都是本月的。
- * 「槟城旅行」「装修」这类标签圈的是一件横跨几个月的事，切成「9 月那部分」没有意义。
- * 所以页面上那一区的标题写明了「全部时间」，把这个差别摆在明处而不是让它悄悄存在。
+ * 全部是本月的口径。原来还有一个全部时间的标签汇总，跟这一页其余部分对不上，已经搬去账单预览（见 DECISIONS.md）。
  */
 export function useStatsViewData(month: Date): StatsViewData {
   // 每次渲染重新取"现在"，不用 useMemo：App 挂在后台跨过月底再回来，
@@ -225,10 +213,9 @@ export function useStatsViewData(month: Date): StatsViewData {
   const { data: previousSummary } = useMonthSummary(previousMonth);
   const { data: spending } = useCategorySpending(month);
   const { data: monthly } = useMonthlyExpense(month, TREND_MAX_MONTHS);
-  const { data: tags } = useTagSummaries();
   const { data: pendingReimbursement } = usePendingReimbursementTotal();
 
-  return buildStatsViewData({ now, month, summary, previousSummary, spending, monthly, tags, pendingReimbursement });
+  return buildStatsViewData({ now, month, summary, previousSummary, spending, monthly, pendingReimbursement });
 }
 
 // ---- 分类下钻：点主屏构成图里的一行进来 ----

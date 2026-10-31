@@ -106,6 +106,20 @@ export type BillTagStat = {
   percentage: number;
   /** 相对第一名的长度，0-100。条的宽度用它 */
   relative: number;
+  /**
+   * 这个标签在这一段里按（一级）分类拆开，多到少排。点开一行标签时显示——
+   * 标签的用处正是圈起横跨几个分类的一件事，拆开看才知道钱花在哪
+   */
+  categories: BillTagCategory[];
+};
+
+export type BillTagCategory = {
+  key: string;
+  name: string;
+  icon: string | null;
+  total: number;
+  /** 占这个标签总额的百分比（不是占这一段的总额）：展开之后的参照系是这个标签 */
+  percentage: number;
 };
 
 export type BillOverviewData = {
@@ -491,14 +505,22 @@ export function buildBillOverviewData(input: {
     };
   });
 
-  // 标签：跟统计页那张全时间的标签汇总不同，这里**限定在选中的那一段**里。
-  // 「槟城旅行」那种跨月的标签在这一页照样切得开，因为这一页的主语本来就是"这一段时间"
-  const tagTotals = new Map<string, { total: number; count: number }>();
+  // 标签：**限定在选中的那一段**里。这是全 App 唯一看标签的地方（统计页那格和 /tags 汇总页已经拿掉），
+  // 选「总」就是全部时间，选「月」就是这个月——「槟城旅行一共花了多少」和「这个月旅行花了多少」都答得了
+  type TagEntry = { total: number; count: number; categories: Map<string, Omit<BillTagCategory, 'percentage'>> };
+  const tagTotals = new Map<string, TagEntry>();
   for (const t of typed) {
+    // 子分类的钱卷到一级分类头上，跟分类页签同一个口径
+    const catKey = t.categoryParentId ?? t.categoryId;
+    const catName = t.categoryParentId ? (t.categoryParentName ?? '未分类') : (t.categoryName ?? '未分类');
+    const catIcon = t.categoryParentId ? t.categoryParentIcon : t.categoryIcon;
     for (const tag of t.tags) {
-      const entry = tagTotals.get(tag) ?? { total: 0, count: 0 };
+      const entry = tagTotals.get(tag) ?? { total: 0, count: 0, categories: new Map() };
       entry.total += t.amountInBase;
       entry.count += 1;
+      const cat = entry.categories.get(catKey) ?? { key: catKey, name: catName, icon: catIcon, total: 0 };
+      cat.total += t.amountInBase;
+      entry.categories.set(catKey, cat);
       tagTotals.set(tag, entry);
     }
   }
@@ -511,6 +533,9 @@ export function buildBillOverviewData(input: {
     count: entry.count,
     percentage: typeTotal > 0 ? (entry.total / typeTotal) * 100 : 0,
     relative: longestTag > 0 ? (entry.total / longestTag) * 100 : 0,
+    categories: [...entry.categories.values()]
+      .sort((a, b) => b.total - a.total)
+      .map((cat) => ({ ...cat, percentage: entry.total > 0 ? (cat.total / entry.total) * 100 : 0 })),
   }));
 
   // ---- 日均 / 笔均 / 明细 ----

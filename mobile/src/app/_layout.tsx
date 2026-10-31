@@ -224,7 +224,8 @@ export default function RootLayout() {
               name="recurring-editor"
               options={{ ...ScreenTransitions.push, title: '', headerTitleAlign: 'center' }}
             />
-            <Stack.Screen name="tags" options={{ ...ScreenTransitions.push, title: '标签汇总' }} />
+            {/* 一个标签的全部账单，标题由页面自己按标签名设 */}
+            <Stack.Screen name="tag-bills" options={{ ...ScreenTransitions.push, title: '' }} />
             <Stack.Screen
               name="reimbursements"
               options={{ ...ScreenTransitions.push, title: '报销' }}

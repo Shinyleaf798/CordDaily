@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -29,8 +30,6 @@ export default function StatsScreen() {
   const theme = useTheme();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const data = useStatsViewData(month);
-  // 标签那格只放用得最多的一个，其余的数一下，点进去看全
-  const topTag = data.tags[0];
 
   const openCategory = (categoryId: string) =>
     router.push({ pathname: '/category-spending', params: { id: categoryId, month: formatMonthKey(month) } });
@@ -58,43 +57,22 @@ export default function StatsScreen() {
         <SectionHeader title="支出构成" />
         <CategoryBreakdown categories={data.categories} onSelect={openCategory} />
 
-        {/* 待收回和标签并排压成一张卡：两样都是"顺便看一眼"的侧面，各占一整段太重了。
-            原来标签是一张列表、待收回是单独一行，现在各留一个数，点进去才看全
-            （这一块是从「账本」样式的设计稿里搬回经典样式的，见 DECISIONS.md）。
-            标签那格标明「全部时间」：其余都是本月，不让这个差别悄悄存在 */}
+        {/* 待收回占满一行，点进报销页。原来旁边还有一格「标签 · 全部时间」——这一页说的都是本月，
+            只有它是全部时间，标签已经整个搬进账单预览的标签页签（能按总 / 年 / 月 / 周切，见 DECISIONS.md） */}
         <ThemedView type="backgroundElement" style={styles.sideCard}>
-          <Pressable
-            onPress={() => router.push('/reimbursements')}
-            style={[styles.sideCell, { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: theme.divider }]}>
-            <ThemedText type="small" themeColor="textSecondary">
-              待收回
-            </ThemedText>
-            <ThemedText style={[styles.sideValue, { color: theme.cardHighlight }]} numberOfLines={1}>
-              {formatCurrency(data.pendingReimbursement)}
-            </ThemedText>
+          <Pressable onPress={() => router.push('/reimbursements')} style={styles.sideCell}>
+            <View style={styles.sideText}>
+              <ThemedText type="small" themeColor="textSecondary">
+                待收回
+              </ThemedText>
+              <ThemedText style={[styles.sideValue, { color: theme.cardHighlight }]} numberOfLines={1}>
+                {formatCurrency(data.pendingReimbursement)}
+              </ThemedText>
+            </View>
             <ThemedText type="small" themeColor="textSecondary">
               垫出去还没收回的钱
             </ThemedText>
-          </Pressable>
-          <Pressable onPress={() => router.push('/tags')} style={styles.sideCell}>
-            <ThemedText type="small" themeColor="textSecondary">
-              标签 · 全部时间
-            </ThemedText>
-            {topTag ? (
-              <>
-                <ThemedText style={styles.sideTag} numberOfLines={1}>
-                  {topTag.tag}
-                </ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                  {formatCurrency(topTag.total)}
-                  {data.tagCount > 1 ? ` · 还有 ${data.tagCount - 1} 个` : ''}
-                </ThemedText>
-              </>
-            ) : (
-              <ThemedText type="small" themeColor="textSecondary">
-                还没用过标签，适合圈「一趟旅行」这种跨分类的事
-              </ThemedText>
-            )}
+            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -137,26 +115,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   sideCard: {
-    flexDirection: 'row',
     // 不收圆角：日历和统计两页的卡片都是直角（2026-10-25 用户定的，见 DECISIONS.md）
     overflow: 'hidden',
     marginTop: 8,
   },
   sideCell: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  sideText: {
+    flex: 1,
     gap: 2,
   },
   sideValue: {
     fontSize: 20,
     lineHeight: 28,
     fontWeight: '700',
-  },
-  sideTag: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '600',
-    marginTop: 3,
   },
 });

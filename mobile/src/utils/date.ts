@@ -66,6 +66,13 @@ export function formatDayKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+/** formatDayKey 的逆操作（本地时区的那天 0 点）。解不出来时是 null，由调用方决定怎么退 */
+export function parseDayKey(key: string | undefined): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key ?? '');
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
 /** 9月13日 */
 export function formatMonthDay(date: Date): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;

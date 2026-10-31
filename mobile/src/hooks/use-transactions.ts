@@ -8,14 +8,15 @@ import {
   getMonthSummary,
   getTransaction,
   getPendingReimbursementTotal,
-  getTagBreakdown,
   listCategorySpending,
   listCategoryTransactions,
   listMonthlyExpense,
   listReimbursements,
   listMonthTransactions,
   listRecentTransactions,
-  listTagSummaries,
+  listRecentTags,
+  listTagTransactions,
+  renameTag,
   listTransactionsInRange,
   searchTransactions,
   setReimbursed,
@@ -42,8 +43,8 @@ export function invalidateAll(queryClient: QueryClient) {
     ['budgetStatus'],
     ['categorySpending'],
     ['monthlyExpense'],
-    ['tagSummaries'],
-    ['tagBreakdown'],
+    // 记账页标签输入底下那排「最近用过」
+    ['recentTags'],
     ['reimbursements'],
     // 记账页的历史补全（主题/店名/地点）。批量改名之后旧名字不该还挂在补全列表里
     ['fieldSuggestions'],
@@ -153,6 +154,15 @@ export function useBatchUpdateTransactions() {
   });
 }
 
+/** 标签改名（全部时间、所有用到它的账）。改完跟别的写入一样整组失效：标签页签、最近用过、账单列表都要跟着变 */
+export function useRenameTag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to }: { from: string; to: string }) => renameTag(from, to),
+    onSuccess: () => invalidateAll(queryClient),
+  });
+}
+
 export function useDuplicateTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -195,16 +205,18 @@ export function useCategoryTransactions(categoryId: string | null | undefined, d
   });
 }
 
-export function useTagSummaries() {
-  return useQuery({ queryKey: ['tagSummaries'], queryFn: listTagSummaries });
-}
-
-export function useTagBreakdown(tag: string | null) {
+/** 一个标签下的全部账单。挂在 TRANSACTIONS_KEY 底下，记一笔 / 改一笔之后跟着 invalidateAll 一起刷新 */
+export function useTagTransactions(tag: string | null | undefined) {
   return useQuery({
-    queryKey: ['tagBreakdown', tag],
-    queryFn: () => getTagBreakdown(tag!),
+    queryKey: [...TRANSACTIONS_KEY, 'tag', tag],
+    queryFn: () => listTagTransactions(tag!),
     enabled: !!tag,
   });
+}
+
+/** 记账页标签输入底下那排「最近用过」 */
+export function useRecentTags() {
+  return useQuery({ queryKey: ['recentTags'], queryFn: () => listRecentTags() });
 }
 
 export function useReimbursements(settled: boolean) {

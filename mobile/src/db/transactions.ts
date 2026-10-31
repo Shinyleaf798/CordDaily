@@ -680,57 +680,76 @@ export async function listCategoryTransactions(
 
 // ---- 标签：跟分类正交的第二个汇总维度 ----
 
-export type TagSummary = { tag: string; total: number; count: number };
+// tags 存成 JSON 字符串，SQLite 没法直接按数组元素查，所以取出来在 JS 里比对。
+// 交易量大了之后再考虑建 transaction_tags 关联表；现在本地数据量级完全够用，不为它多一张要同步的表。
+// 按标签汇总在 use-bill-overview-data 里从那一段的账单直接算，不走这里。
 
-// tags 存成 JSON 字符串，SQLite 没法直接 GROUP BY 数组元素，所以取出来在 JS 里摊平。
-// 交易量大了之后再考虑建 transaction_tags 关联表；现在本地数据量级完全够用，
-// 先不为了一个汇总页引入一张要额外同步的表。
-export async function listTagSummaries(): Promise<TagSummary[]> {
+// 一个标签下的全部账单（账单预览标签页签「查看这 N 笔账单」进来，时间段由页面自己筛）。
+// 先用 LIKE 在 SQL 里粗筛掉绝大多数行，再在 JS 里按解析后的数组精确比对：
+// "韩国" 的 LIKE 也会命中 "韩国旅行"，只有比对数组元素才不会把两个标签混在一起
+export async function listTagTransactions(tag: string): Promise<TransactionWithCategory[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<{ tags: string; amountInBase: number }>(
-    `SELECT tags, amountInBase FROM transactions WHERE type = 'EXPENSE' AND tags != '[]'`,
+  const rows = await db.getAllAsync<TransactionRowWithCategory>(
+    `SELECT ${TX_CATEGORY_COLUMNS}
+     ${TX_CATEGORY_JOIN}
+     WHERE t.tags LIKE ?
+     ORDER BY t.date DESC`,
+    [`%${JSON.stringify(tag).slice(1, -1)}%`],
   );
-
-  const totals = new Map<string, TagSummary>();
-  for (const row of rows) {
-    for (const tag of safeParseTags(row.tags)) {
-      const entry = totals.get(tag) ?? { tag, total: 0, count: 0 };
-      entry.total += row.amountInBase;
-      entry.count += 1;
-      totals.set(tag, entry);
-    }
-  }
-
-  return [...totals.values()].sort((a, b) => b.total - a.total);
+  return rows.filter((row) => safeParseTags(row.tags).includes(tag)).map(mapRow);
 }
 
-export type TagCategoryBreakdown = { categoryId: string; categoryName: string; categoryIcon: string | null; total: number };
+/**
+ * 把一个标签改名：**全部时间**里所有带着它的账一起改，不只眼前那一段。
+ *
+ * 改成一个已经存在的名字就等于把两个标签合并；同一笔账上原本两个都有的，合并后只留一个。
+ * 改过的行标成 synced = 0：标签是 transactions 表上的一列，云端按 id upsert，下次备份就跟着更新，
+ * 不需要单独的"标签同步"。返回改了几笔
+ */
+export async function renameTag(from: string, to: string): Promise<number> {
+  const target = to.trim();
+  if (!target || target === from) return 0;
 
-// 一个标签内部按分类拆开——这才是标签的价值所在：
-// "日本旅行"横跨机票(交通)+拉面(餐饮)+药妆(购物)，用分类维度永远算不出这趟一共花了多少
-export async function getTagBreakdown(tag: string): Promise<TagCategoryBreakdown[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<TransactionRow & { categoryName: string | null; categoryIcon: string | null }>(
-    `SELECT t.*, c.name AS categoryName, c.icon AS categoryIcon
-     FROM transactions t
-     LEFT JOIN categories c ON c.id = t.categoryId
-     WHERE t.type = 'EXPENSE' AND t.tags != '[]'`,
+  const rows = await db.getAllAsync<{ id: string; tags: string }>(
+    `SELECT id, tags FROM transactions WHERE tags LIKE ?`,
+    [`%${JSON.stringify(from).slice(1, -1)}%`],
   );
+  const now = new Date().toISOString();
+  let changed = 0;
+  await db.withTransactionAsync(async () => {
+    for (const row of rows) {
+      const tags = safeParseTags(row.tags);
+      if (!tags.includes(from)) continue;
+      const next = [...new Set(tags.map((tag) => (tag === from ? target : tag)))];
+      await db.runAsync(`UPDATE transactions SET tags = ?, updatedAt = ?, synced = 0 WHERE id = ?`, [
+        JSON.stringify(next),
+        now,
+        row.id,
+      ]);
+      changed += 1;
+    }
+  });
+  return changed;
+}
 
-  const totals = new Map<string, TagCategoryBreakdown>();
+/**
+ * 最近用过的标签，按最后一次用到的时间排、去重。记账页打开标签输入时列在底下，点一下就加上。
+ * 只扫最近 200 笔带标签的账：再往前的标签多半是一次性的（某趟旅行），列出来只是噪音
+ */
+export async function listRecentTags(limit = 12): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ tags: string }>(
+    `SELECT tags FROM transactions WHERE tags != '[]' ORDER BY date DESC, createdAt DESC LIMIT 200`,
+  );
+  const seen = new Set<string>();
   for (const row of rows) {
-    if (!safeParseTags(row.tags).includes(tag)) continue;
-    const entry = totals.get(row.categoryId) ?? {
-      categoryId: row.categoryId,
-      categoryName: row.categoryName ?? '未分类',
-      categoryIcon: row.categoryIcon,
-      total: 0,
-    };
-    entry.total += row.amountInBase;
-    totals.set(row.categoryId, entry);
+    for (const tag of safeParseTags(row.tags)) {
+      seen.add(tag);
+      if (seen.size >= limit) return [...seen];
+    }
   }
-
-  return [...totals.values()].sort((a, b) => b.total - a.total);
+  return [...seen];
 }
 
 // ---- 报销：reimbursedAt 为 null 才是"待收回" ----

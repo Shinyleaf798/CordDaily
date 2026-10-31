@@ -19,6 +19,7 @@ import { ThemedView } from '@/components/ui/themed-view';
 import { ScreenPadding, Spacing } from '@/constants/theme';
 import {
   billPeriodForScope,
+  billPeriodRange,
   shiftBillPeriod,
   useBillOverviewData,
   type BillPeriod,
@@ -209,7 +210,7 @@ export default function BillOverviewScreen() {
 
         <View style={pageStyle}>
           <StatPage title={`${typeLabel}构成`}>
-            <BillTagList tags={data.tags} />
+            <BillTagList tags={data.tags} range={billPeriodRange(period)} />
           </StatPage>
         </View>
       </Animated.ScrollView>
