@@ -11,7 +11,14 @@ import {
 import { listPendingDeletions } from '@/db/deletions';
 import { pushUnsynced } from '@/db/sync';
 import { exportToFile, type ExportFormat } from '@/db/backup-file';
-import { getAutoSyncPeriod, getBackupState, setAutoSyncPeriod, type AutoSyncPeriod } from '@/db/settings';
+import {
+  getAutoSyncPeriod,
+  getBackupState,
+  nextAutoSyncAt,
+  setAutoSyncPeriod,
+  type AutoSyncPeriod,
+} from '@/db/settings';
+import { formatMonthDay, WEEKDAY_LABELS } from '@/utils/date';
 
 /**
  * 「我的」页那张备份卡、以及自动同步设置页要的数据。
@@ -30,6 +37,24 @@ export function useBackupState() {
 
 export function useAutoSyncPeriod() {
   return useQuery({ queryKey: ['autoSyncPeriod'], queryFn: getAutoSyncPeriod });
+}
+
+/**
+ * 「下次自动备份」那一句，「我的」页备份条和自动同步页共用，两处写法只有这一份。
+ * 只写到哪一天（到期按天算，见 nextAutoSyncAt），不写几点、不写"打开 App 时"——
+ * 那是自动同步页顶上那行说明的事，每处都重复一遍只会让这句话变长。
+ *
+ * 自动同步关着时是 null，调用方就不显示这一行
+ */
+export function useNextAutoSyncLabel(): string | null {
+  const { data: period = 'off' } = useAutoSyncPeriod();
+  const { data: backupState } = useBackupState();
+  if (period === 'off') return null;
+  const nextAt = nextAutoSyncAt(period, backupState?.lastCloudBackupAt ?? null);
+  if (!nextAt) return '还没自动备份过，下次打开就会备份';
+  // new Date() 而不是 Date.now()：跟 useHomeViewData 一样每次渲染重取"现在"，跨过零点回来时这句跟着变
+  if (nextAt.getTime() <= new Date().getTime()) return '自动备份已到期，下次打开就会备份';
+  return `下次自动备份：${formatMonthDay(nextAt)} ${WEEKDAY_LABELS[nextAt.getDay()]}`;
 }
 
 export function useSetAutoSyncPeriod() {

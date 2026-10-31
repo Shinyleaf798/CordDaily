@@ -12,6 +12,7 @@ import {
   useAutoSyncPeriod,
   useBackupState,
   useLocalStats,
+  useNextAutoSyncLabel,
   usePushToCloud,
   useSetAutoSyncPeriod,
 } from '@/hooks/use-backup';
@@ -43,6 +44,7 @@ export default function AutoSyncSettingsScreen() {
   const isOn = period !== 'off';
   // 跟备份卡、备份确认层同一个口径：待推送的全部记录，内置分类和账户不算（见 db/backup.ts）
   const unsynced = stats?.unsyncedTotal ?? 0;
+  const nextBackupLabel = useNextAutoSyncLabel();
 
   const handlePushNow = () => {
     setError(null);
@@ -58,7 +60,7 @@ export default function AutoSyncSettingsScreen() {
             <View style={styles.rowText}>
               <ThemedText type="default">自动备份到云端</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                打开 App 时检查，只上传、不下载
+                打开或切回 App 时检查，只上传、不下载
               </ThemedText>
             </View>
             {/* 关掉时记住上次的周期做不到——设置里只存一个值。所以从关到开默认回到「每 7 天」，
@@ -95,6 +97,15 @@ export default function AutoSyncSettingsScreen() {
                 ) : null}
               </Pressable>
             ))}
+            {/* 选了周期就告诉用户下一次是哪天——「每 7 天」本身回答不了"那下次是什么时候" */}
+            {nextBackupLabel ? (
+              <View style={styles.nextRow}>
+                <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
+                <ThemedText type="small" themeColor="textSecondary" style={styles.grow}>
+                  {nextBackupLabel}
+                </ThemedText>
+              </View>
+            ) : null}
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
@@ -113,9 +124,12 @@ export default function AutoSyncSettingsScreen() {
             <View style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
               <Ionicons name="warning-outline" size={20} color={theme.expense} />
               <View style={styles.rowText}>
-                <ThemedText type="default">{formatMoment(backupState.lastSyncError.at)} 自动备份没成功</ThemedText>
+                <ThemedText type="default">
+                  {formatMoment(backupState.lastSyncError.at)} 自动备份没成功
+                  {backupState.lastSyncError.count > 1 ? `（已连续 ${backupState.lastSyncError.count} 次）` : ''}
+                </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {backupState.lastSyncError.message}·下次打开 App 会再试
+                  {backupState.lastSyncError.message}·下次打开或切回 App 会再试
                 </ThemedText>
               </View>
             </View>
@@ -187,6 +201,7 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, gap: 2 },
   group: { gap: Spacing.two },
   groupLabel: { paddingHorizontal: Spacing.half },
+  nextRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.half },
   dimmed: { opacity: 0.4 },
   card: { padding: Spacing.three, borderRadius: 12, gap: Spacing.one },
   line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

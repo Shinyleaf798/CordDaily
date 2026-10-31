@@ -6,11 +6,10 @@ import { Pressable, ScrollView, StyleSheet, View, type TextStyle } from 'react-n
 
 import { FontSheet } from '@/components/settings/font-sheet';
 import { ThemedText } from '@/components/ui/themed-text';
-import { FontLabels } from '@/constants/font';
 import { Colors, ScreenBottomInset, ThemeLabels, ThemeNames } from '@/constants/theme';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useAvatar } from '@/hooks/use-avatar';
-import { useLocalStats } from '@/hooks/use-backup';
+import { useLocalStats, useNextAutoSyncLabel } from '@/hooks/use-backup';
 import { useOverallBudget } from '@/hooks/use-budgets';
 import { useCategories } from '@/hooks/use-categories';
 import { useHasRemote } from '@/hooks/use-cloud';
@@ -19,7 +18,6 @@ import { FOOTPRINT_WEEKS, useEntryFootprint } from '@/hooks/use-entry-footprint'
 import { useIdentity } from '@/hooks/use-identity';
 import { useRecurringRules } from '@/hooks/use-recurring';
 import { useTheme } from '@/hooks/use-theme';
-import { useFontStore } from '@/store/font.store';
 import { useThemeStore } from '@/store/theme.store';
 import { formatDayLabel } from '@/utils/date';
 import { formatAmount } from '@/utils/format';
@@ -70,6 +68,7 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
   const { data: avatarUri } = useAvatar();
   const { data: hasRemote } = useHasRemote();
   const { data: stats } = useLocalStats();
+  const nextBackupLabel = useNextAutoSyncLabel();
   const { data: footprint } = useEntryFootprint();
   const { data: expenseCategories } = useCategories('EXPENSE');
   const { data: incomeCategories } = useCategories('INCOME');
@@ -79,7 +78,6 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
   const { data: currencies } = useEnabledCurrencies();
   const themeName = useThemeStore((s) => s.themeName);
   const setThemeName = useThemeStore((s) => s.setThemeName);
-  const fontName = useFontStore((s) => s.fontName);
   const [isPickingFont, setPickingFont] = useState(false);
 
   const name = identity?.email?.split('@')[0] ?? '本地';
@@ -140,6 +138,12 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
       <View>
         <View style={[styles.backup, hairline]}>
           <View style={styles.grow}>
+            {/* 开着自动同步就把下一次是哪天放在最上面，不用点进自动同步页才知道 */}
+            {nextBackupLabel ? (
+              <ThemedText type="small" style={{ color: theme.cardHighlight }}>
+                {nextBackupLabel}
+              </ThemedText>
+            ) : null}
             <ThemedText>
               {unsynced > 0 ? (
                 <>
@@ -238,14 +242,12 @@ export function MePage({ onOpenAccount }: { onOpenAccount: () => void }) {
           })}
         </View>
 
-        {/* 字体跟主题挨着：两样都是「整个 App 长什么样」，用户会在同一处找 */}
+        {/* 字体跟主题挨着：两样都是「整个 App 长什么样」，用户会在同一处找。
+            右边只放一串用当前字体画的数字，不写字体名——「Inter」这种名字对用户没意义，看数字长什么样才有 */}
         <Pressable onPress={() => setPickingFont(true)} style={[styles.themeRow, hairline]}>
           <Ionicons name="text-outline" size={20} color={theme.text} />
           <ThemedText style={styles.grow}>字体</ThemedText>
           <ThemedText style={[NUMBER_FONT, { color: theme.cardHighlight, fontWeight: '700' }]}>1,234.50</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {FontLabels[fontName]}
-          </ThemedText>
           <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
         </Pressable>
 

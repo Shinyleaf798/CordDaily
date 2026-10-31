@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 import { AppState, LogBox } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { RestorePrompt } from '@/components/settings/restore-prompt';
 import { InterFontAssets } from '@/constants/font';
@@ -105,18 +106,33 @@ export default function RootLayout() {
     }
   }, [isHydrated]);
 
-  // 自动同步就挂在这里：App 打开时检查一次「上次备份过去多久了」，够了就把没备份的推上去。
+  // 自动同步就挂在这里：App 打开时、**每次回到前台时**检查「上次备份过去多久了」，够了就把没备份的推上去。
+  // 原来只在启动时查一次：手机上的 App 很少真被杀掉重开，一直挂在后台的话可能好几个星期都不备份
+  // （同下面周期记账那条的理由）。maybeAutoSync 自己防重入，两头同时触发只跑一份。
   // 不跑后台任务——跟周期交易的补生成同一个时机（CLAUDE.md 原则#1/#4）。
   //
   // **两条通道都算"有地方可去"**：登录了自己那台服务器，或者配了自己的 Neon 连接串。
   // 一条都没有时不跑——没登录推上去是 401，没连 Neon 则根本不知道往哪发，
   // 两种都只会白白在 lastSyncError 里留一行看不懂的红字。
   // 里面自己吞掉所有失败，所以这里不用 catch——拦住启动是不能接受的。
+  //
+  // 跑过之后（成功或失败）刷新备份相关的缓存：它不走 React Query 的 mutation，
+  // 不刷的话「我的」页那张卡会一直写着「12 笔还没备份」，看起来像自动备份没生效
   useEffect(() => {
     if (!isHydrated) return;
-    void (async () => {
-      if (user || (await getCloudSession())) void maybeAutoSync();
-    })();
+    const run = async () => {
+      if (!(user || (await getCloudSession()))) return;
+      if (await maybeAutoSync()) {
+        queryClient.invalidateQueries({ queryKey: ['localStats'] });
+        queryClient.invalidateQueries({ queryKey: ['backupState'] });
+        queryClient.invalidateQueries({ queryKey: ['pendingDeletions'] });
+      }
+    };
+    void run();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void run();
+    });
+    return () => subscription.remove();
   }, [isHydrated, user]);
 
   // 周期记账的补生成（CLAUDE.md 原则#4）：启动跑一次，**每次回到前台再跑一次**。
@@ -164,6 +180,8 @@ export default function RootLayout() {
   };
 
   return (
+    // 手势库要求包在根上。目前只有首页的「下拉备份」用它（见 components/home/pull-to-backup）
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider value={navigationTheme}>
         {/* JS 栈，不是默认那份原生栈：原生栈 pop 时路由当场从 state.routes 移除、React 立刻卸载，
@@ -254,5 +272,6 @@ export default function RootLayout() {
         <RestorePrompt />
       </ThemeProvider>
     </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }

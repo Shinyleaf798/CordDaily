@@ -2,7 +2,7 @@ import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
 import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
 import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
-import { Platform, type TextStyle } from 'react-native';
+import type { TextStyle } from 'react-native';
 
 /**
  * 全 App 统一的字体。跟色板主题（constants/theme.ts）是两个正交的维度，存法也一样（store/font.store）。
@@ -12,19 +12,19 @@ import { Platform, type TextStyle } from 'react-native';
  * （首页用系统默认，「我的」单独写死了 Android 窄体）。中文字体不给选：
  * 换宋体要把约 10 MB 的字体打进安装包，只为一个口味不值。
  */
-export type FontName = 'system' | 'condensed' | 'inter';
+// 原来还有一档「系统窄体」（Android 的 sans-serif-condensed），用户试过之后拿掉了，只留两档。
+// 存着 'condensed' 的老设置在 font.store 里读不出合法值，自动退回系统默认
+export type FontName = 'system' | 'inter';
 
-export const FontNames: FontName[] = ['system', 'condensed', 'inter'];
+export const FontNames: FontName[] = ['system', 'inter'];
 
 export const FontLabels: Record<FontName, string> = {
   system: '系统默认',
-  condensed: '系统窄体',
   inter: 'Inter',
 };
 
 export const FontHints: Record<FontName, string> = {
   system: '手机自带的那一套',
-  condensed: '更窄，长金额也排得下',
   inter: '圆润偏宽，数字更清楚',
 };
 
@@ -53,14 +53,11 @@ const INTER_BY_WEIGHT: Record<string, keyof typeof InterFontAssets> = {
  *
  * Inter 是按字重拆开的四个文件，每个文件就是一个 fontFamily，所以字重要靠**换文件**而不是 fontWeight 表达；
  * 留着 fontWeight 的话 Android 会在已经是粗体的文件上再假加粗一遍，笔画糊成一团。
- * 系统的两套则正相反：一个 family 名，粗细交给 fontWeight。iOS 没有叫得出名字的系统窄体，退回系统默认
+ * 系统默认则什么都不用加：不设 fontFamily 就是系统字体，粗细交给 fontWeight
  */
 export function fontStyleFor(font: FontName, weight: TextStyle['fontWeight']): TextStyle | null {
   if (font === 'inter') {
     return { fontFamily: INTER_BY_WEIGHT[String(weight ?? '400')] ?? 'Inter_500Medium', fontWeight: 'normal' };
-  }
-  if (font === 'condensed' && Platform.OS === 'android') {
-    return { fontFamily: 'sans-serif-condensed' };
   }
   return null;
 }

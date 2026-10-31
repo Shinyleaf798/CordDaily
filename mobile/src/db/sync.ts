@@ -14,11 +14,11 @@ import {
   type CategoryFingerprintRow,
 } from './sync-fingerprint';
 import {
-  AutoSyncPeriodDays,
   getAutoSyncPeriod,
   getBackupState,
   markCloudBackupDone,
   markSyncFailed,
+  nextAutoSyncAt,
 } from './settings';
 
 /**
@@ -334,27 +334,38 @@ function safeParseTags(value: unknown): string[] {
  * 拦住启动是不能接受的。记下 `lastSyncError`，下次打开再试；
  * 唯一的呈现是「我的」页那张备份卡和自动同步页上的一行。
  */
-export async function maybeAutoSync(): Promise<void> {
+// 防重入：启动和"回到前台"几乎同时触发时只跑一份（同 runDueRecurring 的锁）。
+// 两份一起推不会推出重复数据（服务器按 id upsert），但会白白多一趟网络、多一次拉取合并
+let autoSyncInFlight: Promise<boolean> | null = null;
+
+/** 跑了（不管成没成）返回 true，没到期 / 没东西可推返回 false。调用方据此决定要不要刷新界面上的数字 */
+export function maybeAutoSync(): Promise<boolean> {
+  autoSyncInFlight ??= runAutoSync().finally(() => {
+    autoSyncInFlight = null;
+  });
+  return autoSyncInFlight;
+}
+
+async function runAutoSync(): Promise<boolean> {
   const period = await getAutoSyncPeriod();
-  if (period === 'off') return;
+  if (period === 'off') return false;
 
   const { lastCloudBackupAt } = await getBackupState();
-  if (lastCloudBackupAt) {
-    const elapsedDays = (Date.now() - new Date(lastCloudBackupAt).getTime()) / 86400000;
-    if (elapsedDays < AutoSyncPeriodDays[period]) return;
-  }
+  const dueAt = nextAutoSyncAt(period, lastCloudBackupAt);
+  if (dueAt && Date.now() < dueAt.getTime()) return false;
 
   // 删除也算"有东西要推"：只删过账、没记过账的那一天，云端同样该跟上。
   // 用 unsyncedTotal 而不是"所有 synced = 0 的行"：装完 App 就有的那 30 行内置分类和账户
   // 不该让自动同步在用户一笔账都没记的时候空跑一趟（见 db/backup.ts 的 PendingCounts）
   const { unsyncedTotal } = await getLocalStats();
-  if (unsyncedTotal === 0 && (await countPendingDeletions()) === 0) return;
+  if (unsyncedTotal === 0 && (await countPendingDeletions()) === 0) return false;
 
   try {
     await pushUnsynced();
   } catch (error) {
     await markSyncFailed(describeError(error));
   }
+  return true;
 }
 
 /**

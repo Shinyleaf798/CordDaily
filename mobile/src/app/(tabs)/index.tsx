@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BackupFailureBanner } from '@/components/home/backup-failure-banner';
 import { HomeHeaderActions } from '@/components/home/home-header-actions';
+import { PullToBackup } from '@/components/home/pull-to-backup';
 import { HomeStyleOptions } from '@/components/home/home-style-options';
 import { ClassicThumbnail, RingThumbnail } from '@/components/home/home-style-thumbnails';
 import { PaceBills } from '@/components/home/layouts/pace-bills';
@@ -78,7 +80,11 @@ export default function HomeScreen() {
         right={<HomeHeaderActions onOpenSearch={() => setSearchOpen(true)} />}
       />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      {/* 往下拉就备份到云端（见 PullToBackup）。滚动容器换成了它自带的那个 */}
+      <PullToBackup contentContainerStyle={styles.content}>
+        {/* 自动备份连续失败满 3 次才出现，平时不占地方（见组件说明） */}
+        <BackupFailureBanner />
+
         {layout.top === 'ring' ? <RingTop data={data} /> : <PaceTop data={data} />}
 
         {layout.bills === 'ring' ? (
@@ -89,7 +95,7 @@ export default function HomeScreen() {
 
         {/* 这一块同时就是底部留白，所以 content 里没有 paddingBottom（见 PageEditButton） */}
         <PageEditButton onPress={() => setEditingStyle(true)} />
-      </ScrollView>
+      </PullToBackup>
 
       {/* 两个弹层都由首页持有而不是某一段：换了布局点同一个东西应该弹出同一个东西，
           放进段里就会变成好几份要同步维护的实现 */}

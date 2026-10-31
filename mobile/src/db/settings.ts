@@ -1,4 +1,5 @@
 import { BASE_CURRENCY, CURRENCY_CATALOG, DEFAULT_CURRENCY_CODES } from '@/constants/currencies';
+import { addDays, startOfDay } from '@/utils/date';
 
 import { getDb } from './client';
 
@@ -44,6 +45,22 @@ export const AutoSyncPeriodDays: Record<Exclude<AutoSyncPeriod, 'off'>, number> 
   monthly: 30,
 };
 
+/**
+ * 下一次自动备份从**哪一天**起会跑：上次成功备份的那一天 + 周期天数，返回那天的本地 0 点。
+ * **只看天，不看几点**——不跑后台任务（CLAUDE.md 原则#1），真正备份的时刻反正是用户打开 App 的那一刻，
+ * 按上次的时间点算（"11月5日 13:30 之后"）只会让人早上 9 点打开时以为它坏了。
+ * 代价是「每天」那档偶尔会在 23:59 和 00:01 连跑两次，无伤大雅。
+ *
+ * - 自动同步关着 → null
+ * - 从没成功备份过 → null（一打开 App 就会跑，没有"要等到哪天"）
+ *
+ * maybeAutoSync 判断到没到期、自动同步页显示「下次」都用它，两边算法只有这一份
+ */
+export function nextAutoSyncAt(period: AutoSyncPeriod, lastCloudBackupAt: string | null): Date | null {
+  if (period === 'off' || !lastCloudBackupAt) return null;
+  return addDays(startOfDay(new Date(lastCloudBackupAt)), AutoSyncPeriodDays[period]);
+}
+
 export const AutoSyncPeriodLabels: Record<AutoSyncPeriod, string> = {
   off: '关闭',
   daily: '每天',
@@ -72,8 +89,8 @@ export type BackupState = {
   lastCloudBackupAt: string | null;
   /** 上一次导出成文件的时刻。跟云端各记各的——两者救的东西不一样 */
   lastFileBackupAt: string | null;
-  /** 上一次自动同步失败的原因。成功一次就清掉 */
-  lastSyncError: { at: string; message: string } | null;
+  /** 上一次自动同步失败的原因，count 是**连续**失败了几次。成功一次就整条清掉（次数也就归零） */
+  lastSyncError: { at: string; message: string; count: number } | null;
 };
 
 export async function getBackupState(): Promise<BackupState> {
@@ -87,8 +104,11 @@ export async function getBackupState(): Promise<BackupState> {
   if (error) {
     // 存的是 JSON，但这是本机可写的一张表，读到脏值不能让整页崩掉——当作"没有错误"
     try {
-      const value = JSON.parse(error) as { at?: string; message?: string };
-      if (value?.at && value?.message) parsedError = { at: value.at, message: value.message };
+      const value = JSON.parse(error) as { at?: string; message?: string; count?: number };
+      // 加次数之前存下的那条没有 count，当作失败过一次
+      if (value?.at && value?.message) {
+        parsedError = { at: value.at, message: value.message, count: typeof value.count === 'number' ? value.count : 1 };
+      }
     } catch {
       parsedError = null;
     }
@@ -107,8 +127,14 @@ export async function markFileBackupDone(at = new Date().toISOString()): Promise
   await setSetting(Keys.lastFileBackupAt, at);
 }
 
+/**
+ * 记一次自动同步失败，**连续失败次数 +1**。满 3 次首页会多一条横幅（见 components/home/backup-failure-banner）：
+ * 偶尔一次没网不该打扰人，一直失败才需要让人知道——它不说的话，用户以为自己的账一直在云端，其实好几天没上去了
+ */
 export async function markSyncFailed(message: string): Promise<void> {
-  await setSetting(Keys.lastSyncError, JSON.stringify({ at: new Date().toISOString(), message }));
+  const { lastSyncError } = await getBackupState();
+  const count = (lastSyncError?.count ?? 0) + 1;
+  await setSetting(Keys.lastSyncError, JSON.stringify({ at: new Date().toISOString(), message, count }));
 }
 
 // ---- 搜索历史 ----
