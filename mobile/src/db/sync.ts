@@ -35,7 +35,7 @@ import {
  * **手动和自动走的是同一个函数**，自动那条只是先过一道周期判断（见 maybeAutoSync）。
  * 分成两套实现的话，两边对"什么算未备份"的定义迟早会分叉。
  *
- * 推送顺序不能乱：分类和账户是账单的外键，必须先落地；一级分类又是子分类的外键，所以
+ * 推送顺序不能乱：分类、账户、周期规则都是账单的外键，必须先落地；一级分类又是子分类的外键，所以
  * 分类内部还要父先子后。服务器那边是按 id upsert 的，重推一次不会变成两行。
  */
 
@@ -195,6 +195,21 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
     result.accounts = accounts.length;
   }
 
+  // 周期规则必须在账单**之前**：规则生成的账单带着 recurringId，是指向规则的外键。
+  // 曾经它排在最后，于是"新建一条规则 + 它当天生成的第一笔账"这一对永远推不上去——
+  // 推账单时云端还没有那条规则，外键打回，整次备份失败；而规则的 synced 只有推完才写，
+  // 下次重试还是卡在同一个地方。规则自己只依赖分类和账户，上面已经落地了
+  const recurring = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT id, title, remarks, amount, currency, exchangeRate, type, frequency, startDate,
+            nextRunDate, endDate, isActive, categoryId, accountId
+       FROM recurring_transactions WHERE synced = 0`,
+  );
+  for (const rule of recurring) {
+    await cloud.pushRecurring({ ...rule, isActive: !!rule.isActive });
+    await markSynced('recurring_transactions', [rule.id as string]);
+    result.recurring += 1;
+  }
+
   const transactions = await db.getAllAsync<Record<string, unknown>>(
     `SELECT id, title, merchant, location, remarks, amount, currency, exchangeRate, amountInBase,
             type, date, tags, isReimbursable, reimbursedAt, excludeFromStats, categoryId, accountId, recurringId
@@ -241,17 +256,6 @@ export async function pushUnsynced(withDeletions = true): Promise<PushResult> {
       transfers.map((transfer) => transfer.id as string),
     );
     result.transfers = transfers.length;
-  }
-
-  const recurring = await db.getAllAsync<Record<string, unknown>>(
-    `SELECT id, title, remarks, amount, currency, exchangeRate, type, frequency, startDate,
-            nextRunDate, endDate, isActive, categoryId, accountId
-       FROM recurring_transactions WHERE synced = 0`,
-  );
-  for (const rule of recurring) {
-    await cloud.pushRecurring({ ...rule, isActive: !!rule.isActive });
-    await markSynced('recurring_transactions', [rule.id as string]);
-    result.recurring += 1;
   }
 
   // 头像跟账单一起推。放在时间戳前面、也裹在各自的 try 里：
