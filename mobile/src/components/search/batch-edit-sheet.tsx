@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/ui/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { BatchTransactionPatch, TransactionWithCategory } from '@/db/transactions';
 import { useAccounts } from '@/hooks/use-accounts';
-import { useBatchUpdateTransactions } from '@/hooks/use-transactions';
+import { useBatchUpdateTransactions, useRecentTags } from '@/hooks/use-transactions';
 import { useTheme } from '@/hooks/use-theme';
 
 type TextField = 'title' | 'remarks' | 'merchant' | 'location';
@@ -31,7 +31,7 @@ type BatchEditSheetProps = {
 };
 
 /**
- * 一键改一批账单的主题、备注、店名、地点和账户（金额、日期、分类不在这里，见 batchUpdateTransactions）。
+ * 一键改一批账单的主题、备注、店名、地点、账户和标签（金额、日期、分类不在这里，见 batchUpdateTransactions）。
  *
  * **每一格默认是「不改」**，填了字才改。灰色的占位字是这批账当前的值——
  * 全都一样时直接显示那个值（「今天充值30元」），各不相同时写「多个不同的值」。
@@ -39,6 +39,10 @@ type BatchEditSheetProps = {
  *
  * 想把备注整个删掉要点那一格的「清空」：留空表示"不改"，所以"改成空"得是另一个明确的动作，
  * 否则这两件事分不开（见 BatchTransactionPatch 的三态）。
+ *
+ * **标签是加 / 去，不是改成。** 这批账现有的标签列成一排，注明「全部」还是「N 笔有」，
+ * 点一下标成去掉；底下输入或点「最近用过」加新的。每一笔原有的其他标签不受影响——
+ * 所以主题、备注各不相同的一批账，也能只给它们统一挂上一个标签，别的格子留空就是不改。
  */
 export function BatchEditSheet({ transactions, onDismiss, onDone }: BatchEditSheetProps) {
   const theme = useTheme();
@@ -54,6 +58,45 @@ export function BatchEditSheet({ transactions, onDismiss, onDone }: BatchEditShe
   });
   /** null = 账户不改 */
   const [accountId, setAccountId] = useState<string | null>(null);
+  const { data: recentTags } = useRecentTags();
+  const [addTags, setAddTags] = useState<string[]>([]);
+  const [removeTags, setRemoveTags] = useState<Set<string>>(new Set());
+  const [draftTag, setDraftTag] = useState('');
+
+  // 这批账现有的标签和各自出现在几笔里，按出现的先后排（跟每笔自己的标签顺序一致）
+  const tagCounts = new Map<string, number>();
+  for (const t of transactions) {
+    for (const tag of t.tags) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+  }
+  const existingTags = [...tagCounts.entries()];
+  // 「最近用过」里去掉已经要加的、以及这批账每一笔都已经有的——点了也不会有任何变化
+  const suggestedTags = (recentTags ?? []).filter(
+    (tag) => !addTags.includes(tag) && tagCounts.get(tag) !== transactions.length,
+  );
+
+  const addTag = (raw: string) => {
+    const tag = raw.trim();
+    if (!tag) return;
+    setAddTags((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
+    // 刚标了去掉、又重新加回来：以最后这个动作为准
+    setRemoveTags((prev) => {
+      if (!prev.has(tag)) return prev;
+      const next = new Set(prev);
+      next.delete(tag);
+      return next;
+    });
+  };
+  const commitDraftTag = () => {
+    addTag(draftTag);
+    setDraftTag('');
+  };
+  const toggleRemoveTag = (tag: string) =>
+    setRemoveTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
 
   const updateDraft = (key: TextField, next: Partial<FieldDraft>) =>
     setDrafts((prev) => ({ ...prev, [key]: { ...prev[key], ...next } }));
@@ -78,12 +121,18 @@ export function BatchEditSheet({ transactions, onDismiss, onDone }: BatchEditShe
     }
   }
   if (accountId && accountId !== currentAccountId) patch.accountId = accountId;
+  // 输入框里打了字、还没按回车就点保存：照样算进去，不然那个字会被悄悄丢掉
+  const pendingAdd = [...new Set([...addTags, draftTag.trim()].filter(Boolean))];
+  // 每一笔都已经有的标签再"加"一次什么也不会变，不算改动——否则保存按钮亮了、点下去却改了 0 笔
+  const effectiveAdd = pendingAdd.filter((tag) => tagCounts.get(tag) !== transactions.length);
+  if (effectiveAdd.length) patch.addTags = effectiveAdd;
+  if (removeTags.size) patch.removeTags = [...removeTags];
   const hasChanges = Object.keys(patch).length > 0;
 
   const save = () => {
     if (!hasChanges || batchUpdate.isPending) return;
     // 改一批是没法撤销的（没有"上一个版本"可退），所以停一下让人确认数量
-    Alert.alert(`修改这 ${transactions.length} 笔账单？`, '金额、日期和分类不会变。', [
+    Alert.alert(`修改这 ${transactions.length} 笔账单？`, '金额、日期和分类不会变，各笔原有的其他标签保留。', [
       { text: '取消', style: 'cancel' },
       {
         text: '修改',
@@ -159,6 +208,68 @@ export function BatchEditSheet({ transactions, onDismiss, onDone }: BatchEditShe
               />
             ))}
           </View>
+
+          <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+            标签（加上的补进每一笔，点现有的标签可去掉）
+          </ThemedText>
+          {existingTags.length > 0 || addTags.length > 0 ? (
+            <View style={styles.accountChips}>
+              {existingTags.map(([tag, count]) => {
+                const removing = removeTags.has(tag);
+                return (
+                  <Pressable
+                    key={`has-${tag}`}
+                    onPress={() => toggleRemoveTag(tag)}
+                    accessibilityLabel={removing ? `取消去掉标签 ${tag}` : `去掉标签 ${tag}`}
+                    style={[styles.accountChip, { backgroundColor: theme.background }]}>
+                    <ThemedText
+                      type="small"
+                      style={
+                        removing ? { color: theme.expense, textDecorationLine: 'line-through' } : undefined
+                      }>
+                      {tag}
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {count === transactions.length ? ' · 全部' : ` · ${count} 笔`}
+                      </ThemedText>
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+              {addTags.map((tag) => (
+                <Pressable
+                  key={`add-${tag}`}
+                  onPress={() => setAddTags((prev) => prev.filter((t) => t !== tag))}
+                  accessibilityLabel={`撤销加上标签 ${tag}`}
+                  style={[styles.accountChip, { backgroundColor: theme.cardHighlight }]}>
+                  <ThemedText type="small" style={{ color: theme.onCardHighlight }}>
+                    + {tag} ×
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          <TextInput
+            value={draftTag}
+            onChangeText={setDraftTag}
+            onSubmitEditing={commitDraftTag}
+            submitBehavior="submit"
+            returnKeyType="done"
+            placeholder="输入新标签，按完成加上"
+            placeholderTextColor={theme.textSecondary}
+            style={[styles.tagInput, { color: theme.text, backgroundColor: theme.background }]}
+          />
+          {suggestedTags.length > 0 ? (
+            <View style={styles.accountChips}>
+              {suggestedTags.map((tag) => (
+                <Pressable
+                  key={`recent-${tag}`}
+                  onPress={() => addTag(tag)}
+                  style={[styles.accountChip, styles.recentChip, { borderColor: theme.backgroundSelected }]}>
+                  <ThemedText type="small">+ {tag}</ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
 
           {batchUpdate.error ? (
             <ThemedText type="small" style={{ color: theme.expense }}>
@@ -237,6 +348,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 7,
+  },
+  tagInput: {
+    borderRadius: 14,
+    paddingHorizontal: Spacing.three,
+    height: 44,
+    fontSize: 15,
+  },
+  recentChip: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
   },
   saveButton: {
     marginTop: Spacing.two,

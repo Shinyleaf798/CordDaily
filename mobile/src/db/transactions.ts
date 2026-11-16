@@ -257,15 +257,27 @@ export type BatchTransactionPatch = {
   merchant?: string | null;
   location?: string | null;
   accountId?: string;
+  /**
+   * 标签不是「改成」而是**加 / 去**：每笔原本的标签各不相同，整组覆盖等于把它们全抹掉。
+   * 加的补进每一笔（已经有的不重复），去的从每一笔里拿掉，其余标签原样留着。
+   * 同一个名字同时出现在两边时以「加」为准——那是用户刚刚明确输入的
+   */
+  addTags?: string[];
+  removeTags?: string[];
 };
 
 /**
- * 一键改一批账单的文字字段和账户。**金额、日期、分类、类型一律不碰**——
+ * 一键改一批账单的文字字段、账户和标签。**金额、日期、分类、类型一律不碰**——
  * 那几个是每一笔各自的事实（这笔哪天花的、花了多少），一键改成同一个值几乎只会是误操作。
  *
- * 一条 UPDATE ... WHERE id IN (...)，天然是原子的：要么全改，要么一笔没改。
+ * 文字字段和账户是一条 UPDATE ... WHERE id IN (...)。标签做不到一条 SQL：
+ * 它是一列 JSON 文本，每一笔要在 JS 里各自算出"原有 − 去掉 + 加上"再写回（同 renameTag）。
+ * 两部分包在同一个 withTransactionAsync 里，要么全改，要么一笔没改。
  * 搜索结果最多 200 笔（见 searchTransactions），远在 SQLite 999 个参数的上限以内。
  * 跟单笔修改一样置 synced = 0，下次备份会把改动推上去。
+ *
+ * 返回**实际变了的笔数**：只加标签、而其中几笔本来就有它的话，那几笔不写也不算，
+ * 也就不会被白白标成未备份
  */
 export async function batchUpdateTransactions(ids: string[], patch: BatchTransactionPatch): Promise<number> {
   const sets: string[] = [];
@@ -282,15 +294,47 @@ export async function batchUpdateTransactions(ids: string[], patch: BatchTransac
   if (patch.location !== undefined) set('location', patch.location?.trim() || null);
   if (patch.accountId !== undefined) set('accountId', patch.accountId);
 
-  if (ids.length === 0 || sets.length === 0) return 0;
+  const addTags = [...new Set((patch.addTags ?? []).map((tag) => tag.trim()).filter(Boolean))];
+  const removeTags = new Set((patch.removeTags ?? []).filter((tag) => !addTags.includes(tag)));
+  const touchesTags = addTags.length > 0 || removeTags.size > 0;
+
+  if (ids.length === 0 || (sets.length === 0 && !touchesTags)) return 0;
 
   const db = await getDb();
-  const result = await db.runAsync(
-    `UPDATE transactions SET ${sets.join(', ')}, updatedAt = ?, synced = 0
-     WHERE id IN (${ids.map(() => '?').join(', ')})`,
-    [...params, new Date().toISOString(), ...ids],
-  );
-  return result.changes;
+  const now = new Date().toISOString();
+  const placeholders = ids.map(() => '?').join(', ');
+  const changed = new Set<string>();
+
+  await db.withTransactionAsync(async () => {
+    if (sets.length) {
+      await db.runAsync(
+        `UPDATE transactions SET ${sets.join(', ')}, updatedAt = ?, synced = 0 WHERE id IN (${placeholders})`,
+        [...params, now, ...ids],
+      );
+      for (const id of ids) changed.add(id);
+    }
+
+    if (touchesTags) {
+      const rows = await db.getAllAsync<{ id: string; tags: string }>(
+        `SELECT id, tags FROM transactions WHERE id IN (${placeholders})`,
+        ids,
+      );
+      for (const row of rows) {
+        const before = safeParseTags(row.tags);
+        // 原有的在前、新加的接在后面：标签的先后就是用户加上它们的先后，不重排
+        const next = [...new Set([...before.filter((tag) => !removeTags.has(tag)), ...addTags])];
+        if (next.length === before.length && next.every((tag, i) => tag === before[i])) continue;
+        await db.runAsync(`UPDATE transactions SET tags = ?, updatedAt = ?, synced = 0 WHERE id = ?`, [
+          JSON.stringify(next),
+          now,
+          row.id,
+        ]);
+        changed.add(row.id);
+      }
+    }
+  });
+
+  return changed.size;
 }
 
 /**
